@@ -1625,7 +1625,7 @@ impl Game<'_> {
             // Wall-mounted entities do not move.
             Target::Frame(_) | Target::Painting(_) => {}
         }
-        if self.options.dedicated.is_some()
+        if (self.serving.is_some() || self.options.dedicated.is_some())
             && let (Some(entity), Some(from), Some(to)) =
                 (self.network_entity_id(t), from, self.target_position(t))
         {
