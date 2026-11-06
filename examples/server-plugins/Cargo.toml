@@ -1,0 +1,6 @@
+# The plugin side: the ABI crate and the example plugin. They build without the engine, in
+# seconds. The host (host/) is a trait mod and builds with the server (stage.py).
+[workspace]
+members = ["abi", "loader", "hello"]
+exclude = ["host"]
+resolver = "3"
