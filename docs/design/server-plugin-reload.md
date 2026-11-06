@@ -65,7 +65,8 @@ members instead.)
 - **Load.** The file is copied to `plugins/.loaded/<name>-<n>.so`, mapped (`dlopen`), and the copy's name is
   removed at once (the mapping keeps it). Two reasons: the dynamic loader hands out the library already
   mapped from a path, so loading the same path again would give the old code; and the admin may overwrite
-  `plugins/<name>.so` with a new build while the old one runs. Then the entry symbol, the entry point, the
+  `plugins/<name>.so` with a new build while the old one runs. `libloading` maps with `RTLD_LOCAL`, so two
+  copies' symbols never clash. Then the entry symbol, the entry point, the
   `major` and `size`, and the plugin's name against the file's.
 - **Reload.** The new file is mapped first: one that is not a plugin of this ABI leaves the running one in
   place. Then the old plugin's `unload` (its `Drop` runs), then the new entry point. A plugin never runs twice
