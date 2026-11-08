@@ -2676,7 +2676,7 @@ server only.
   until the player leaves. False off a server, for a player not online, and inside a guest's packet hook: call it from a
   tick or console hook. API @API:set_player_fake@.
 - **`native_is_player_fake(uuid)`** (`native_view_distance.rs`): whether the player is a fake player, a mod's bot with no
-  client (marked by `native_set_player_fake`, or joined with the brand `pvpbot`, which makes it fake from its first
+  client (marked by `native_set_player_fake`, or joined with the brand `horizonbot`, which makes it fake from its first
   packet on). False off a server and for a player not online; for a join hook that gets only a uuid. API
   @API:is_player_fake@.
 - **`native_chunk_snapshot(dimension, [x, z])`** (`native_chunk_snapshot.rs`): a `NativeChunkSnapshot` of a loaded

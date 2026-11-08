@@ -1384,7 +1384,7 @@ impl Hub {
         guest.position = ctx.spawn;
         guest.previous_position = ctx.spawn;
         guest.dimension = self.config.dimension.clone();
-        // A mod's bot says so in its brand (the pvpbot port's "pvpbot"): fake from its first
+        // A mod's bot says so in its brand (HorizonBot's "horizonbot"): fake from its first
         // packet on, so its join sends and builds nothing it cannot read (local perf patch for
         // fake players).
         if guest.brand == FAKE_BRAND {
@@ -5245,7 +5245,7 @@ fn wrap_degrees(degrees: f32) -> f32 {
 }
 
 /// The brand a mod's bot (no client) gives; a guest with it is a fake player from the start.
-pub const FAKE_BRAND: &str = "pvpbot";
+pub const FAKE_BRAND: &str = "horizonbot";
 
 /// The packets of one player handled in a tick; the rest wait for the next.
 const PACKETS_PER_TICK: usize = 400;

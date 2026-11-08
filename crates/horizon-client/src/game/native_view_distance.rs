@@ -46,7 +46,7 @@ impl Game<'_> {
     }
 
     /// Whether the player `uuid` is a fake player (a mod's bot with no client): marked by
-    /// `native_set_player_fake` or by joining with the brand `pvpbot`. False off a server and for
+    /// `native_set_player_fake` or by joining with the brand `horizonbot`. False off a server and for
     /// a player not online. Cheap: meant for join hooks that get only a uuid. API
     /// @API:is_player_fake@.
     pub(super) fn native_is_player_fake(&self, uuid: u128) -> bool {
