@@ -252,7 +252,7 @@ mod tests {
                 conn: 2,
                 uuid: 2,
                 name: "NetherGuest".into(),
-                properties: Rc::new(Vec::new()),
+                properties: Vec::new(),
                 info: ClientInformation::new(2),
                 brand: "test".into(),
                 sender: PlayerSender::new(tx, Arc::default()),

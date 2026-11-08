@@ -178,7 +178,7 @@ impl Game<'_> {
         };
         let m = self.mobs.iter().find(|m| m.id == id && !m.removed)?;
         Some(
-            m.effects
+            m.extra.effects
                 .iter()
                 .map(|(name, ticks, amplifier)| ((*name).to_owned(), *ticks, *amplifier))
                 .collect(),
@@ -240,8 +240,8 @@ impl Game<'_> {
         else {
             return false;
         };
-        m.using_item = i32::from(using);
-        m.using_off_hand = off_hand;
+        m.extra.using_item = i32::from(using);
+        m.extra.using_off_hand = off_hand;
         m.needs_sync = true;
         true
     }

@@ -1175,6 +1175,22 @@ pub(super) use horizon_world::level::flags;
 pub(crate) const NATIVE_HOOKS_API: u32 = 413;
 
 impl GameLevel<'_> {
+    /// A crop, stem, cactus, sugar cane, bamboo, mushroom or vine on an
+    /// authoritative server grows or spreads at `pos` in `dimension`: the block
+    /// there changes from `from` to `to` (block names, state properties
+    /// included). Set `cancel` to leave it as it is. Covers crop, stem, cactus,
+    /// sugar cane and bamboo growth, grass spreading onto dirt, mushroom and
+    /// vine spread. Server-side. Pending API @API:block_grow@.
+    pub(super) fn native_block_grow(
+        &self,
+        dimension: &str,
+        pos: [i32; 3],
+        from: &str,
+        to: &str,
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_block_grow(self, mod_api::mods(), dimension, pos, from, to, cancel);
+    }
     /// `EntityBlock.newBlockEntity` with the actual placed state. The first
     /// entity supplied owns the result. No response means no new entity.
     /// This is a creation callback, not a validity test: an existing entity
@@ -6778,22 +6794,6 @@ impl Game<'_> {
         );
     }
 
-    /// A crop, stem, cactus, sugar cane, bamboo, mushroom or vine on an
-    /// authoritative server grows or spreads at `pos` in `dimension`: the block
-    /// there changes from `from` to `to` (block names, state properties
-    /// included). Set `cancel` to leave it as it is. Covers crop, stem, cactus,
-    /// sugar cane and bamboo growth, grass spreading onto dirt, mushroom and
-    /// vine spread. Server-side. Pending API @API:block_grow@.
-    pub(super) fn native_block_grow(
-        &mut self,
-        dimension: &str,
-        pos: [i32; 3],
-        from: &str,
-        to: &str,
-        cancel: &mut bool,
-    ) {
-        mod_api::dispatch_block_grow(self, mod_api::mods(), dimension, pos, from, to, cancel);
-    }
     /// A mob (`entity`, its `kind`) is about to change the block at `pos` from
     /// `from` to `to` (an enderman's block, a ravager's, a snow golem's, a
     /// wither's). Set `cancel` to leave the block as it is: nothing changes and
@@ -8853,7 +8853,7 @@ impl Game<'_> {
     pub(super) fn native_inventory_changed(
         &mut self,
         uuid: u128,
-        kind: super::native_inventories::NativeInventoryKind,
+        kind: crate::mod_api::NativeInventoryKind,
     ) {
         mod_api::dispatch_inventory_changed(self, mod_api::mods(), uuid, kind);
     }
@@ -10040,7 +10040,7 @@ pub(super) fn viewer_changes(
     changes
 }
 
-fn dimension_id(dimension: LevelDimension) -> &'static str {
+pub(super) fn dimension_id(dimension: LevelDimension) -> &'static str {
     match dimension {
         LevelDimension::Overworld => "minecraft:overworld",
         LevelDimension::Nether => "minecraft:the_nether",
