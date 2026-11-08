@@ -78,3 +78,16 @@ fn block_states_take_their_new_field_names() {
     assert!(state.get("properties").is_some());
     assert_eq!(chunk.get("DataVersion"), Some(&Tag::Int(CURRENT)));
 }
+
+#[test]
+fn block_states_from_the_flattening_on_are_not_renamed() {
+    let props = [("facing".to_owned(), "north".to_owned())];
+    assert_eq!(
+        native_upgrade_block_state("minecraft:oak_stairs", &props, FLATTENING),
+        ("minecraft:oak_stairs".to_owned(), props.to_vec())
+    );
+    assert_eq!(
+        native_upgrade_block_state("minecraft:no_such_block", &[], 1400),
+        ("minecraft:no_such_block".to_owned(), Vec::new())
+    );
+}

@@ -1,6 +1,7 @@
 //! Bulk block edits for server mods: a helper on the level being ticked, as `native_set_block` is, that makes many
 //! runs of blocks up columns at once, straight into the chunks.
 use super::Game;
+use horizon_world::nbt::Tag;
 
 /// Which of a column's heights (`Heightmap.Types`) a run's `y` counts from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,14 +38,23 @@ impl Game<'_> {
     /// block replaced by another loses its block entity, and a new block gets the one `native_set_block` would
     /// give it, a mod block's included); no neighbour is told, and the chunks changed go to the players whole.
     /// Runs in chunks not loaded, and the parts of runs outside the column, are left out. The blocks changed, or
-    /// why the edit was left out, with nothing changed: another dimension, a client of a server, a palette entry
-    /// or filter that doesn't read or carries NBT (refused), a run naming a palette entry or filter past the end,
-    /// or more than 65536 filters. API 126.
+    /// why the edit was left out, with nothing changed: a level the server hasn't loaded, a client of a server, a
+    /// palette entry or filter that doesn't read or carries NBT (refused), a run naming a palette entry or filter
+    /// past the end, or more than 65536 filters. API 126. Since API @API:edit_blocks_any_level@, `dimension` may be
+    /// any level the server has loaded: that level is put in place for the edit (`execute in <dimension> run`),
+    /// as `native_summon` does, and the one that was is put back.
     pub(super) fn native_edit_blocks(
         &mut self,
         dimension: &str,
         edit: &NativeBlockEdit,
     ) -> Result<u64, String> {
+        if dimension != self.dim.id() {
+            return self
+                .npc_in_level(dimension, |g| g.native_edit_blocks(dimension, edit))
+                .unwrap_or_else(|| {
+                    Err(format!("{dimension} is not a level the server has loaded"))
+                });
+        }
         if !self.native_level_open(dimension) {
             return Err(format!("{dimension} is not the level being ticked"));
         }
@@ -62,5 +72,32 @@ impl Game<'_> {
     /// Whether `dimension` is the authoritative level being ticked: where a server mod's world helpers act.
     pub(super) fn native_level_open(&self, dimension: &str) -> bool {
         (self.serving.is_some() || self.options.dedicated.is_some()) && dimension == self.dim.id()
+    }
+    /// The data of the block entity at `pos` in the loaded level `dimension`, as `save` writes it without its id
+    /// and position (`BlockEntity.saveWithoutMetadata`); None when there is none, or the level isn't loaded (also
+    /// on a client). Read-only: a mod that writes one sets the block again. API @API:block_entity_tag@.
+    pub(super) fn native_block_entity_tag(
+        &mut self,
+        dimension: &str,
+        pos: [i32; 3],
+    ) -> Option<Tag> {
+        self.npc_in_level(dimension, |g| g.block_entity_tag(pos))
+            .flatten()
+    }
+    /// The entities of the loaded level `dimension` inside the box from `min` to `max` (both corners included), by
+    /// id, as `native_level_entities` lists them; players the hub holds are included. Empty for a level not loaded,
+    /// and on a client. Walks every entity of the level: a mod calls it for a few boxes, not every tick. API
+    /// @API:entities_in@.
+    pub(super) fn native_entities_in(
+        &mut self,
+        dimension: &str,
+        min: [f64; 3],
+        max: [f64; 3],
+    ) -> Vec<u32> {
+        self.native_level_entities(dimension)
+            .into_iter()
+            .filter(|(_, _, p)| (0..3).all(|i| min[i] <= p[i] && p[i] <= max[i]))
+            .map(|(id, _, _)| id)
+            .collect()
     }
 }
