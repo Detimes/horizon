@@ -549,6 +549,7 @@ pub use native_client_world::{NativeBiomeId, NativeClientBiomes, NativeClientChu
 pub use native_components::NativeComponentError;
 pub use native_configs::{NativeConfig, NativeConfigFile, NativeConfigKind};
 pub use native_criteria::NativeCriterion;
+pub use advancements::AdvancementDisplay;
 pub use native_data_maps::NativeDataMapType;
 pub use native_falling::NativeFalling;
 pub use native_hooks::{NativeClock, NativeItemEntity, NativePlayer, NativeShake};

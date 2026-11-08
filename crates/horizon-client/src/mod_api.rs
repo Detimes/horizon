@@ -32,7 +32,7 @@ pub use crate::game::native_client_services::{
 };
 pub use crate::game::native_text_field::NativeTextField;
 pub use crate::game::{
-    ItemEnergyBuffer, NativeBiomeId, NativeBlockEdit, NativeBlockReadError, NativeBlockRun,
+    AdvancementDisplay, ItemEnergyBuffer, NativeBiomeId, NativeBlockEdit, NativeBlockReadError, NativeBlockRun,
     NativeClientBiomes, NativeClientChunks, NativeClock, NativeColumnBlocks, NativeComponentError,
     NativeConfig, NativeConfigFile, NativeConfigKind, NativeCriterion, NativeDataMapType,
     NativeExperienceOrb, NativeFalling, NativeHeightmap, NativeHeldItem, NativeHit,
