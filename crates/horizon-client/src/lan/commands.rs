@@ -153,7 +153,15 @@ impl CommandTree {
         } else {
             Value::Null
         };
-        for root in [&self.root, extra, &horizon] {
+        // A server mod's root of vanilla's name replaces vanilla's (`replace_vanilla`).
+        let mut vanilla = self.root.clone();
+        if let (Some(children), Some(mods)) = (
+            vanilla.get_mut("children").and_then(Value::as_object_mut),
+            extra.get("children").and_then(Value::as_object),
+        ) {
+            children.retain(|name, _| !mods.contains_key(name));
+        }
+        for root in [&vanilla, extra, &horizon] {
             fill(
                 root,
                 0,
