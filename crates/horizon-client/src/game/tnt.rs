@@ -180,7 +180,13 @@ impl Game<'_> {
     /// (`native_tnt_primed`); the acting guest, if any, is its player.
     pub(super) fn tnt_prime_allowed(&mut self, pos: BlockPos) -> bool {
         let mut cancel = false;
-        self.native_tnt_primed(self.lan_acting_uuid, [pos.x, pos.y, pos.z], &mut cancel);
+        let dimension = self.dim.id();
+        self.native_tnt_primed(
+            self.lan_acting_uuid,
+            dimension,
+            [pos.x, pos.y, pos.z],
+            &mut cancel,
+        );
         // `TntBlock.prime` leaves the block alone with `tnt_explodes` off, for
         // redstone, fire and an unstable block breaking alike.
         !cancel && self.ui.rules.bool("tnt_explodes")
@@ -334,7 +340,9 @@ impl Game<'_> {
                     power,
                     interaction,
                     false,
-                    super::explosion::ExplosionSource::default().with_silence(silent),
+                    super::explosion::ExplosionSource::default()
+                        .with_silence(silent)
+                        .with_entity(id, "minecraft:tnt"),
                 )
             });
             self.combat.blast_owner = None;

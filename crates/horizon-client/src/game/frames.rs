@@ -148,7 +148,8 @@ impl Game<'_> {
             None
         };
         let mut cancel = false;
-        self.native_hanging_break(player, kind, pos, &mut cancel);
+        let dimension = self.dim.id();
+        self.native_hanging_break(player, dimension, kind, pos, &mut cancel);
         cancel
     }
     /// `ItemFrameItem.useOn`.
