@@ -1384,6 +1384,13 @@ impl Hub {
         guest.position = ctx.spawn;
         guest.previous_position = ctx.spawn;
         guest.dimension = self.config.dimension.clone();
+        // A mod's bot says so in its brand (the pvpbot port's "pvpbot"): fake from its first
+        // packet on, so its join sends and builds nothing it cannot read (local perf patch for
+        // fake players).
+        if guest.brand == FAKE_BRAND {
+            guest.fake = true;
+            guest.sender.set_fake(true);
+        }
         self.guests.push(guest);
         conn
     }
@@ -1425,6 +1432,10 @@ impl Hub {
             let g = &mut self.guests[i];
             g.held = true;
             g.held_since = self.ticks;
+        }
+        if self.guests[i].fake {
+            self.place_new_fake_player(i);
+            return;
         }
         let held = self.guests[i].held;
         let g = &self.guests[i];
@@ -1551,6 +1562,49 @@ impl Hub {
         // ServerPlayer.sendPostEffects and initInventoryMenu.
         self.send_post_effects(i);
         self.send_inventory(i);
+    }
+
+    /// [`Self::place_new_player`] for a fake player (a mod's bot with no client; local perf patch
+    /// for fake players): it reads only the teleport, so it gets none of the login, recipe book,
+    /// command tree, player list, level info or inventory, which hundreds of bots would each have
+    /// built and dropped. The real players still see the join line and the list entry; the other
+    /// fake players are told nothing.
+    fn place_new_fake_player(&mut self, i: usize) {
+        let (name, uuid, mode, conn) = {
+            let g = &self.guests[i];
+            (g.name.clone(), g.uuid, g.game_mode, g.conn)
+        };
+        let joined = C::SystemChat(play::SystemChat {
+            content: yellow_names(
+                "multiplayer.player.joined",
+                vec![self.player_display_name(uuid, &name)],
+            ),
+            overlay: false,
+        })
+        .encode();
+        let newcomer = C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+            actions: Self::INFO_ACTIONS,
+            entries: vec![self.player_info(uuid, &name, mode, 0)],
+        })
+        .encode();
+        let level = self.hidden.get(&uuid).copied();
+        for g in self.guests.iter().filter(|g| g.placed && g.conn != conn && !g.fake) {
+            if self.sees(g.permission, uuid) {
+                g.sender.send(joined.clone());
+            }
+        }
+        for g in self.guests.iter_mut().filter(|g| (g.placed || g.held) && g.conn != conn && !g.fake) {
+            if level.is_some_and(|l| g.permission < l) {
+                g.tab_hidden.insert(uuid);
+            } else {
+                g.sender.send(newcomer.clone());
+            }
+        }
+        self.guests[i].placed = true;
+        self.resend_teleport(i, None);
+        let g = &mut self.guests[i];
+        g.center_sent = Some(g.chunk());
+        g.placed_at = self.ticks;
     }
 
     /// What an import changed, told to the held player's client the way a join tells it: game
@@ -1940,6 +1994,9 @@ impl Hub {
     /// Commands.sendCommands: the command tree for this player.
     fn send_commands(&self, i: usize) {
         let g = &self.guests[i];
+        if g.fake {
+            return;
+        }
         let mut packet = self.commands_packet(g.permission, &g.granted_commands);
         // What the mods took out is not in the tree the client gets.
         if !g.hidden_commands.is_empty() {
@@ -3613,7 +3670,10 @@ impl Hub {
             }));
             // ServerPlayer.tick's CriteriaTriggers.TICK, then flushDirty. A
             // player who has been here has had the tick's criteria already.
-            if !g.advancements_loaded {
+            if g.fake {
+                // A fake player has no advancements screen or recipe book to fill (local perf
+                // patch for fake players).
+            } else if !g.advancements_loaded {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0, |d| d.as_millis() as i64);
@@ -5183,6 +5243,9 @@ fn wrap_degrees(degrees: f32) -> f32 {
     }
     wrapped
 }
+
+/// The brand a mod's bot (no client) gives; a guest with it is a fake player from the start.
+pub const FAKE_BRAND: &str = "pvpbot";
 
 /// The packets of one player handled in a tick; the rest wait for the next.
 const PACKETS_PER_TICK: usize = 400;

@@ -1698,7 +1698,7 @@ impl Game<'_> {
         host: &LanHost,
         guest: &horizon_client::lan::guest::Guest,
     ) {
-        if !guest.placed || guest.released || self.adv.tree.list.is_empty() {
+        if !guest.placed || guest.released || guest.fake || self.adv.tree.list.is_empty() {
             return;
         }
         let Some(uuid) = self.records_uuid(host, guest.uuid) else {
@@ -2936,9 +2936,14 @@ impl Game<'_> {
         if !elsewhere {
             g.dimension = in_place;
         }
-        self.load_guest_records(host, conn);
-        // The mods say which commands the newcomer's tree keeps.
-        self.native_filter_commands(host, Some(conn));
+        // A fake player (a mod's bot) has no advancements, statistics or command tree to load or
+        // send (local perf patch for fake players).
+        let fake = host.hub.guest(conn).is_some_and(|g| g.fake);
+        if !fake {
+            self.load_guest_records(host, conn);
+            // The mods say which commands the newcomer's tree keeps.
+            self.native_filter_commands(host, Some(conn));
+        }
         let mut theirs = States::default();
         let entities = if elsewhere {
             if let Err(e) = self.enter_level(Some(host), level) {

@@ -45,6 +45,16 @@ impl Game<'_> {
             .is_some_and(|host| host.hub.set_guest_fake(uuid, fake))
     }
 
+    /// Whether the player `uuid` is a fake player (a mod's bot with no client): marked by
+    /// `native_set_player_fake` or by joining with the brand `pvpbot`. False off a server and for
+    /// a player not online. Cheap: meant for join hooks that get only a uuid. API
+    /// @API:is_player_fake@.
+    pub(super) fn native_is_player_fake(&self, uuid: u128) -> bool {
+        self.lan
+            .as_ref()
+            .is_some_and(|host| host.hub.guests.iter().any(|g| g.uuid == uuid && g.fake))
+    }
+
     /// The view distance the player `uuid` has now: the radius of chunks it
     /// is sent (`native_set_player_view_distance`). None off a server, for a
     /// player not online, and inside a guest's packet hook. API
