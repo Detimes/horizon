@@ -4830,12 +4830,25 @@ impl Game<'_> {
     pub(super) fn native_hanging_break(
         &mut self,
         player: Option<u128>,
+        kind: &str,
+        pos: [i32; 3],
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_hanging_break(self, mod_api::mods(), player, kind, pos, cancel);
+    }
+    /// A hanging entity (painting, item frame...) of `kind` at `pos` in
+    /// `dimension` is about to break. Set `cancel` to keep it. Same moment as
+    /// `native_hanging_break`, which still fires unchanged. Server-side.
+    /// Pending API @API:hanging_break_v2@.
+    pub(super) fn native_hanging_break_v2(
+        &mut self,
+        player: Option<u128>,
         dimension: &str,
         kind: &str,
         pos: [i32; 3],
         cancel: &mut bool,
     ) {
-        mod_api::dispatch_hanging_break(self, mod_api::mods(), player, dimension, kind, pos, cancel);
+        mod_api::dispatch_hanging_break_v2(self, mod_api::mods(), player, dimension, kind, pos, cancel);
     }
     /// A server player empties a bucket at `pos` (`fluid`: `minecraft:water`,
     /// `minecraft:lava`, `minecraft:powder_snow`; a fish or axolotl bucket
@@ -4871,11 +4884,22 @@ impl Game<'_> {
     pub(super) fn native_tnt_primed(
         &mut self,
         player: Option<u128>,
+        pos: [i32; 3],
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_tnt_primed(self, mod_api::mods(), player, pos, cancel);
+    }
+    /// A server player (or none) primes TNT at `pos` in `dimension`. Set
+    /// `cancel` to leave the block unlit. Same moment as `native_tnt_primed`,
+    /// which still fires unchanged. Server-side. Pending API @API:tnt_primed_v2@.
+    pub(super) fn native_tnt_primed_v2(
+        &mut self,
+        player: Option<u128>,
         dimension: &str,
         pos: [i32; 3],
         cancel: &mut bool,
     ) {
-        mod_api::dispatch_tnt_primed(self, mod_api::mods(), player, dimension, pos, cancel);
+        mod_api::dispatch_tnt_primed_v2(self, mod_api::mods(), player, dimension, pos, cancel);
     }
     /// A server player selected a new hotbar slot. The player's state is not
     /// swapped in, and helpers that look them up through `self.lan` may find
@@ -6745,6 +6769,22 @@ impl Game<'_> {
         );
     }
 
+    /// A crop, stem, cactus, sugar cane, bamboo, mushroom or vine on an
+    /// authoritative server grows or spreads at `pos` in `dimension`: the block
+    /// there changes from `from` to `to` (block names, state properties
+    /// included). Set `cancel` to leave it as it is. Covers crop, stem, cactus,
+    /// sugar cane and bamboo growth, grass spreading onto dirt, mushroom and
+    /// vine spread. Server-side. Pending API @API:block_grow@.
+    pub(super) fn native_block_grow(
+        &mut self,
+        dimension: &str,
+        pos: [i32; 3],
+        from: &str,
+        to: &str,
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_block_grow(self, mod_api::mods(), dimension, pos, from, to, cancel);
+    }
     /// A mob (`entity`, its `kind`) is about to change the block at `pos` from
     /// `from` to `to` (an enderman's block, a ravager's, a snow golem's, a
     /// wither's). Set `cancel` to leave the block as it is: nothing changes and
