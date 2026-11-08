@@ -8781,13 +8781,13 @@ impl Game<'_> {
     /// kind in the game's entity lists (items, orbs, mobs, boats, minecarts,
     /// armor stands, primed TNT, falling blocks, projectiles, rockets,
     /// tridents, end crystals, the dragon, cushions, paintings, item frames),
-    /// once each, in the order they were created; check `kind`. A drop, an
-    /// orb, a mob, a `/summon` and a chunk's entities are told at once, any
-    /// other spawn between the tick's phases (it is checked after the blocks,
-    /// the vehicles, the projectiles, the items and the mobs, and at the
-    /// tick's end). A mod that cancels one of the others sees it removed
-    /// before it ticks again. Not told: the entities Horizon keeps without
-    /// simulating (displays, markers, interactions). Server-side.
+    /// and the entities Horizon keeps without simulating (block, item and text
+    /// displays, markers, interactions), once each, in the order they were
+    /// created; check `kind`. A drop, an orb, a mob, a `/summon` and a chunk's
+    /// entities are told at once, any other spawn between the tick's phases
+    /// (it is checked after the blocks, the vehicles, the projectiles, the
+    /// items and the mobs, and at the tick's end). A mod that cancels one of
+    /// the others sees it removed before it ticks again. Server-side.
     pub(super) fn native_entity_join_level(
         &mut self,
         dimension: &str,
