@@ -32,6 +32,13 @@ pub struct NativeEffect {
     pub ambient: bool,
     /// Whether it shows particles.
     pub particles: bool,
+}
+
+/// A `NativeEffect` with its icon flag, as `native_effects_v2` reads it and
+/// `native_set_effects_v2` takes it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeEffectV2 {
+    pub effect: NativeEffect,
     /// Whether its icon shows in the inventory and on the HUD (vanilla's
     /// `showIcon`, `/effect`'s default true).
     pub show_icon: bool,
@@ -59,6 +66,12 @@ fn instance(effect: &NativeEffect) -> Option<EffectInstance> {
     let mut e = EffectInstance::new(def.id, effect.duration, i32::from(effect.amplifier));
     e.ambient = effect.ambient;
     e.visible = effect.particles;
+    Some(e)
+}
+
+/// `instance` with the icon flag of a `NativeEffectV2`.
+fn instance_v2(effect: &NativeEffectV2) -> Option<EffectInstance> {
+    let mut e = instance(&effect.effect)?;
     e.show_icon = effect.show_icon;
     Some(e)
 }
@@ -70,7 +83,6 @@ fn native_effect(e: &EffectInstance) -> NativeEffect {
         duration: e.duration,
         ambient: e.ambient,
         particles: e.visible,
-        show_icon: e.show_icon,
     }
 }
 
@@ -275,6 +287,23 @@ impl Game<'_> {
         Some(list.iter().map(native_effect).collect())
     }
 
+    /// `native_effects` with each effect's icon flag (`NativeEffectV2`).
+    /// None as `native_effects`. API @API:player_effects@.
+    pub(super) fn native_effects_v2(&self, uuid: u128) -> Option<Vec<NativeEffectV2>> {
+        let list = match self.native_place(uuid)? {
+            Place::Acting => &self.potions.effects.list,
+            Place::Guest(i) => &self.lan.as_ref()?.hub.guests[i].effects.list,
+        };
+        Some(
+            list.iter()
+                .map(|e| NativeEffectV2 {
+                    effect: native_effect(e),
+                    show_icon: e.show_icon,
+                })
+                .collect(),
+        )
+    }
+
     /// Gives the player `uuid` `effect` as vanilla's `LivingEntity.addEffect`
     /// (Bukkit's `addPotionEffect`): it takes the place of a weaker or
     /// shorter one of the same kind, which waits under it. Their client gets
@@ -314,6 +343,20 @@ impl Game<'_> {
         let Some(list) = effects.iter().map(instance).collect::<Option<Vec<_>>>() else {
             return false;
         };
+        self.set_effect_list(uuid, list)
+    }
+
+    /// `native_set_effects` with each effect's icon flag (`NativeEffectV2`):
+    /// the same refusals. API @API:player_effects@.
+    pub(super) fn native_set_effects_v2(&mut self, uuid: u128, effects: &[NativeEffectV2]) -> bool {
+        let Some(list) = effects.iter().map(instance_v2).collect::<Option<Vec<_>>>() else {
+            return false;
+        };
+        self.set_effect_list(uuid, list)
+    }
+
+    /// Replaces the player `uuid`'s effects with `list`, as `native_set_effects`.
+    fn set_effect_list(&mut self, uuid: u128, list: Vec<EffectInstance>) -> bool {
         self.native_player_turn(uuid, |game| {
             game.potions.effects.clear();
             game.apply_effect_status();
@@ -473,7 +516,6 @@ mod tests {
             duration,
             ambient: true,
             particles: false,
-            show_icon: false,
         }
     }
 
@@ -482,7 +524,7 @@ mod tests {
         let e = effect("minecraft:speed", 200);
         let game = instance(&e).unwrap();
         assert_eq!(game.id, "speed");
-        assert!(game.ambient && !game.visible && !game.show_icon);
+        assert!(game.ambient && !game.visible);
         assert_eq!(native_effect(&game), e);
         assert!(instance(&effect("speed", -1)).is_some());
     }

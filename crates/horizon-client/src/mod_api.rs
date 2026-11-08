@@ -24,6 +24,7 @@ pub use crate::fog::{FogData, FogType};
 pub use crate::game::NativeAttributeModifier;
 pub use crate::game::NativeChunkSnapshot;
 pub use crate::game::NativeEffect;
+pub use crate::game::NativeEffectV2;
 pub use crate::game::NativeFluidTank;
 pub use crate::game::NativeInventoryError;
 pub use crate::game::NativeInventoryKind;

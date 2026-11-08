@@ -261,7 +261,7 @@ impl Game<'_> {
     /// the server, else their file's. Err while they are logging in, dead,
     /// swapped in (inside a player's hook: call from `native_menu_clicked` or
     /// `native_server_tick`), or when they have never played here.
-    pub(super) fn native_inventory(
+    pub(super) fn native_inventory_typed(
         &self,
         uuid: u128,
         kind: NativeInventoryKind,
@@ -370,7 +370,7 @@ impl Game<'_> {
     /// (`native_inventory`); at most one may be a file, which is written
     /// before the live side changes. Their screens follow with the tick's
     /// sync.
-    pub(super) fn native_move_stack(
+    pub(super) fn native_move_stack_typed(
         &mut self,
         from: (u128, NativeInventoryKind, usize),
         expected: &ItemStack,
@@ -474,7 +474,7 @@ impl Game<'_> {
     /// `native_inventory`; a player on the server is sent their whole
     /// inventory at once. Err as `native_inventory`, or for a wrong number
     /// of slots or a `selected` past the hotbar. @API:set_inventory@.
-    pub(super) fn native_set_inventory(
+    pub(super) fn native_set_inventory_typed(
         &mut self,
         uuid: u128,
         kind: NativeInventoryKind,
@@ -520,7 +520,7 @@ impl Game<'_> {
     /// their file; a player's screen follows with the tick's sync. Err as
     /// `native_inventory`, for no such slot, or when the slot changed.
     /// @API:set_inventory_slot@.
-    pub(super) fn native_set_inventory_slot(
+    pub(super) fn native_set_inventory_slot_typed(
         &mut self,
         uuid: u128,
         kind: NativeInventoryKind,
@@ -544,7 +544,7 @@ impl Game<'_> {
     /// screen follows with the tick's sync. Err as `native_inventory`, for a
     /// slot named twice, or when one changed (nothing is taken then).
     /// @API:set_inventory_slot@.
-    pub(super) fn native_take_stacks(
+    pub(super) fn native_take_stacks_typed(
         &mut self,
         uuid: u128,
         slots: &[(usize, ItemStack)],
@@ -673,6 +673,62 @@ impl Game<'_> {
                 }),
             }),
         )
+    }
+}
+
+/// The helpers the mods of API 132 call, with their `String` errors as they
+/// were; each is its `_typed` helper (the same checks) with the error as text.
+#[allow(dead_code, reason = "native mod API (docs/native-mods.md)")]
+impl Game<'_> {
+    pub(super) fn native_inventory(
+        &self,
+        uuid: u128,
+        kind: NativeInventoryKind,
+    ) -> Result<NativeInventory, String> {
+        self.native_inventory_typed(uuid, kind)
+            .map_err(|e| e.to_string())
+    }
+
+    pub(super) fn native_move_stack(
+        &mut self,
+        from: (u128, NativeInventoryKind, usize),
+        expected: &ItemStack,
+        to: (u128, NativeInventoryKind),
+    ) -> Result<(), String> {
+        self.native_move_stack_typed(from, expected, to)
+            .map_err(|e| e.to_string())
+    }
+
+    pub(super) fn native_set_inventory(
+        &mut self,
+        uuid: u128,
+        kind: NativeInventoryKind,
+        slots: Vec<Option<ItemStack>>,
+        selected: Option<usize>,
+    ) -> Result<(), String> {
+        self.native_set_inventory_typed(uuid, kind, slots, selected)
+            .map_err(|e| e.to_string())
+    }
+
+    pub(super) fn native_set_inventory_slot(
+        &mut self,
+        uuid: u128,
+        kind: NativeInventoryKind,
+        slot: usize,
+        expected: Option<&ItemStack>,
+        new: Option<ItemStack>,
+    ) -> Result<Option<ItemStack>, String> {
+        self.native_set_inventory_slot_typed(uuid, kind, slot, expected, new)
+            .map_err(|e| e.to_string())
+    }
+
+    pub(super) fn native_take_stacks(
+        &mut self,
+        uuid: u128,
+        slots: &[(usize, ItemStack)],
+    ) -> Result<Vec<ItemStack>, String> {
+        self.native_take_stacks_typed(uuid, slots)
+            .map_err(|e| e.to_string())
     }
 }
 
