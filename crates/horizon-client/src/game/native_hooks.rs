@@ -2547,6 +2547,15 @@ impl Game<'_> {
     pub(super) fn native_server_stopping(&mut self, dedicated: bool) {
         mod_api::dispatch_server_stopping(self, mod_api::mods(), dedicated);
     }
+    /// The server has stopped: its players are disconnected and its worlds
+    /// saved and closed (the end of a dedicated server's stop, after
+    /// `native_server_stopping`). Nothing reaches a player now; the last
+    /// place for a mod's own shutdown work that needs no player. Server-side;
+    /// `dedicated` tells a dedicated server from the single player one.
+    /// API @API:server_stopped@.
+    pub(super) fn native_server_stopped(&mut self, dedicated: bool) {
+        mod_api::dispatch_server_stopped(self, mod_api::mods(), dedicated);
+    }
     /// The config files native mods keep (NeoForge's `registerConfig`):
     /// push yours, each of a kind, with the text written to `config/` when
     /// the file is missing. Asked by the window when the game starts (its

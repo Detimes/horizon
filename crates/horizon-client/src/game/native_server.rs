@@ -15,6 +15,7 @@ use horizon_client::{
     items::ItemStack,
     lan::data::component_nbt,
     mod_api::{NativeCommandInfo, NativeCommandResult},
+    server::user_lists::{NameAndId, WhiteEntry},
     text::Text,
 };
 use horizon_protocol::packets::play::{self, Clientbound as C};
@@ -627,13 +628,105 @@ impl Game<'_> {
         } else {
             log::info!("{plain}");
         }
+        self.send_system_line(&line);
+    }
+    /// A system line in every player's chat, as `native_broadcast` sends it
+    /// but neither in the server's log nor past the mods' `broadcast_message`
+    /// hook (a mod's own line, which it logs itself). API @API:join_leave_helpers@.
+    pub(super) fn native_broadcast_quiet(&self, line: Text) {
+        self.send_system_line(&line);
+    }
+    /// Writes a line to the server's log at `level` (`INFO`, `WARN` or
+    /// `ERROR`), in the console's format on a dedicated server. API @API:server_log@.
+    pub(super) fn native_log(&self, level: &str, line: &str) {
+        if self.options.dedicated.is_some() {
+            super::dedicated::log(level, line);
+        } else {
+            match level {
+                "WARN" => log::warn!("{line}"),
+                "ERROR" => log::error!("{line}"),
+                _ => log::info!("{line}"),
+            }
+        }
+    }
+    fn send_system_line(&self, line: &Text) {
         let Some(host) = &self.lan else {
             return;
         };
-        let packet = system_chat(&line);
+        let packet = system_chat(line);
         for g in host.hub.guests.iter().filter(|g| g.placed) {
             host.hub.send_to(g.conn, &packet);
         }
+    }
+    /// The open world's folder name, which is the level name the server
+    /// opened (`level-name` in server.properties on a dedicated server).
+    /// None when no world is open. API @API:level_name@.
+    pub(super) fn native_level_name(&self) -> Option<String> {
+        self.world_root.file_name()?.to_str().map(str::to_owned)
+    }
+    /// The dimension a world folder holds: `world` is `minecraft:overworld`,
+    /// `world_nether` `minecraft:the_nether`, `world_the_end` `minecraft:the_end`
+    /// (the folder names Bukkit's default worlds use). None for any other
+    /// name. API @API:level_name@.
+    pub(super) fn native_dimension_of_world(&self, world: &str) -> Option<String> {
+        dimension_of_world(world).map(str::to_owned)
+    }
+    /// The world folder name that holds `dimension` (the reverse of
+    /// `native_dimension_of_world`); None for any other dimension id. API @API:level_name@.
+    pub(super) fn native_world_of_dimension(&self, dimension: &str) -> Option<String> {
+        world_of_dimension(dimension).map(str::to_owned)
+    }
+    /// The server's motd from server.properties, as the list ping shows it;
+    /// empty when no server runs. API @API:join_leave_helpers@.
+    pub(super) fn native_motd(&self) -> String {
+        self.lan
+            .as_ref()
+            .map(|lan| lan.hub.lan.shared.motd())
+            .unwrap_or_default()
+    }
+    /// Whether a player has played on the open world before: their player
+    /// data file is there (`players/data/<uuid>.dat`). False when no world
+    /// is open. API @API:join_leave_helpers@.
+    pub(super) fn native_has_played_before(&self, uuid: u128) -> bool {
+        !self.world_root.as_os_str().is_empty()
+            && horizon_client::lan::playerdata::path(&self.world_root, uuid).is_file()
+    }
+    /// Adds a player to the dedicated server's whitelist (`whitelist add`
+    /// in the console, the file saved as it does). True when they were not
+    /// on it; false when no dedicated server runs or they already are.
+    /// API @API:whitelist_edit@.
+    pub(super) fn native_whitelist_add(&self, uuid: u128, name: &str) -> bool {
+        let Some(lists) = &self.server_lists else {
+            return false;
+        };
+        let user = NameAndId {
+            id: uuid,
+            name: name.to_owned(),
+        };
+        let mut l = lists.lock().unwrap();
+        if l.white.contains(&user) {
+            return false;
+        }
+        l.white.add(WhiteEntry { user });
+        true
+    }
+    /// Removes a player from the dedicated server's whitelist (`whitelist
+    /// remove`); with the whitelist on, the players no longer on it are
+    /// disconnected. True when they were on it; false when no dedicated
+    /// server runs or they were not. API @API:whitelist_edit@.
+    pub(super) fn native_whitelist_remove(&mut self, uuid: u128, name: &str) -> bool {
+        let Some(lists) = self.server_lists.clone() else {
+            return false;
+        };
+        let user = NameAndId {
+            id: uuid,
+            name: name.to_owned(),
+        };
+        let removed = lists.lock().unwrap().white.remove(&user);
+        if removed {
+            self.kick_unlisted_players(&lists);
+        }
+        removed
     }
     /// Posts a line to the dedicated server's event stream (`GET /api/v1/events`)
     /// as an `announce` event, which horizon-server's Discord bridge relays when
@@ -1313,6 +1406,27 @@ impl Game<'_> {
     }
 }
 
+/// The default worlds' folder names and the dimension each holds.
+const DEFAULT_WORLDS: [(&str, &str); 3] = [
+    ("world", "minecraft:overworld"),
+    ("world_nether", "minecraft:the_nether"),
+    ("world_the_end", "minecraft:the_end"),
+];
+
+fn dimension_of_world(world: &str) -> Option<&'static str> {
+    DEFAULT_WORLDS
+        .iter()
+        .find(|(name, _)| *name == world)
+        .map(|(_, dimension)| *dimension)
+}
+
+fn world_of_dimension(dimension: &str) -> Option<&'static str> {
+    DEFAULT_WORLDS
+        .iter()
+        .find(|(_, id)| *id == dimension)
+        .map(|(name, _)| *name)
+}
+
 fn system_chat(line: &Text) -> C {
     C::SystemChat(play::SystemChat {
         content: component_nbt(&line.component()),
@@ -1846,5 +1960,14 @@ mod tests {
         let (ran, lines) = run("time query time", true);
         assert!(ran && lines.is_empty(), "{lines:?}");
         assert!(game.console_broadcast.is_none());
+    }
+
+    #[test]
+    fn default_worlds_map_both_ways() {
+        assert_eq!(dimension_of_world("world_nether"), Some("minecraft:the_nether"));
+        assert_eq!(world_of_dimension("minecraft:the_end"), Some("world_the_end"));
+        assert_eq!(dimension_of_world("frontier"), None);
+        assert_eq!(world_of_dimension("minecraft:overworld"), Some("world"));
+        assert_eq!(world_of_dimension("world"), None);
     }
 }
