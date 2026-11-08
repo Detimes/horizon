@@ -30,10 +30,12 @@ impl Game<'_> {
             .is_some_and(|host| host.hub.set_guest_view_limit(uuid, distance))
     }
 
-    /// Mark the player `uuid` as a fake player (a mod's bot), or not: it then keeps only a small
-    /// area loaded (its own view distance plus one) and ticking (3x3 chunks, like a forced chunk)
-    /// and does not count for natural mob spawning. False off a server and for a player not
-    /// online. local perf patch for fake players, candidate upstream PR.
+    /// Mark the player `uuid` as a fake player (a mod's bot with no client), or not: it then keeps
+    /// only a small area loaded and ticking around it (its view distance plus one, at most the
+    /// server's plus one), its packets are cut to the few a bot needs, and it does not count for
+    /// natural mob spawning. The mark lasts until the player leaves. False off a server, for a
+    /// player not online, and inside a guest's packet hook, where the hub is taken out (call it
+    /// from a tick hook). API @API:set_player_fake@.
     pub(super) fn native_set_player_fake(&mut self, uuid: u128, fake: bool) -> bool {
         if !self.native_authoritative() {
             return false;
