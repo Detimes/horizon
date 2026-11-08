@@ -522,7 +522,7 @@ impl Game<'_> {
                 Dim::Nether => "level_the_nether",
                 Dim::End => "level_the_end",
             });
-            if let Err(e) = self.enter_level(None, dim) {
+            if let Err(e) = horizon_client::spans::time("lv_enter_level", || self.enter_level(None, dim)) {
                 result = Err(e);
                 break;
             }
@@ -533,10 +533,10 @@ impl Game<'_> {
                 packets_drained: false,
             };
             if observe_level {
-                self.native_level_tick_pre(dim.id());
+                horizon_client::spans::time("lv_tick_pre", || self.native_level_tick_pre(dim.id()));
             }
-            self.update_dedicated_streaming();
-            self.update_world();
+            horizon_client::spans::time("lv_update_ded_streaming", || self.update_dedicated_streaming());
+            horizon_client::spans::time("lv_update_world", || self.update_world());
             result = horizon_client::block_contact::in_level(
                 (self.serving.is_some() || self.options.dedicated.is_some()).then_some(dim.id()),
                 || {
@@ -544,12 +544,12 @@ impl Game<'_> {
                         self.tick_lan(true);
                         Ok(())
                     } else if k == 0 {
-                        self.tick()
+                        horizon_client::spans::time("lv_tick", || self.tick())
                     } else {
                         let running = running.unwrap_or_else(|| self.clock.world_runs());
                         // ClientLevel.tick: the sky flash fades in a frozen level too.
                         self.tick_weather_effects();
-                        self.tick_world(running)
+                        horizon_client::spans::time("lv_tick_world", || self.tick_world(running))
                     }
                 },
             );
@@ -557,9 +557,9 @@ impl Game<'_> {
                 break;
             }
             if observe_level {
-                self.native_level_tick_post(dim.id());
+                horizon_client::spans::time("lv_tick_post", || self.native_level_tick_post(dim.id()));
             }
-            self.publish_server_debug(dim);
+            horizon_client::spans::time("lv_publish_debug", || self.publish_server_debug(dim));
             // An entity that crossed into a level that already ticked this
             // server tick is in it when the tick ends (`addDuringTeleport`).
             if running == Some(true) {

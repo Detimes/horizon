@@ -336,17 +336,31 @@ fn guest_open_windows(host: &LanHost, conn: u32) -> Vec<i32> {
 
 /// The hub's current bodies, across dimensions. A borrowed ancestor's
 /// live body takes precedence over this saved state until its turn returns.
-fn building_players(host: &LanHost) -> Vec<BuildingPlayer> {
-    host.hub
-        .guests
-        .iter()
-        .map(|g| BuildingPlayer {
-            conn: Some(g.conn),
-            dimension: Dim::from_id(&g.dimension),
-            bounds: (g.placed && g.loaded && !g.dead && !g.spectator()).then(|| g.bounds()),
-            borrowed: false,
-        })
-        .collect()
+fn building_player(g: &horizon_client::lan::guest::Guest) -> BuildingPlayer {
+    BuildingPlayer {
+        conn: Some(g.conn),
+        dimension: Dim::from_id(&g.dimension),
+        bounds: (g.placed && g.loaded && !g.dead && !g.spectator()).then(|| g.bounds()),
+        borrowed: false,
+    }
+}
+/// How many `as_guest` turns ran since the last report (a profiling counter).
+pub(super) static AS_GUEST_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+thread_local! {
+    /// The players' boxes for the turns of one `tick_guests`: building the list afresh for each of
+    /// the guests' turns costs players x turns per tick. A guest's own box in it is as of the start
+    /// of the tick, which is what the other turns of the tick see of it.
+    static BUILDING_CACHE: std::cell::RefCell<Option<std::rc::Rc<Vec<BuildingPlayer>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+fn building_players(host: &LanHost) -> std::rc::Rc<Vec<BuildingPlayer>> {
+    let kept = BUILDING_CACHE.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|list| list.len() == host.hub.guests.len())
+            .cloned()
+    });
+    kept.unwrap_or_else(|| std::rc::Rc::new(host.hub.guests.iter().map(building_player).collect()))
 }
 
 impl Game<'_> {
@@ -367,6 +381,7 @@ impl Game<'_> {
         conn: u32,
         f: impl FnOnce(&mut Self, &LanHost) -> R,
     ) -> Option<R> {
+        AS_GUEST_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let swap = self.enter_guest(host, conn, self.dim)?;
         super::dedicated::crash_fixture("guest", || {
             host.hub.guests.iter().any(|g| g.conn == conn && g.placed)
@@ -4122,6 +4137,13 @@ impl Game<'_> {
 
     /// Per tick, for every guest: dig, use items, pick up drops, die.
     pub(super) fn tick_guests(&mut self, host: &mut LanHost) {
+        BUILDING_CACHE.with(|c| {
+            *c.borrow_mut() = Some(std::rc::Rc::new(host.hub.guests.iter().map(building_player).collect()));
+        });
+        self.tick_guests_inner(host);
+        BUILDING_CACHE.with(|c| *c.borrow_mut() = None);
+    }
+    fn tick_guests_inner(&mut self, host: &mut LanHost) {
         self.tick_guest_cameras(host);
         self.lan_merchant_tick(host);
         self.lan_stations_tick(host);

@@ -2579,8 +2579,8 @@ impl Game<'_> {
         };
         // What the tick sends a guest goes to its connection at the end.
         let holding = lan::Holding::start();
-        self.register_native_commands(&mut host);
-        self.resend_native_trees(&mut host);
+        horizon_client::spans::time("tl_register_native_commands", || self.register_native_commands(&mut host));
+        horizon_client::spans::time("tl_resend_native_trees", || self.resend_native_trees(&mut host));
         // The host's own commands' (and command blocks') players moving
         // to another level, and their broadcastToAdmins lines.
         if !self.level_teleports.is_empty() {
@@ -2600,7 +2600,7 @@ impl Game<'_> {
             }
         }
         // A guest whose file names the vehicle it rode rides it again.
-        self.restore_guest_vehicles(&mut host);
+        horizon_client::spans::time("tl_restore_guest_vehicles", || self.restore_guest_vehicles(&mut host));
         // Finish the players' mining, item use and pickups before describing
         // this tick to their clients. Otherwise a newly broken block and its
         // drops remain absent from the snapshot until the following tick.
@@ -2608,7 +2608,7 @@ impl Game<'_> {
             horizon_client::spans::time("lan_guests", || self.tick_guests(&mut host));
             // The vehicles the guests just moved enter their portals now.
             let ridden: Vec<u32> = host.hub.guests.iter().filter_map(|g| g.vehicle).collect();
-            self.find_ridden_vehicle_portals(&ridden);
+            horizon_client::spans::time("tl_ridden_portals", || self.find_ridden_vehicle_portals(&ridden));
         }
         // A guest's mount fired its `started_riding` with that guest alone in
         // place (the hub held by its action): now every player on the vehicle
@@ -2622,8 +2622,8 @@ impl Game<'_> {
             let has_guests = !host.hub.guests.is_empty();
             let mut states = std::mem::take(&mut host.states);
             if has_guests {
-                self.lan_assign_ids();
-                self.lan_riding(&host.hub.guests, &mut host.hub.riding);
+                horizon_client::spans::time("tl_assign_ids", || self.lan_assign_ids());
+                horizon_client::spans::time("tl_lan_riding", || self.lan_riding(&host.hub.guests, &mut host.hub.riding));
                 // Idle states are kept only when the players' moves are in:
                 // the clients that could pair are known. The range scale is
                 // the one the tracker gets below.
@@ -2633,7 +2633,7 @@ impl Game<'_> {
                     } else {
                         host.hub.entity_range_percent
                     };
-                    host.idle_states.pass(&host.hub, percent)
+                    horizon_client::spans::time("tl_idle_states", || host.idle_states.pass(&host.hub, percent))
                 } else {
                     None
                 };
@@ -2688,7 +2688,7 @@ impl Game<'_> {
                 host.hub.block_event(pos, b0, b1, state);
             }
             let entities = states.as_slice();
-            self.lan_prepare_captured_sounds(&mut host, entities);
+            horizon_client::spans::time("tl_captured_sounds", || self.lan_prepare_captured_sounds(&mut host, entities));
             // An entity that left the level since the last tick (a snowball
             // that hit) is dropped by the tracker below: its event goes out
             // first, as `Level.broadcastEntityEvent` precedes the discard.
@@ -2699,7 +2699,7 @@ impl Game<'_> {
             for (id, event, at) in gone {
                 host.hub.entity_event(id, event, at);
             }
-            host.hub.far_level(&self.save);
+            horizon_client::spans::time("tl_far_level", || host.hub.far_level(&self.save));
             let spawn = self.spawn.map_or([0.5, 80.0, 0.5], |s| [s.x, s.y, s.z]);
             let events = {
                 let clock_rate = self.network_clock_rate();
@@ -2742,12 +2742,12 @@ impl Game<'_> {
                 host.hub.mods_loaded = !horizon_client::mod_api::mods().is_empty();
                 let pass = self.level_pass;
                 let mut events = if pass.first && !pass.packets_drained {
-                    host.hub.poll(&mut ctx)
+                    horizon_client::spans::time("tl_poll", || host.hub.poll(&mut ctx))
                 } else {
                     Vec::new()
                 };
                 if !pass.packets_drained {
-                    events.extend(host.hub.drain_packets(&mut ctx));
+                    events.extend(horizon_client::spans::time("tl_drain_packets", || host.hub.drain_packets(&mut ctx)));
                 }
                 events.extend(horizon_client::spans::time("lan_tick_level", || {
                     host.hub.tick_level(&mut ctx)
@@ -2757,7 +2757,7 @@ impl Game<'_> {
                 }
                 events
             };
-            self.wake_woken_guests(&mut host);
+            horizon_client::spans::time("tl_wake_woken_guests", || self.wake_woken_guests(&mut host));
             let processed = horizon_client::spans::time("lan_process_events", || {
                 self.lan_process_events(host, events, entities, spawn)
             });
@@ -2799,41 +2799,42 @@ impl Game<'_> {
                 .take()
                 .expect("the hub is back after the menu events");
         }
-        host = self.lan_flush_tracking(host);
+        host = horizon_client::spans::time("tl_lan_flush_tracking", || self.lan_flush_tracking(host));
         self.lan = Some(host);
         // A blast from a guest's attack, and a mace's wind burst.
-        self.flush_lan_explosions();
-        let _ = self.flush_wind_bursts();
+        horizon_client::spans::time("tl_flush_lan_explosions", || self.flush_lan_explosions());
+        let _ = horizon_client::spans::time("tl_flush_wind_bursts", || self.flush_wind_bursts());
         // A sweep attack's reach to the other players from a guest's attack.
-        self.flush_sweeps();
+        horizon_client::spans::time("tl_flush_sweeps", || self.flush_sweeps());
         // A reeled-in hook pulling a player.
-        self.flush_hook_pulls();
+        horizon_client::spans::time("tl_flush_hook_pulls", || self.flush_hook_pulls());
         // Particles a guest's turn sent (sweep attack, damage indicator, a hook's splashes).
-        self.flush_lan_particles();
+        horizon_client::spans::time("tl_flush_lan_particles", || self.flush_lan_particles());
         let mut host = self
             .lan
             .take()
             .expect("the hub is back after the guest flushes");
-        host = self.lan_flush_tracking(host);
-        self.lan_flush_effects(&mut host);
-        self.lan_living_flags(&mut host);
-        self.lan_stuck(&mut host, paused);
-        self.tick_server_travel(&mut host);
-        self.lan_swings(&mut host);
-        self.lan_update_streaming(&host);
-        self.lan_guest_poses(&mut host);
-        self.lan_update_waypoints(&mut host);
-        self.lan_sync_scoreboard(&mut host);
-        self.lan_sync_border(&mut host);
-        host.hub.anticheat_ping();
-        drop(holding);
-        self.flush_attachment_sync(&mut host);
-        self.flush_native_net(&mut host);
-        self.flush_native_player_fx(&mut host);
-        self.flush_far_terrain(&mut host);
-        lan::flush_all(host.hub.guests.iter().map(|g| &g.sender));
+        host = horizon_client::spans::time("tl_lan_flush_tracking", || self.lan_flush_tracking(host));
+        horizon_client::spans::time("tl_lan_flush_effects", || self.lan_flush_effects(&mut host));
+        horizon_client::spans::time("tl_lan_living_flags", || self.lan_living_flags(&mut host));
+        horizon_client::spans::time("tl_lan_stuck", || self.lan_stuck(&mut host, paused));
+        horizon_client::spans::time("tl_tick_server_travel", || self.tick_server_travel(&mut host));
+        horizon_client::spans::time("tl_lan_swings", || self.lan_swings(&mut host));
+        horizon_client::spans::time("tl_lan_update_streaming", || self.lan_update_streaming(&host));
+        horizon_client::spans::time("tl_lan_guest_poses", || self.lan_guest_poses(&mut host));
+        horizon_client::spans::time("tl_lan_update_waypoints", || self.lan_update_waypoints(&mut host));
+        horizon_client::spans::time("tl_lan_sync_scoreboard", || self.lan_sync_scoreboard(&mut host));
+        horizon_client::spans::time("tl_lan_sync_border", || self.lan_sync_border(&mut host));
+        horizon_client::spans::time("tl_anticheat_ping", || host.hub.anticheat_ping());
+        horizon_client::spans::time("tl_holding_drop", || drop(holding));
+        horizon_client::spans::time("tl_flush_attachment_sync", || self.flush_attachment_sync(&mut host));
+        horizon_client::spans::time("tl_flush_native_net", || self.flush_native_net(&mut host));
+        horizon_client::spans::time("tl_flush_native_player_fx", || self.flush_native_player_fx(&mut host));
+        horizon_client::spans::time("tl_flush_far_terrain", || self.flush_far_terrain(&mut host));
+        horizon_client::spans::time("tl_flush_all", || lan::flush_all(host.hub.guests.iter().map(|g| &g.sender)));
         self.lan = Some(host);
-        self.flush_native_sounds();
+        horizon_client::spans::time("tl_flush_native_sounds", || self.flush_native_sounds());
+        horizon_client::spans::counters(&[("as_guest_calls", super::lan_actions::AS_GUEST_CALLS.swap(0, std::sync::atomic::Ordering::Relaxed))]);
         // `tick_server` resets the pass after all dimensions; outside a pass
         // the packet gate is per-tick.
         if self.level_pass.running.is_none() {

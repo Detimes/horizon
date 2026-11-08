@@ -808,7 +808,7 @@ impl Hub {
         }
         let body = packet.encode();
         for g in self.guests.iter().filter(|g| g.placed) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     /// [`Self::broadcast`] to the held players as well, which keep a picture of
@@ -816,7 +816,7 @@ impl Hub {
     pub fn broadcast_watching(&self, packet: &C) {
         let body = packet.encode();
         for g in self.guests.iter().filter(|g| g.placed || g.held) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     /// MinecraftServer.onGameRuleChanged: every player is told when
@@ -969,6 +969,7 @@ impl Hub {
             return false;
         };
         g.fake = fake;
+        g.sender.set_fake(fake);
         true
     }
     /// `PlayerList.broadcastAll(packet, dimension)`: the players in the
@@ -976,7 +977,7 @@ impl Hub {
     pub fn broadcast_level(&self, packet: &C) {
         let body = packet.encode();
         for g in self.guests.iter().filter(|g| self.watches(g)) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     /// `DedicatedServer.sendLowDiskSpaceWarning`: the players with
@@ -984,13 +985,13 @@ impl Hub {
     pub fn send_low_disk_space_warning(&self) {
         let body = C::LowDiskSpaceWarning(horizon_protocol::packets::Empty).encode();
         for g in self.guests.iter().filter(|g| g.placed && g.permission >= 3) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     pub fn broadcast_except(&self, conn: u32, packet: &C) {
         let body = packet.encode();
         for g in self.guests.iter().filter(|g| g.placed && g.conn != conn) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     /// PlayerList.broadcastSystemMessage.
@@ -1009,7 +1010,7 @@ impl Hub {
         })
         .encode();
         for g in self.guests.iter().filter(|g| g.placed && hears(&g.name)) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     /// `ServerPlayer.sendSystemMessage` to the guest with `uuid`, in any
@@ -1021,7 +1022,7 @@ impl Hub {
         })
         .encode();
         for g in self.guests.iter().filter(|g| g.placed && g.uuid == uuid) {
-            g.sender.send(body.clone());
+            g.sender.send_shared(&body);
         }
     }
     /// `ServerPlayer.sendOverlayMessage` to every guest (the action bar).
@@ -3007,7 +3008,7 @@ impl Hub {
             };
             let body = self.encoder.light_update(chunk, sections);
             for &i in &viewers {
-                self.guests[i].sender.send(body.clone());
+                self.guests[i].sender.send_shared(&body);
             }
         }
     }
@@ -3058,7 +3059,7 @@ impl Hub {
                 }
                 let body = self.encoder.body_in(chunk, world);
                 for &i in &viewers {
-                    self.guests[i].sender.send(body.clone());
+                    self.guests[i].sender.send_shared(&body);
                 }
                 if recording {
                     // The prediction's replay excuses a client near the column: any of its blocks may have
@@ -3144,7 +3145,7 @@ impl Hub {
             };
             let body = packet.encode();
             for &i in &viewers {
-                self.guests[i].sender.send(body.clone());
+                self.guests[i].sender.send_shared(&body);
             }
             if recording {
                 for &i in &viewers {
@@ -3186,7 +3187,7 @@ impl Hub {
                 })
                 .encode();
                 for &i in &viewers {
-                    self.guests[i].sender.send(body.clone());
+                    self.guests[i].sender.send_shared(&body);
                 }
             }
         }
@@ -3490,7 +3491,9 @@ impl Hub {
         let dimension = &self.config.dimension;
         // The viewers include the held players: they are shown the entities
         // around them, but are not among the entities shown (`track_entities`).
-        let here = |g: &Guest| (g.placed || g.held) && g.dimension == *dimension;
+        // A fake player (a bot with no client) is not shown anything: it is tracked by the others
+        // but tracks none itself. local perf patch for fake players, candidate upstream PR.
+        let here = |g: &Guest| (g.placed || g.held) && g.dimension == *dimension && !g.fake;
         outs.resize_with(self.guests.iter().filter(|g| here(g)).count(), Vec::new);
         // The prediction's replay excuses a client that may still have an entity that left it.
         let recording = self.recording();

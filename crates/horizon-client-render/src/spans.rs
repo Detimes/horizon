@@ -25,7 +25,7 @@ thread_local! {
 /// The most spans a thread holds before they are taken ([`take_raw`]): a worker thread
 /// that records spans (`lod_reduce`, `lt_*`) while they are on for every thread is never
 /// taken from, so it drops what it held instead of growing for as long as they stay on.
-const UNTAKEN_MAX: usize = 1 << 14;
+const UNTAKEN_MAX: usize = 1 << 18;
 
 /// The shortest step a [`note`] keeps, in milliseconds.
 pub const NOTE_MS: f32 = 10.0;

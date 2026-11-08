@@ -620,6 +620,9 @@ impl Guest {
         })
     }
     pub fn send(&self, packet: &play::Clientbound) {
+        if self.fake && !super::conn::fake_wants_id(packet.id()) {
+            return;
+        }
         if self.anticheat.record.is_some() {
             self.note_change(packet);
         }

@@ -588,6 +588,10 @@ pub struct NativeServerPlayer {
     /// The level a player needs to see this one, when a server mod hid them
     /// (`native_hide_player`).
     pub hidden: Option<u8>,
+    /// A fake player: a mod's bot with no client (`native_set_player_fake`). A mod need not
+    /// build anything for it that only a client could show. local perf patch for fake players,
+    /// candidate upstream PR.
+    pub fake: bool,
 }
 
 /// What a player's client told the server about itself, and what the server sent it
@@ -1149,6 +1153,7 @@ mod tests {
                 selected_slot: 0,
                 nickname: None,
                 hidden: None,
+                fake: false,
             })
         }
         fn action_bar(&mut self, _uuid: u128, line: Text) -> bool {
