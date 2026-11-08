@@ -9,6 +9,7 @@ use super::{Game, commands::Target};
 use horizon_client::{brewing, effects::EffectInstance, entities::Experience, lan::playerdata};
 use horizon_world::{
     attribute_map::ValueKind,
+    attributes::Operation,
     nbt::{JavaString, Tag},
 };
 
@@ -31,6 +32,21 @@ pub struct NativeEffect {
     pub ambient: bool,
     /// Whether it shows particles.
     pub particles: bool,
+    /// Whether its icon shows in the inventory and on the HUD (vanilla's
+    /// `showIcon`, `/effect`'s default true).
+    pub show_icon: bool,
+}
+
+/// A transient attribute modifier on a player, as `native_attribute_modifiers`
+/// lists it: the attribute's name (`minecraft:movement_speed`), the modifier's
+/// id, its amount and its operation (0 add, 1 add multiplied base, 2 add
+/// multiplied total, as the protocol numbers them).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeAttributeModifier {
+    pub attribute: String,
+    pub id: String,
+    pub amount: f64,
+    pub operation: u8,
 }
 
 /// The game's effect for `effect`: None for an unknown id or a duration
@@ -43,6 +59,7 @@ fn instance(effect: &NativeEffect) -> Option<EffectInstance> {
     let mut e = EffectInstance::new(def.id, effect.duration, i32::from(effect.amplifier));
     e.ambient = effect.ambient;
     e.visible = effect.particles;
+    e.show_icon = effect.show_icon;
     Some(e)
 }
 
@@ -53,6 +70,7 @@ fn native_effect(e: &EffectInstance) -> NativeEffect {
         duration: e.duration,
         ambient: e.ambient,
         particles: e.visible,
+        show_icon: e.show_icon,
     }
 }
 
@@ -324,6 +342,42 @@ impl Game<'_> {
         Some((base.ok()?, value.ok()?))
     }
 
+    /// The transient attribute modifiers of the player `uuid`: every modifier
+    /// on any of their attributes that is not permanent (what
+    /// `native_set_attributes` loads is permanent; these are the ones given
+    /// for a time, as `/attribute ... modifier add` without `permanent`). None
+    /// for a player not reached or between bodies, as `native_attribute`.
+    /// API @API:player_attributes@.
+    pub(super) fn native_attribute_modifiers(
+        &mut self,
+        uuid: u128,
+    ) -> Option<Vec<NativeAttributeModifier>> {
+        let motion = match self.native_place(uuid)? {
+            Place::Acting => self.player.as_mut()?,
+            Place::Guest(i) => self.lan.as_mut()?.hub.guests[i].motion.as_deref_mut()?,
+        };
+        let mut out = Vec::new();
+        for (_, key, instance) in motion.attributes.instances() {
+            let permanent = instance.permanent_modifiers();
+            for m in instance.modifiers() {
+                if permanent.iter().any(|p| p.same_identity(m)) {
+                    continue;
+                }
+                out.push(NativeAttributeModifier {
+                    attribute: key.name().to_owned(),
+                    id: m.id().to_owned(),
+                    amount: m.amount(),
+                    operation: match m.operation() {
+                        Operation::AddValue => 0,
+                        Operation::AddMultipliedBase => 1,
+                        Operation::AddMultipliedTotal => 2,
+                    },
+                });
+            }
+        }
+        Some(out)
+    }
+
     /// Sets the base value of the player `uuid`'s attribute `attribute`, as
     /// `/attribute <player> <attribute> base set` (Bukkit's
     /// `AttributeInstance.setBaseValue`); a lower `max_health` caps their
@@ -419,6 +473,7 @@ mod tests {
             duration,
             ambient: true,
             particles: false,
+            show_icon: false,
         }
     }
 
@@ -427,7 +482,7 @@ mod tests {
         let e = effect("minecraft:speed", 200);
         let game = instance(&e).unwrap();
         assert_eq!(game.id, "speed");
-        assert!(game.ambient && !game.visible);
+        assert!(game.ambient && !game.visible && !game.show_icon);
         assert_eq!(native_effect(&game), e);
         assert!(instance(&effect("speed", -1)).is_some());
     }
