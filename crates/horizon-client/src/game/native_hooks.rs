@@ -7178,6 +7178,15 @@ impl Game<'_> {
             result,
         );
     }
+    /// The permission groups a player belongs to (LuckPerms' groups, the ranks a permissions
+    /// mod keeps), as the mods name them: each mod adds names to `groups` in turn, sharing the
+    /// list, and nothing is named for a player with no groups. Asked through `&self`, like
+    /// `native_permission_check`; a provider reads what it knows and changes nothing. The first
+    /// name is the player's primary group (`native_primary_group`). Server-side.
+    /// API @API:permission_groups@.
+    pub(super) fn native_permission_groups(&self, player: u128, groups: &mut Vec<String>) {
+        mod_api::dispatch_permission_groups(self, mod_api::mods(), player, groups);
+    }
     /// `native_player_commands_sent` with what the player's level leaves
     /// out: heard right after v1, at the same times, with `names` as v1 left
     /// it. `names_hidden` are the root commands an operator of level 4 would
