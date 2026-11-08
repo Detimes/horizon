@@ -189,6 +189,23 @@ impl Game<'_> {
         })
         .flatten()
     }
+    /// Strikes lightning at `pos` in the loaded level `dimension`, as `/summon
+    /// lightning_bolt` does; with `visual_only` only the bolt is shown, with no
+    /// fire, damage or sound-of-strike event (`EntityType.LIGHTNING_BOLT`'s
+    /// `visualOnly`). False for a non-finite position and a level not loaded or
+    /// a client. API @API:living_helpers@.
+    pub(super) fn native_lightning_bolt(
+        &mut self,
+        dimension: &str,
+        pos: [f64; 3],
+        visual_only: bool,
+    ) -> bool {
+        if !pos.into_iter().all(f64::is_finite) {
+            return false;
+        }
+        self.npc_in_level(dimension, |g| g.spawn_bolt(pos, visual_only))
+            .is_some()
+    }
     /// Walks mob `mob` towards where entity `target` (a mob, a player or any
     /// other entity of the same level) stands now, as
     /// `PathNavigation.moveTo(entity, speed)` does (done within a block). A

@@ -592,6 +592,14 @@ pub struct NativeServerPlayer {
     /// build anything for it that only a client could show. local perf patch for fake players,
     /// candidate upstream PR.
     pub fake: bool,
+    /// Whether the player is using an item (`LivingEntity.isUsingItem`), and blocking with a
+    /// shield (using one). API @API:server_player_state@.
+    pub using_item: bool,
+    pub blocking: bool,
+    /// Sprinting (`Player.isSprinting`) and gliding with an elytra (`isFallFlying`).
+    /// API @API:server_player_state@.
+    pub sprinting: bool,
+    pub gliding: bool,
 }
 
 /// What a player's client told the server about itself, and what the server sent it
@@ -1154,6 +1162,10 @@ mod tests {
                 nickname: None,
                 hidden: None,
                 fake: false,
+                using_item: false,
+                blocking: false,
+                sprinting: false,
+                gliding: false,
             })
         }
         fn action_bar(&mut self, _uuid: u128, line: Text) -> bool {
