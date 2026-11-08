@@ -38,6 +38,17 @@ pub struct NativeBlockEdit {
 }
 
 impl Game<'_> {
+    /// A block state written at `data_version`, upgraded as the datafixers do it
+    /// (`horizon_world::datafix::native_upgrade_block_state`). API @API:upgrade_block_state@.
+    pub(super) fn native_upgrade_block_state(
+        &self,
+        name: &str,
+        props: &[(String, String)],
+        data_version: i32,
+    ) -> (String, Vec<(String, String)>) {
+        horizon_world::datafix::native_upgrade_block_state(name, props, data_version)
+    }
+
     /// For a server mod: the runs made at once, straight into the chunks of the authoritative level `dimension`
     /// (the one being ticked, as for `native_set_block`), with what `fill ... strict` does for block entities (a
     /// block replaced by another loses its block entity, and a new block gets the one `native_set_block` would
