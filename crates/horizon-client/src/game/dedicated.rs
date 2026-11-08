@@ -1146,7 +1146,12 @@ impl Game<'_> {
                 .raw
                 .get(horizon_client::lan::ACCEPT_OLDER_CLIENTS)
                 .is_some_and(|v| v.trim().eq_ignore_ascii_case("true")),
-            older_clients_play: false,
+            // Local test-server switch (not upstream): let older clients past the configuration
+            // gate although their play translation is unfinished (#10404).
+            older_clients_play: props
+                .raw
+                .get("horizon-older-clients-play")
+                .is_some_and(|v| v.trim().eq_ignore_ascii_case("true")),
             lod_distance: horizon_client::lod_net::distance_property(
                 props.raw.get(horizon_client::lod_net::PROPERTY),
             ),

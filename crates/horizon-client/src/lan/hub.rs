@@ -948,9 +948,28 @@ impl Hub {
     pub fn loading_chunks(&self, loads: impl Fn(&Guest) -> bool) -> Vec<(i32, i32)> {
         self.guests
             .iter()
-            .filter(|g| self.watches(g) && loads(g))
+            .filter(|g| self.watches(g) && loads(g) && !g.fake)
             .map(Guest::chunk)
             .collect()
+    }
+    /// The areas fake players keep loaded: the chunk under each and its radius, their own view
+    /// distance plus one (what they track), under the server's. local perf patch for fake players, candidate upstream PR.
+    pub fn fake_loading_areas(&self, loads: impl Fn(&Guest) -> bool) -> Vec<((i32, i32), i32)> {
+        let server = self.config.view_distance + 1;
+        self.guests
+            .iter()
+            .filter(|g| self.watches(g) && loads(g) && g.fake)
+            .map(|g| (g.chunk(), (g.view_distance + 1).min(server)))
+            .collect()
+    }
+    /// Marks the player `uuid` as a fake player or not (`native_set_player_fake`). False for no
+    /// such player. local perf patch for fake players, candidate upstream PR.
+    pub fn set_guest_fake(&mut self, uuid: u128, fake: bool) -> bool {
+        let Some(g) = self.guests.iter_mut().find(|g| g.uuid == uuid) else {
+            return false;
+        };
+        g.fake = fake;
+        true
     }
     /// `PlayerList.broadcastAll(packet, dimension)`: the players in the
     /// level in place.

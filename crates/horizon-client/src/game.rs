@@ -5067,7 +5067,7 @@ impl Game<'_> {
                 .guests
                 .iter()
                 .filter(|g| h.hub.here(g))
-                .map(|g| (g.chunk(), g.spectator()))
+                .filter(|g| !g.fake) /* local perf patch for fake players, candidate upstream PR: tickets below */ .map(|g| (g.chunk(), g.spectator()))
                 .collect()
         });
         if let Some(p) = &self.player {
@@ -5115,6 +5115,19 @@ impl Game<'_> {
                 view_distance: self.settings.render_distance.clamp(2, 32),
                 simulation_distance: self.settings.simulation_distance.max(2),
             }
+        });
+        // local perf patch for fake players, candidate upstream PR: a fake player holds a forced chunk's 3x3 ticket, not a whole view distance.
+        let sources = sources.map(|mut s| {
+            if let Some(h) = self.lan.as_ref() {
+                s.forced.extend(
+                    h.hub
+                        .guests
+                        .iter()
+                        .filter(|g| g.fake && h.hub.here(g) && game_mode::loads_chunks(rule, g.spectator()))
+                        .map(|g| g.chunk()),
+                );
+            }
+            s
         });
         self.tickets.update(sources);
     }
