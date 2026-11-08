@@ -172,7 +172,7 @@ impl Game<'_> {
     /// amplifier), as `LivingEntity.getActiveEffects` lists them. None for a
     /// player (`native_effects` reads those by UUID), another kind, and a mob
     /// not in the level. API @API:living_helpers@.
-    pub(super) fn native_living_effects(&self, entity: EntityRef) -> Option<Vec<(String, i32, i32)>> {
+    pub(super) fn native_entity_effects(&self, entity: EntityRef) -> Option<Vec<(String, i32, i32)>> {
         let Target::Mob(id) = self.native_entity_target(entity)? else {
             return None;
         };
@@ -189,7 +189,7 @@ impl Game<'_> {
     /// `AttributeInstance.setBaseValue`. False for an attribute mobs don't
     /// have, a value that isn't finite, a player and another kind. API
     /// @API:living_helpers@.
-    pub(super) fn native_set_entity_attribute_base(
+    pub(super) fn native_entity_set_attribute_base(
         &mut self,
         entity: EntityRef,
         attribute: &str,
@@ -224,7 +224,7 @@ impl Game<'_> {
     /// `stopUsingItem` set the living flags: the shield pose a mod shows
     /// without the mob's own use running. False for a player, another kind,
     /// and a mob not in the level. API @API:living_helpers@.
-    pub(super) fn native_living_use_item(
+    pub(super) fn native_entity_use_item(
         &mut self,
         entity: EntityRef,
         off_hand: bool,
