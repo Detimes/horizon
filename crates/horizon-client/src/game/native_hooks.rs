@@ -4845,6 +4845,20 @@ impl Game<'_> {
     ) {
         mod_api::dispatch_hanging_break(self, mod_api::mods(), player, kind, pos, cancel);
     }
+    /// A hanging entity (painting, item frame...) of `kind` at `pos` in
+    /// `dimension` is about to break. Set `cancel` to keep it. Same moment as
+    /// `native_hanging_break`, which still fires unchanged. Server-side.
+    /// Pending API @API:hanging_break_v2@.
+    pub(super) fn native_hanging_break_v2(
+        &mut self,
+        player: Option<u128>,
+        dimension: &str,
+        kind: &str,
+        pos: [i32; 3],
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_hanging_break_v2(self, mod_api::mods(), player, dimension, kind, pos, cancel);
+    }
     /// A server player empties a bucket at `pos` (`fluid`: `minecraft:water`,
     /// `minecraft:lava`, `minecraft:powder_snow`; a fish or axolotl bucket
     /// empties `minecraft:water`): where `BucketItem.use` has found the block
@@ -4883,6 +4897,18 @@ impl Game<'_> {
         cancel: &mut bool,
     ) {
         mod_api::dispatch_tnt_primed(self, mod_api::mods(), player, pos, cancel);
+    }
+    /// A server player (or none) primes TNT at `pos` in `dimension`. Set
+    /// `cancel` to leave the block unlit. Same moment as `native_tnt_primed`,
+    /// which still fires unchanged. Server-side. Pending API @API:tnt_primed_v2@.
+    pub(super) fn native_tnt_primed_v2(
+        &mut self,
+        player: Option<u128>,
+        dimension: &str,
+        pos: [i32; 3],
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_tnt_primed_v2(self, mod_api::mods(), player, dimension, pos, cancel);
     }
     /// A server player selected a new hotbar slot. The player's state is not
     /// swapped in, and helpers that look them up through `self.lan` may find
@@ -6600,6 +6626,14 @@ impl Game<'_> {
         );
     }
 
+    /// A mob (`entity`, its `kind`) killed by a player is about to drop `xp`
+    /// experience points, in total: `LivingEntity.dropExperience`, before the
+    /// orbs are split and spawned. Change `xp`; zero or less drops no orbs.
+    /// Not asked for a mob that drops none. Server-side. Pending API
+    /// @API:living_experience_drop@.
+    pub(super) fn native_living_experience_drop(&mut self, entity: u32, kind: &str, xp: &mut i32) {
+        mod_api::dispatch_living_experience_drop(self, mod_api::mods(), entity, kind, xp);
+    }
     /// A mob or server player is about to die (NeoForge's `LivingDeathEvent`,
     /// vanilla's `LivingEntity.die`): its health has run out, and the loot,
     /// experience and death message have not run. `entity` is its id and
@@ -6675,6 +6709,13 @@ impl Game<'_> {
         );
     }
 
+    /// A thrown splash or lingering potion is about to apply its hit effects
+    /// at `pos`. Set `cancel` to leave the effects and the cloud out, and
+    /// `native_potion_splash` is not told. Server-side. Pending API
+    /// @API:potion_splash_v2@.
+    pub(super) fn native_potion_splash_v2(&mut self, item: &str, pos: [f64; 3], cancel: &mut bool) {
+        mod_api::dispatch_potion_splash_v2(self, mod_api::mods(), item, pos, cancel);
+    }
     /// A thrown splash or lingering potion applied its hit effects.
     /// 287.
     pub(super) fn native_potion_splash(&mut self, item: &str, pos: [f64; 3]) {
@@ -6737,6 +6778,47 @@ impl Game<'_> {
         );
     }
 
+    /// A crop, stem, cactus, sugar cane, bamboo, mushroom or vine on an
+    /// authoritative server grows or spreads at `pos` in `dimension`: the block
+    /// there changes from `from` to `to` (block names, state properties
+    /// included). Set `cancel` to leave it as it is. Covers crop, stem, cactus,
+    /// sugar cane and bamboo growth, grass spreading onto dirt, mushroom and
+    /// vine spread. Server-side. Pending API @API:block_grow@.
+    pub(super) fn native_block_grow(
+        &mut self,
+        dimension: &str,
+        pos: [i32; 3],
+        from: &str,
+        to: &str,
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_block_grow(self, mod_api::mods(), dimension, pos, from, to, cancel);
+    }
+    /// A mob (`entity`, its `kind`) is about to change the block at `pos` from
+    /// `from` to `to` (an enderman's block, a ravager's, a snow golem's, a
+    /// wither's). Set `cancel` to leave the block as it is: nothing changes and
+    /// `native_entity_change_block` is not told. Server-side. Pending API
+    /// @API:entity_change_block_v3@.
+    pub(super) fn native_entity_change_block_v3(
+        &mut self,
+        entity: u32,
+        kind: &str,
+        pos: [i32; 3],
+        from: &str,
+        to: &str,
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_entity_change_block_v3(
+            self,
+            mod_api::mods(),
+            entity,
+            kind,
+            pos,
+            from,
+            to,
+            cancel,
+        );
+    }
     /// A mob changed a block at `pos`, after the new state was applied.
     /// 214.
     pub(super) fn native_entity_change_block(
@@ -8346,14 +8428,24 @@ impl Game<'_> {
     /// about to break `blocks`: `ServerExplosion.explode` with its `toBlow`,
     /// before any block is hit. Take out the positions to spare; they keep
     /// their block and get no fire. Entities are hurt as before. Server-side.
-    /// API 22.
+    /// `source` is the entity that exploded (TNT, a minecart of TNT, a
+    /// creeper, a large fireball, an end crystal) with its kind, when the
+    /// engine knows it; `None` for the other blasts. API 22.
     pub(super) fn native_explosion_detonate(
         &mut self,
         dimension: &str,
         center: [f64; 3],
+        source: Option<(u32, &str)>,
         blocks: &mut Vec<[i32; 3]>,
     ) {
-        mod_api::dispatch_explosion_detonate(self, mod_api::mods(), dimension, center, blocks);
+        mod_api::dispatch_explosion_detonate(
+            self,
+            mod_api::mods(),
+            dimension,
+            center,
+            source,
+            blocks,
+        );
     }
     /// An explosion at `center` in `dimension`, about to break `blocks`, pushes
     /// `entity` (None for a player, whom `native_acting_player` names):
@@ -8757,6 +8849,36 @@ impl Game<'_> {
     /// API 40.
     pub(super) fn native_player_died(&mut self, player: u128, cause: Option<&str>) {
         mod_api::dispatch_player_died(self, mod_api::mods(), player, cause);
+    }
+    /// `player` (`name`) died, with the message the game rendered for them
+    /// (`message`, the death screen's and the team's line), whether or not
+    /// death messages are shown. Only hears: the message is not changed
+    /// here. Server-side. Pending API @API:player_died_v2@.
+    pub(super) fn native_player_died_v2(&mut self, player: u128, name: &str, message: &Text) {
+        mod_api::dispatch_player_died_v2(self, mod_api::mods(), player, name, message);
+    }
+    /// `player` (`name`) is joining: the "joined the game" line the host's chat
+    /// shows (`line`). Set `line` to `None` to show nothing, or replace it. Only
+    /// the host's chat is asked: a dedicated server sends no such line. Server-side.
+    /// Pending API @API:player_join_message@.
+    pub(super) fn native_player_join_message(
+        &mut self,
+        player: u128,
+        name: &str,
+        line: &mut Option<Text>,
+    ) {
+        mod_api::dispatch_player_join_message(self, mod_api::mods(), player, name, line);
+    }
+    /// `player` (`name`) is leaving: the "left the game" line the host's chat
+    /// shows (`line`). Set `line` to `None` to show nothing, or replace it. Server-side.
+    /// Pending API @API:player_leave_message@.
+    pub(super) fn native_player_leave_message(
+        &mut self,
+        player: u128,
+        name: &str,
+        line: &mut Option<Text>,
+    ) {
+        mod_api::dispatch_player_leave_message(self, mod_api::mods(), player, name, line);
     }
     /// A new mob of `kind` joined `dimension` at `pos`: `natural` when the
     /// world's spawning made it, false when something else did (a breed, a
