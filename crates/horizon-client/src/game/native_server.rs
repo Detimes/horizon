@@ -87,8 +87,11 @@ fn usage_nodes(usage: &str) -> Result<Vec<(String, Value, bool)>, String> {
             if optional_seen {
                 return Err(format!("`{usage}`: `{word}` follows an optional argument"));
             }
-            let literal = !word.is_empty()
-                && word
+            // CoreSMP local patch: a command's name may start with slashes (WorldEdit's `//set`
+            // is the root `/set`); the typed line arrives without its first slash.
+            let checked = if out.is_empty() { word.trim_start_matches('/') } else { word };
+            let literal = !checked.is_empty()
+                && checked
                     .chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_-".contains(c));
             if !literal {
@@ -1458,7 +1461,8 @@ impl Game<'_> {
     /// slash), when a mod registered it.
     pub(super) fn native_command_level(host: &LanHost, line: &str) -> Option<u8> {
         let name = line.split(' ').next().unwrap_or_default();
-        host.native_commands.as_ref()?.get(name).copied()
+        let commands = host.native_commands.as_ref()?;
+        commands.get(name).or_else(|| commands.get(&format!("/{name}"))).copied()
     }
 
     /// The permission node of a mod's command (`line`, without its slash),
@@ -1467,7 +1471,7 @@ impl Game<'_> {
         let name = line.split(' ').next().unwrap_or_default();
         host.native_command_nodes
             .iter()
-            .find(|(root, _)| root == name)
+            .find(|(root, _)| root == name || root.strip_prefix('/') == Some(name))
             .map(|(_, node)| node.as_str())
     }
 
