@@ -311,7 +311,8 @@ impl Hub {
         ctx: &TickCtx,
         events: &mut Vec<HostEvent>,
     ) -> Option<bool> {
-        if !self.anticheat.as_deref()?.config.runs(Check::Ground) || self.guests[i].anticheat.exempt {
+        if !self.anticheat.as_deref()?.config.runs(Check::Ground) || self.guests[i].anticheat.exempt
+        {
             return None;
         }
         // Standing still: no fall to skip, whatever holds the player up (a block the server doesn't
