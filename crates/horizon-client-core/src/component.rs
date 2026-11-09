@@ -309,11 +309,17 @@ fn object_style(o: &serde_json::Map<String, Value>) -> Style {
                     style.hover = Some(Box::new(to_text(value, &mut |s| Text::literal(s))));
                 }
             }
+            // The fields without `action`, as `Style::hover_item` / `hover_entity`
+            // hold them (`style_json` adds the action back on output).
             Some("show_item") if e.get("id").is_some_and(Value::is_string) => {
-                style.hover_item = Some(Box::new(Value::Object(e.clone())));
+                let mut item = e.clone();
+                item.remove("action");
+                style.hover_item = Some(Box::new(Value::Object(item)));
             }
             Some("show_entity") if e.get("id").is_some_and(Value::is_string) => {
-                style.hover_entity = Some(Box::new(Value::Object(e.clone())));
+                let mut entity = e.clone();
+                entity.remove("action");
+                style.hover_entity = Some(Box::new(Value::Object(entity)));
             }
             _ => {}
         }

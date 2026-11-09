@@ -303,6 +303,39 @@ impl Text {
         self.source = Some(root.into());
         self.spans.extend(other.spans);
     }
+    /// `Style.withHoverEvent(HoverEvent.ShowText)`: `hover` shows on the whole text.
+    pub fn hover_text(self, hover: impl Into<Text>) -> Self {
+        self.with_style(&Style {
+            hover: Some(Box::new(hover.into())),
+            ..Style::default()
+        })
+    }
+    /// `HoverEvent.ShowItem` on the whole text: item `id`, its `count` shown only when it is not one.
+    pub fn hover_item(self, id: &str, count: i32) -> Self {
+        let mut item = Map::new();
+        item.insert("id".into(), id.into());
+        if count != 1 {
+            item.insert("count".into(), count.into());
+        }
+        self.with_style(&Style {
+            hover_item: Some(Box::new(Value::Object(item))),
+            ..Style::default()
+        })
+    }
+    /// `HoverEvent.ShowEntity` on the whole text: entity type `id`, its canonical `uuid` text
+    /// (written as an int array on the NBT path), and the optional `name`.
+    pub fn hover_entity(self, id: &str, uuid: &str, name: Option<Text>) -> Self {
+        let mut entity = Map::new();
+        entity.insert("id".into(), id.into());
+        entity.insert("uuid".into(), uuid.into());
+        if let Some(name) = name {
+            entity.insert("name".into(), name.component());
+        }
+        self.with_style(&Style {
+            hover_entity: Some(Box::new(Value::Object(entity))),
+            ..Style::default()
+        })
+    }
     /// Apply `style` underneath every span (MutableComponent.withStyle on a parent).
     pub fn with_style(mut self, style: &Style) -> Self {
         for span in &mut self.spans {
@@ -839,5 +872,57 @@ mod tests {
         assert_eq!(resolved.plain(), "Steve");
         assert_eq!(resolved.spans[0].style.color, Some(RED));
         assert_eq!(resolved.spans[0].style.bold, Some(false));
+    }
+    #[test]
+    fn hover_builders_serialize_and_parse_back_on_both_paths() {
+        use crate::component::to_text;
+        let tip = Text::colored("Tip", AQUA);
+        let text = Text::literal("hover").hover_text(tip.clone());
+        assert_eq!(
+            text.component()["hover_event"],
+            json!({"action": "show_text", "value": tip.component()})
+        );
+        assert_eq!(to_text(&text.component(), &mut |_| Text::empty()), text);
+
+        let item = Text::literal("[stone]").hover_item("minecraft:stone", 2);
+        assert_eq!(
+            item.component()["hover_event"],
+            json!({"action": "show_item", "id": "minecraft:stone", "count": 2})
+        );
+        let single = Text::literal("[stone]").hover_item("minecraft:stone", 1);
+        assert_eq!(
+            single.component()["hover_event"],
+            json!({"action": "show_item", "id": "minecraft:stone"})
+        );
+        assert_eq!(to_text(&item.component(), &mut |_| Text::empty()), item);
+
+        let uuid = "11111111-2222-3333-4444-555555555555";
+        let entity =
+            Text::literal("Pig").hover_entity("minecraft:pig", uuid, Some(Text::literal("Pig")));
+        assert_eq!(
+            entity.component()["hover_event"],
+            json!({"action": "show_entity", "id": "minecraft:pig", "uuid": uuid,
+                   "name": {"text": "Pig"}})
+        );
+        assert_eq!(to_text(&entity.component(), &mut |_| Text::empty()), entity);
+
+        // NBT path: the same component as a tag, back to JSON. A show_entity uuid
+        // is an int array there (UUIDUtil.CODEC), and the spans keep their events.
+        for built in [&text, &item] {
+            let tag = crate::scoreboard::component_tag(&built.component());
+            let back = crate::scoreboard::tag_to_json(&tag);
+            assert_eq!(to_text(&back, &mut |_| Text::empty()), *built);
+        }
+        let tag = crate::scoreboard::component_tag(&entity.component());
+        let back = crate::scoreboard::tag_to_json(&tag);
+        assert_eq!(
+            back["hover_event"]["uuid"],
+            json!([
+                0x1111_1111_i32,
+                0x2222_3333_i32,
+                0x4444_5555_i32,
+                0x5555_5555_i32
+            ])
+        );
     }
 }
