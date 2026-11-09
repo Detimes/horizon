@@ -11897,7 +11897,7 @@ impl Game<'_> {
             .map(|g| (g.uuid, g.name.clone()))
             .collect();
         for (player, name) in players {
-            self.native_player_logged_out(player, &name);
+            self.native_player_stopped(player, &name);
         }
         // No tick follows to send what they said.
         if let Some(mut host) = self.lan.take() {

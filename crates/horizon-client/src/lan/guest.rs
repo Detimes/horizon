@@ -1,6 +1,7 @@
 //! A remote player: connection, position, chunk and entity views, and the
 //! player state (inventory, health, game mode) that the host's gameplay code
 //! operates on when it acts for them.
+use crate::mod_api::NativeQuitReason;
 use super::{Joined, PlayerSender, entity::Tracker};
 use crate::{
     items::ItemStack,
@@ -104,6 +105,8 @@ pub struct Guest {
     pub center_sent: Option<(i32, i32)>,
     /// Why the connection closed (the console's "lost connection").
     pub left_reason: String,
+    /// Why the connection ended, as `player_logged_out_v2` reports it: the first cause to end it (None until one does).
+    pub quit: Option<NativeQuitReason>,
     pub uuid: u128,
     pub name: String,
     /// The profile's properties, for the player list (skins).
@@ -444,6 +447,21 @@ pub struct Guest {
 }
 
 impl Guest {
+    /// The server kicked this guest with `text`: the kick is the cause, unless one came first.
+    pub fn kicked_for(&mut self, text: String) {
+        self.quit
+            .get_or_insert_with(|| NativeQuitReason::Kicked(text.clone()));
+        self.left_reason = text;
+    }
+    /// Keeps `cause` as the reason this guest left, unless one came first.
+    pub fn with_quit(mut self, cause: NativeQuitReason) -> Self {
+        self.quit.get_or_insert(cause);
+        self
+    }
+    /// Why this guest left: a clean disconnect when nothing else said so.
+    pub fn quit_reason(&self) -> NativeQuitReason {
+        self.quit.clone().unwrap_or(NativeQuitReason::Disconnected)
+    }
     pub fn new(j: Joined, entity_id: i32, position: [f64; 3], view_distance: i32) -> Self {
         Self {
             conn: j.conn,
@@ -456,6 +474,7 @@ impl Guest {
             placed_at: 0,
             center_sent: None,
             left_reason: String::new(),
+            quit: None,
             uuid: j.uuid,
             name: j.name,
             properties: j.properties,

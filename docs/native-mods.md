@@ -2659,6 +2659,13 @@ before (#10461).
   reach them. A death a mod causes here (`kill <name>`) happens at once where they stand, with its death message, drops
   and `native_player_died`, and they are saved dead. Once per placed player who leaves, before `native_player_logged_out`.
   Not heard when the server stops (`native_player_logged_out` tells then, with them still listed).
+- **`native_player_logged_out_v2(player, name, reason)`**: `native_player_logged_out` with why the player left. `reason` is a
+  `NativeQuitReason`: `Disconnected` (a clean disconnect, a connection reset, a move to another server), `Kicked(text)`
+  (a server kick, `native_kick`, `/kick`, a ban or the packet-rate limit, with the text as the client shows it),
+  `TimedOut` (the keep-alive timeout), `ServerStopping` (the server stops with them still listed) or `Error(text)` (a
+  malformed packet or a read error). The first cause that ends the connection is kept, so a timeout after a kick stays
+  `Kicked`. v1 keeps its signature and firing point and fires first; v2 fires right after it, for the same players, and
+  only hears. Bundles need `"hooks": @API:player_logged_out_v2@`.
 - **`native_player_hurt_by_player(attacker, attacker_entity, victim, victim_entity, source, damage_type, amount, canceled)`**:
   one player hurting another, both named by UUID and network entity id. `source` is `melee`, `sweep` or the projectile's
   entity type (`minecraft:arrow`, `minecraft:spectral_arrow`, `minecraft:snowball`, `minecraft:egg`, a mod's thrown type).

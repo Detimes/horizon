@@ -31,6 +31,7 @@ mod io_pool;
 pub mod menu;
 pub mod playerdata;
 pub mod prediction;
+pub mod quit;
 pub mod recipes;
 mod registry_names;
 pub mod scoreboard;
@@ -39,6 +40,7 @@ pub mod tracking;
 pub mod waypoints;
 
 pub use conn::{Holding, PlayerSender, flush_all};
+use crate::mod_api::NativeQuitReason;
 use horizon_protocol::packets::play;
 use horizon_protocol::{
     GAME_VERSION, PROTOCOL_VERSION, crypto::uuid_string, packets::configuration::ClientInformation,
@@ -66,8 +68,8 @@ pub enum NetEvent {
     Joined(Box<Joined>),
     /// A packet and the bytes of its body on the wire.
     Packet(u32, Box<play::Serverbound>, usize),
-    /// The connection ended (reason for the log).
-    Left(u32, String),
+    /// The connection ended: the reason for the log, and why (`quit_reason`).
+    Left(u32, String, NativeQuitReason),
     /// PlayerList.disconnectAllPlayersWithProfile: a new login of this
     /// profile replaces the player already in the world.
     Duplicate(u128),

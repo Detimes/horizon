@@ -2311,7 +2311,7 @@ impl Game<'_> {
                     }
                     if guest.placed && !host.players_told_left {
                         self.lan = Some(host);
-                        self.native_player_logged_out(guest.uuid, &guest.name);
+                        self.native_player_left(guest.uuid, &guest.name, guest.quit_reason());
                         host = self.lan.take()?;
                     }
                 }

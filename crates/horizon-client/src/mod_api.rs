@@ -661,6 +661,23 @@ pub struct NativeFishingMedium {
     pub lure_ticks: Option<(i32, i32)>,
 }
 
+/// Why a player left the server, for `player_logged_out_v2` (`native_player_logged_out` says only that they did).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NativeQuitReason {
+    /// A clean disconnect: the client quit, its connection was reset, or it was moved to another server.
+    Disconnected,
+    /// The server kicked them, with the kick's text as the client shows it (`native_kick`, `/kick`, a ban, the
+    /// packet-rate limit).
+    Kicked(String),
+    /// The keep-alive timeout: the client stopped answering.
+    TimedOut,
+    /// The server is stopping, and the player is still listed.
+    ServerStopping,
+    /// The connection failed: a malformed packet or a read error, with its text.
+    Error(String),
+}
+
 /// A player on the server, as a server hook sees them.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]

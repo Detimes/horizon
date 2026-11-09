@@ -1166,7 +1166,7 @@ impl Hub {
         // The log's "lost connection" line gives the reason, as vanilla's.
         let text = self.english(&reason);
         if let Some(g) = self.guest_mut(conn) {
-            g.left_reason = text.clone();
+            g.kicked_for(text.clone());
             let (player, name) = (g.uuid, g.name.clone());
             g.sender.disconnect(reason);
             self.pending_kicks.push(HostEvent::Kicked {
@@ -1252,7 +1252,7 @@ impl Hub {
                     g.name,
                 )));
             }
-            self.kick(conn, translatable("disconnect.timeout", &[]));
+            self.time_out(conn);
         }
         for g in &mut self.guests {
             let Some(h) = &g.handover else {
@@ -2346,9 +2346,9 @@ impl Hub {
                     let conn = self.admit(*j, ctx);
                     events.push(HostEvent::Joined(conn));
                 }
-                NetEvent::Left(conn, reason) => {
+                NetEvent::Left(conn, reason, cause) => {
                     if let Some(i) = self.guests.iter().position(|g| g.conn == conn) {
-                        let g = self.remove_guest(i, &reason);
+                        let g = self.remove_guest(i, &reason).with_quit(cause);
                         events.push(HostEvent::Left(Box::new(g)));
                     }
                 }
@@ -2410,7 +2410,7 @@ impl Hub {
                 .map(|g| g.conn)
                 .collect();
             for conn in silent {
-                self.kick(conn, translatable("disconnect.timeout", &[]));
+                self.time_out(conn);
             }
         }
         events

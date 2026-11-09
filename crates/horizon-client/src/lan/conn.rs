@@ -12,6 +12,7 @@ use super::{
     forwarding,
     io_pool::{self, Session as _},
 };
+use crate::mod_api::NativeQuitReason;
 use horizon_client_core::text::Text;
 use horizon_protocol::{
     PROTOCOL_VERSION,
@@ -1708,6 +1709,7 @@ fn play(
         watch,
         counted,
         undrained,
+        kicked: None,
     };
     let joined = Joined {
         conn,
@@ -1754,19 +1756,36 @@ struct PlayConn {
     counted: Option<super::Counted>,
     /// Shared with the player's [`PlayerSender`]: what the hub hasn't taken yet.
     undrained: Arc<Undrained>,
+    /// The kick the server sent this connection: its text is the cause the connection ends with.
+    kicked: Option<String>,
+}
+impl PlayConn {
+    /// A kick the server sends: the disconnect goes after what is queued, and it is the cause.
+    fn kick(&mut self, (reason, text): (horizon_world::nbt::Tag, String)) -> io_pool::Verdict {
+        let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
+        self.kicked = Some(text.clone());
+        io_pool::Verdict::Kick(text, body)
+    }
+}
+/// Why a connection ended without a kick of the server's, from the reason the network gives: a clean disconnect,
+/// the keep-alive timeout, or an error.
+pub(super) fn quit_cause(reason: &str) -> NativeQuitReason {
+    if reason == "Disconnected" {
+        NativeQuitReason::Disconnected
+    } else if reason == horizon_protocol::Error::timed_out().to_string() {
+        NativeQuitReason::TimedOut
+    } else {
+        NativeQuitReason::Error(reason.to_owned())
+    }
 }
 impl io_pool::Session for PlayConn {
     /// Forward the player's packet, or say why it ends the connection: a
     /// required resource pack declined, a rate-limit excess, a malformed packet.
     fn packet(&mut self, id: i32, payload: Vec<u8>) -> io_pool::Verdict {
         use io_pool::Verdict;
-        let kick = |(reason, text): (horizon_world::nbt::Tag, String)| {
-            let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
-            Verdict::Kick(text, body)
-        };
         let now = Instant::now();
         if let Some(average) = self.rate.as_mut().and_then(|r| r.received(now)) {
-            return kick(rate_exceeded(&self.shared, average));
+            return self.kick(rate_exceeded(&self.shared, average));
         }
         match play::Serverbound::decode(id, &payload).and_then(checked_play) {
             Ok(play::Serverbound::KeepAlive(k)) => {
@@ -1784,12 +1803,12 @@ impl io_pool::Session for PlayConn {
             Ok(play::Serverbound::ResourcePack(r))
                 if r.action == PACK_DECLINED && self.required_pack =>
             {
-                kick(pack_rejected(&self.shared, &self.name, r.id))
+                self.kick(pack_rejected(&self.shared, &self.name, r.id))
             }
             Ok(p) => {
                 // Bounded here, where packets are made, not only where the hub drains them.
                 if !self.undrained.handed(payload.len()) {
-                    return kick(undrained_exceeded(&self.shared, &self.name));
+                    return self.kick(undrained_exceeded(&self.shared, &self.name));
                 }
                 let event = NetEvent::Packet(self.conn, Box::new(p), payload.len());
                 match self.shared.events.send(event) {
@@ -1814,7 +1833,11 @@ impl io_pool::Session for PlayConn {
         Some(play::Clientbound::KeepAlive(cfg::KeepAlive { id }).encode())
     }
     fn left(&mut self, reason: String) {
-        let _ = self.shared.events.send(NetEvent::Left(self.conn, reason));
+        let cause = match self.kicked.take() {
+            Some(text) => NativeQuitReason::Kicked(text),
+            None => quit_cause(&reason),
+        };
+        let _ = self.shared.events.send(NetEvent::Left(self.conn, reason, cause));
         self.shared.closing.fetch_add(1, Ordering::AcqRel);
     }
     fn closed(&mut self) {
