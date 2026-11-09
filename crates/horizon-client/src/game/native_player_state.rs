@@ -6,8 +6,8 @@
 //! their command) only that player is reached, outside one (`native_tick`,
 //! `native_server_tick`, `native_menu_clicked`) everyone on.
 use super::{Game, commands::Target};
-use horizon_client::{brewing, effects::EffectInstance, entities::Experience, lan::playerdata};
 use horizon_client::mod_api::NativeQuitReason;
+use horizon_client::{brewing, effects::EffectInstance, entities::Experience, lan::playerdata};
 use horizon_world::{
     attribute_map::ValueKind,
     attributes::Operation,
@@ -531,7 +531,12 @@ impl Game<'_> {
 
 impl Game<'_> {
     /// `player` (`name`) left, for `reason`: `native_player_logged_out` tells, then `player_logged_out_v2`.
-    pub(super) fn native_player_left(&mut self, player: u128, name: &str, reason: NativeQuitReason) {
+    pub(super) fn native_player_left(
+        &mut self,
+        player: u128,
+        name: &str,
+        reason: NativeQuitReason,
+    ) {
         self.native_player_logged_out(player, name);
         self.native_player_logged_out_v2(player, name, reason);
     }
@@ -541,7 +546,12 @@ impl Game<'_> {
     }
     /// `player` (`name`) left the server for `reason` (NeoForge's `PlayerLoggedOutEvent` has none). Heard right
     /// after `native_player_logged_out`, for every player that one hears of. Server-side. API @API:player_logged_out_v2@.
-    pub(super) fn native_player_logged_out_v2(&mut self, player: u128, name: &str, reason: NativeQuitReason) {
+    pub(super) fn native_player_logged_out_v2(
+        &mut self,
+        player: u128,
+        name: &str,
+        reason: NativeQuitReason,
+    ) {
         let _ = (player, name, reason);
     }
 }

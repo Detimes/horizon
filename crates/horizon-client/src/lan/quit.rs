@@ -8,7 +8,8 @@ impl Hub {
     /// unless an earlier one came first.
     pub fn time_out(&mut self, conn: u32) {
         if let Some(g) = self.guest_mut(conn) {
-            g.quit.get_or_insert(crate::mod_api::NativeQuitReason::TimedOut);
+            g.quit
+                .get_or_insert(crate::mod_api::NativeQuitReason::TimedOut);
         }
         self.kick(conn, translatable("disconnect.timeout", &[]));
     }

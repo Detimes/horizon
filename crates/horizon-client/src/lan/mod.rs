@@ -39,8 +39,8 @@ mod sound_order;
 pub mod tracking;
 pub mod waypoints;
 
-pub use conn::{Holding, PlayerSender, flush_all};
 use crate::mod_api::NativeQuitReason;
+pub use conn::{Holding, PlayerSender, flush_all};
 use horizon_protocol::packets::play;
 use horizon_protocol::{
     GAME_VERSION, PROTOCOL_VERSION, crypto::uuid_string, packets::configuration::ClientInformation,

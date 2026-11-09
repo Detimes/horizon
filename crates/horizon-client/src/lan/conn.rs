@@ -1837,7 +1837,10 @@ impl io_pool::Session for PlayConn {
             Some(text) => NativeQuitReason::Kicked(text),
             None => quit_cause(&reason),
         };
-        let _ = self.shared.events.send(NetEvent::Left(self.conn, reason, cause));
+        let _ = self
+            .shared
+            .events
+            .send(NetEvent::Left(self.conn, reason, cause));
         self.shared.closing.fetch_add(1, Ordering::AcqRel);
     }
     fn closed(&mut self) {
