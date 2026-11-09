@@ -57,6 +57,9 @@ impl Game<'_> {
     /// or filter past the end, or more than 65536 filters, and nothing is
     /// made.
     pub(super) fn edit_blocks(&mut self, edit: &BlockEdit) -> Result<u64, String> {
+        if edit.max_chunks_per_tick == Some(0) {
+            return Err("max_chunks_per_tick must be at least 1".into());
+        }
         let parse = |name: &str, testing: bool| -> Result<BlockInput, String> {
             let mut reader = Reader::new(name);
             let b = block::parse(&mut reader, &self.ui.registries, testing)
@@ -109,7 +112,7 @@ impl Game<'_> {
         let tags = [&self.res.items().block_tags, &world_items.block_tags];
         let facts = self.res.facts();
         let watched = std::mem::take(&mut self.world.watched);
-        let out = self.world.edit_runs(
+        let out = self.world.edit_runs_within(
             &runs,
             |f, s| {
                 super::commands::block_input_matches(
@@ -126,6 +129,7 @@ impl Game<'_> {
                     || stateful.get(s as usize).copied().unwrap_or(false)
                     || BlockEntity::for_block(&f.name).is_some()
             },
+            edit.max_chunks_per_tick,
         );
         self.world.watched = watched;
         // The block entities the new blocks bring, as `native_set_block` makes them (a mod block's own, API 15,

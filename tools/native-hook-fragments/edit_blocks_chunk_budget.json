@@ -1,0 +1,7 @@
+{
+  "hooks": [],
+  "helpers": [],
+  "rust_summary": "`NativeBlockEdit.max_chunks_per_tick`: a bulk edit relights and resends at most that many chunks a tick, the rest in the ticks after, in order.",
+  "doc_summary": "`NativeBlockEdit` has `max_chunks_per_tick` (None by default, every chunk now): with it, `native_edit_blocks` relights and sends whole at most that many changed chunks in the tick it is made and in each tick after, in order, so a huge edit does not stall one tick. The blocks are all written at once; only the light and the resend wait. 0 is refused. Bundles need \"hooks\": @API:edit_blocks_chunk_budget@.",
+  "comments": ["crates/horizon-client/src/game/native_world_edit.rs"]
+}

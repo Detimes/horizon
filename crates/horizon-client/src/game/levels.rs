@@ -635,6 +635,10 @@ impl Game<'_> {
             if observe_level {
                 self.native_level_tick_pre(dim.id());
             }
+            // The deferred chunks of bulk edits (`max_chunks_per_tick`) take their share of this tick.
+            if running.is_some() && server {
+                self.world.relight_deferred_edits();
+            }
             self.update_dedicated_streaming();
             self.update_world();
             result = horizon_client::block_contact::in_level(

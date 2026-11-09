@@ -77,6 +77,8 @@ pub struct World {
     pub dirty_sections: DirtySections,
     /// Chunks whose light must be recomputed.
     pub dirty_light: crate::fast_hash::FxHashSet<(i32, i32)>,
+    /// Chunks of bulk edits whose relight and resend wait for later ticks (`relight_deferred_edits`).
+    pub deferred_relights: crate::block_edit::DeferredRelights,
     /// Edits on lit chunks (position, old state, new state), relit
     /// incrementally by streaming.
     pub light_edits: Vec<((i32, i32, i32), u32, u32)>,
@@ -226,6 +228,7 @@ impl World {
             fast_lava: false,
             dirty_sections: Default::default(),
             dirty_light: Default::default(),
+            deferred_relights: Default::default(),
             light_edits: Vec::new(),
             loaded_entities: Vec::new(),
             entities_pending: FxHashSet::default(),

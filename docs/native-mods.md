@@ -4356,6 +4356,10 @@ It names the level it means by its `dimension` (`minecraft:overworld`), as `nati
   does: no neighbour is told, nothing drops, and no block updates or ticks; light is worked out again for the chunks
   changed, and they go to the players whole. A block replaced by another loses its block entity, and a new block gets
   the one `native_set_block` would give it (a mod block's own, API 15, included).
+- `NativeBlockEdit.max_chunks_per_tick` (API @API:edit_blocks_chunk_budget@, None by default) caps the chunks relit and
+  sent whole in one tick: the first that many changed chunks go in the tick the edit is made, the others in the ticks
+  after, in order, that many a tick, so a huge edit doesn't stall one tick. Their blocks are all written at once; only
+  their light and resend wait. 0 is refused.
 - It answers the number of blocks changed. Runs in chunks that aren't loaded, and the parts of runs outside the level's
   height, are left out. It answers `Err`, changing nothing, on a client, for another dimension, a palette entry or filter
   that doesn't read or carries NBT (`chest{...}`: refused, set states only), a run naming a palette entry or filter past

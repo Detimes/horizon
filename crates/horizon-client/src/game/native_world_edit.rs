@@ -47,6 +47,11 @@ pub struct NativeBlockEdit {
     /// Block entity data, loaded after all runs: an entry whose position holds no block entity, or whose `id`
     /// names another type, is skipped (the block stays as the runs made it). API @API:edit_blocks_nbt@.
     pub block_entities: Vec<NativeBlockNbt>,
+    /// The most chunks relit and sent whole in the tick the edit is made, and in each tick after it (API
+    /// @API:edit_blocks_chunk_budget@). None (the default): all of them, now. The chunks past the budget get their
+    /// blocks now, but their light and resend wait for the next ticks, `per_tick` each, in order (a chunk unloaded
+    /// by then is dropped). Blocks are never delayed; 0 is refused.
+    pub max_chunks_per_tick: Option<u32>,
 }
 
 impl Game<'_> {

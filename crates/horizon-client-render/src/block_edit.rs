@@ -7,6 +7,18 @@
 use crate::chunk::index;
 use crate::fast_hash::FxHashMap;
 use crate::world::World;
+use std::collections::VecDeque;
+
+/// The chunks of bulk edits whose relight and resend wait for later ticks (`World::edit_runs_within`): each edit's
+/// chunks in order, with how many a tick takes.
+#[derive(Clone, Debug, Default)]
+pub struct DeferredRelights(Vec<Batch>);
+
+#[derive(Clone, Debug)]
+struct Batch {
+    per_tick: u32,
+    chunks: VecDeque<(i32, i32)>,
+}
 
 /// A run of one column, resolved: blocks `y0..=y1` of column (x, z) set to
 /// `state` where filter `only` (if any) passes the block there.
@@ -65,9 +77,25 @@ impl World {
     pub fn edit_runs(
         &mut self,
         runs: &[Run],
+        matches: impl FnMut(u16, u32) -> bool,
+        tracked: impl FnMut(u32) -> bool,
+    ) -> Outcome {
+        self.edit_runs_within(runs, matches, tracked, None)
+    }
+
+    /// `edit_runs` with at most `per_tick` chunks relit and resent now (`NativeBlockEdit::max_chunks_per_tick`; 0 is
+    /// read as 1). The first `per_tick` chunks changed are queued as `edit_runs` queues them; the others get their
+    /// blocks, sections and save entry now but wait in `deferred_relights`, in order, for `relight_deferred_edits`.
+    /// None: every chunk now, as `edit_runs`.
+    pub fn edit_runs_within(
+        &mut self,
+        runs: &[Run],
         mut matches: impl FnMut(u16, u32) -> bool,
         mut tracked: impl FnMut(u32) -> bool,
+        per_tick: Option<u32>,
     ) -> Outcome {
+        let per_tick = per_tick.map(|k| k.max(1));
+        let mut deferred: Vec<(i32, i32)> = Vec::new();
         let mut out = Outcome::default();
         // the runs of each chunk, in order, and the chunks in the order they were first named
         let mut by_chunk: FxHashMap<(i32, i32), Vec<u32>> = FxHashMap::default();
@@ -146,6 +174,7 @@ impl World {
             }
             out.changed += any;
             out.chunks += 1;
+            let late = per_tick.is_some_and(|k| out.chunks > k as usize);
             let chunk =
                 std::sync::Arc::make_mut(self.chunks.get_mut(&key).expect("looked up above"));
             for s in 0..sections {
@@ -157,8 +186,10 @@ impl World {
             }
             self.revision = self.revision.wrapping_add(1);
             self.modified.insert(key);
-            if self.block_log.is_some() {
-                self.bulk_log.insert(key);
+            if late {
+                deferred.push(key);
+            } else {
+                self.queue_relight(key);
             }
             // remeshed once (with the neighbours whose faces and light it touches), lit again whole
             for (s, _) in changed.iter().enumerate().filter(|c| *c.1) {
@@ -174,13 +205,51 @@ impl World {
                     }
                 }
             }
-            for dz in -1..=1 {
-                for dx in -1..=1 {
-                    self.dirty_light.insert((key.0 + dx, key.1 + dz));
-                }
-            }
+        }
+        if let Some(per_tick) = per_tick.filter(|_| !deferred.is_empty()) {
+            self.deferred_relights.0.push(Batch {
+                per_tick,
+                chunks: deferred.into(),
+            });
         }
         out
+    }
+
+    /// The resend (`bulk_log`, when a block log is kept) and the light (`dirty_light`, the chunk and its ring) a
+    /// changed chunk is owed, as `edit_runs` queues them.
+    fn queue_relight(&mut self, key: (i32, i32)) {
+        if self.block_log.is_some() {
+            self.bulk_log.insert(key);
+        }
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                self.dirty_light.insert((key.0 + dx, key.1 + dz));
+            }
+        }
+    }
+
+    /// Takes this tick its share of the deferred chunks: each bulk edit's next `per_tick` in order gets the resend and
+    /// light `edit_runs` would have queued (`queue_relight`). A chunk no longer loaded is dropped without using a
+    /// share. Returns how many chunks were taken.
+    pub fn relight_deferred_edits(&mut self) -> usize {
+        let mut batches = std::mem::take(&mut self.deferred_relights.0);
+        let mut taken = 0;
+        for batch in &mut batches {
+            let mut n = 0;
+            while n < batch.per_tick {
+                let Some(key) = batch.chunks.pop_front() else {
+                    break;
+                };
+                if self.chunks.contains_key(&key) {
+                    self.queue_relight(key);
+                    n += 1;
+                }
+            }
+            taken += n as usize;
+        }
+        batches.retain(|b| !b.chunks.is_empty());
+        self.deferred_relights.0 = batches;
+        taken
     }
 }
 
@@ -302,5 +371,83 @@ mod tests {
         assert_eq!(chunk.block(2, 511, 3).0, 4);
         assert!(w.dirty_sections.contains(&(0, 39, 0)));
         assert!(!w.dirty_sections.contains(&(0, 40, 0)));
+    }
+
+    /// `n` empty chunks in a row (x = 0..n, z = 0), each with one block set by a run of the edit.
+    fn row(n: i32) -> World {
+        let mut w = World::new(BlockStateId(0), 0);
+        for cx in 0..n {
+            w.chunks.insert((cx, 0), Arc::new(Chunk::empty(cx, 0)));
+        }
+        w.block_log = Some(Vec::new());
+        w
+    }
+    fn one_block_per_chunk(n: i32) -> Vec<Run> {
+        (0..n)
+            .map(|cx| run(cx * 16 + 1, 1, 0, 0, 1, None))
+            .collect()
+    }
+    /// The chunks in `bulk_log` (what the hub sends whole this tick), in order; the log is drained, as the hub does.
+    fn sent(w: &mut World) -> Vec<(i32, i32)> {
+        let mut keys: Vec<_> = w.bulk_log.drain().collect();
+        keys.sort_unstable();
+        keys
+    }
+
+    #[test]
+    fn a_budget_relights_and_resends_that_many_chunks_a_tick() {
+        let (n, k) = (7, 2);
+        let mut w = row(n);
+        let out = w.edit_runs_within(&one_block_per_chunk(n), |_, _| true, |_| false, Some(k));
+        assert_eq!((out.changed, out.chunks), (n as u64, n as usize));
+        // every block is written now; only the first k chunks are resent and lit now
+        for cx in 0..n {
+            assert_eq!(w.block(cx * 16 + 1, 0, 1).0, 1);
+        }
+        assert_eq!(sent(&mut w), vec![(0, 0), (1, 0)]);
+        assert!(w.dirty_light.contains(&(2, 0)) && !w.dirty_light.contains(&(3, 0)));
+        // every chunk is saved and remeshed now (not deferred)
+        assert!(w.modified.contains(&(6, 0)) && w.dirty_sections.contains(&(6, 4, 0)));
+
+        // then k a tick, in order, until all n are done: ceil(7 / 2) = 4 ticks counting the edit's
+        // (the edit's own tick was drained by the assertion above)
+        let mut ticks = vec![vec![(0, 0), (1, 0)]];
+        while w.relight_deferred_edits() > 0 {
+            ticks.push(sent(&mut w));
+        }
+        assert_eq!(
+            ticks,
+            vec![
+                vec![(0, 0), (1, 0)],
+                vec![(2, 0), (3, 0)],
+                vec![(4, 0), (5, 0)],
+                vec![(6, 0)],
+            ]
+        );
+        assert_eq!(w.relight_deferred_edits(), 0);
+        for cx in 0..n {
+            assert!(w.dirty_light.contains(&(cx, 0)));
+        }
+    }
+
+    #[test]
+    fn without_a_budget_every_changed_chunk_is_resent_and_lit_now() {
+        let n = 7;
+        let mut w = row(n);
+        w.edit_runs(&one_block_per_chunk(n), |_, _| true, |_| false);
+        assert_eq!(sent(&mut w).len(), n as usize);
+        assert_eq!(w.relight_deferred_edits(), 0);
+        assert!(w.dirty_light.contains(&(n - 1, 0)));
+    }
+
+    #[test]
+    fn a_deferred_chunk_unloaded_before_its_turn_is_dropped_without_using_a_share() {
+        let mut w = row(3);
+        w.edit_runs_within(&one_block_per_chunk(3), |_, _| true, |_| false, Some(1));
+        assert_eq!(sent(&mut w), vec![(0, 0)]);
+        w.chunks.remove(&(1, 0));
+        assert_eq!(w.relight_deferred_edits(), 1);
+        assert_eq!(sent(&mut w), vec![(2, 0)]);
+        assert_eq!(w.relight_deferred_edits(), 0);
     }
 }
