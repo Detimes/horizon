@@ -1,6 +1,7 @@
 //! `native_summon` and `native_summon_with_uuid` build an entity tree from data as `/summon` does, and
 //! `native_entity_merge_nbt` changes a living entity as `/data merge entity` does and refuses players.
 use super::super::*;
+use crate::game::native_entities::{DisplayTransformation, NativeDisplay};
 use horizon_client::mod_api::NativeAuthority;
 use horizon_world::nbt::{Compound, Tag};
 
@@ -144,5 +145,176 @@ fn a_merge_changes_a_field_and_a_player_is_refused() {
     assert!(
         game.apply_entity_nbt(commands::Target::Player, Tag::Compound(Compound::new()))
             .is_err()
+    );
+}
+
+/// A transformation tag scaling by `s` on every axis.
+fn transformation_with_scale(s: f32) -> Tag {
+    DisplayTransformation::from(&NativeDisplay {
+        scale: [s; 3],
+        ..NativeDisplay::default()
+    })
+    .to_tag()
+}
+
+fn nbt_of(game: &mut Game<'_>, id: u32) -> Compound {
+    let entity = game.native_entity(id).unwrap();
+    game.native_entity_nbt(entity).unwrap()
+}
+
+fn merged(pairs: &[(&str, Tag)]) -> Compound {
+    let mut c = Compound::new();
+    for (k, v) in pairs {
+        c.insert((*k).into(), v.clone());
+    }
+    c
+}
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_merge_changes_a_text_display_text_and_transformation() {
+    let mut game = game();
+    let dim = game.dim.id();
+    let id = game
+        .native_summon(
+            dim,
+            "minecraft:text_display",
+            AT,
+            merged(&[("text", Tag::String("old".into()))]),
+        )
+        .unwrap();
+    let entity = game.native_entity(id).unwrap();
+    let text = merged(&[
+        ("text", Tag::String("new".into())),
+        ("transformation", transformation_with_scale(2.0).clone()),
+    ]);
+    assert!(game.native_entity_merge_nbt(entity, text));
+    let nbt = nbt_of(&mut game, id);
+    assert_eq!(nbt.get(&"text".into()), Some(&Tag::String("new".into())));
+    assert_eq!(
+        nbt.get(&"transformation".into()),
+        Some(&transformation_with_scale(2.0))
+    );
+    // The saved data is what the display is shown with: the raw compound holds the merge.
+    assert_eq!(
+        game.persist.raw.get(&id).and_then(|t| t.get("text")),
+        Some(&Tag::String("new".into()))
+    );
+    // Merging what is there already changes nothing.
+    assert!(!game.native_entity_merge_nbt(entity, merged(&[("text", Tag::String("new".into()))])));
+}
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_merge_changes_an_item_display_transformation_used_on_save() {
+    let mut game = game();
+    let dim = game.dim.id();
+    let id = game
+        .native_summon(dim, "minecraft:item_display", AT, Compound::new())
+        .unwrap();
+    let entity = game.native_entity(id).unwrap();
+    assert!(game.native_entity_merge_nbt(
+        entity,
+        merged(&[("transformation", transformation_with_scale(3.0))])
+    ));
+    // The saved form takes the transformation from the state the display is shown with.
+    assert_eq!(
+        nbt_of(&mut game, id).get(&"transformation".into()),
+        Some(&transformation_with_scale(3.0))
+    );
+}
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_merge_changes_an_interaction_size() {
+    let mut game = game();
+    let dim = game.dim.id();
+    let id = game
+        .native_summon(
+            dim,
+            "minecraft:interaction",
+            AT,
+            merged(&[
+                ("width", Tag::Float(1.0f32.to_bits())),
+                ("height", Tag::Float(1.0f32.to_bits())),
+            ]),
+        )
+        .unwrap();
+    let entity = game.native_entity(id).unwrap();
+    assert!(game.native_entity_merge_nbt(
+        entity,
+        merged(&[
+            ("width", Tag::Float(2.5f32.to_bits())),
+            ("height", Tag::Float(3.0f32.to_bits()))
+        ]),
+    ));
+    let nbt = nbt_of(&mut game, id);
+    assert_eq!(
+        nbt.get(&"width".into()),
+        Some(&Tag::Float(2.5f32.to_bits()))
+    );
+    assert_eq!(
+        nbt.get(&"height".into()),
+        Some(&Tag::Float(3.0f32.to_bits()))
+    );
+}
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_merge_into_a_marker_keeps_its_data() {
+    let mut game = game();
+    let dim = game.dim.id();
+    let id = game
+        .native_summon(
+            dim,
+            "minecraft:marker",
+            AT,
+            merged(&[("data", Tag::Compound(merged(&[("a", Tag::Int(1))])))]),
+        )
+        .unwrap();
+    let entity = game.native_entity(id).unwrap();
+    assert!(game.native_entity_merge_nbt(
+        entity,
+        merged(&[(
+            "Rotation",
+            Tag::List(vec![Tag::Float(90f32.to_bits()), Tag::Float(0)])
+        )]),
+    ));
+    let nbt = nbt_of(&mut game, id);
+    assert_eq!(
+        nbt.get(&"data".into()),
+        Some(&Tag::Compound(merged(&[("a", Tag::Int(1))])))
+    );
+    assert_eq!(game.native_level_markers(dim).len(), 1);
+}
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn summon_takes_markers_and_interactions_with_nbt() {
+    let mut game = game();
+    let dim = game.dim.id();
+    let marker = game
+        .native_summon(
+            dim,
+            "minecraft:marker",
+            AT,
+            merged(&[("data", Tag::Compound(merged(&[("k", Tag::Int(7))])))]),
+        )
+        .expect("marker summons");
+    assert_eq!(
+        nbt_of(&mut game, marker).get(&"data".into()),
+        Some(&Tag::Compound(merged(&[("k", Tag::Int(7))])))
+    );
+    let interaction = game
+        .native_summon(
+            dim,
+            "minecraft:interaction",
+            AT,
+            merged(&[("width", Tag::Float(0.5f32.to_bits()))]),
+        )
+        .expect("interaction summons");
+    assert_eq!(
+        nbt_of(&mut game, interaction).get(&"width".into()),
+        Some(&Tag::Float(0.5f32.to_bits()))
     );
 }

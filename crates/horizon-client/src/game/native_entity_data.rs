@@ -10,6 +10,21 @@ use horizon_world::nbt::{Compound, Tag};
 /// The most tags an entity holds (`Entity.addTag`).
 const MAX_TAGS: usize = 1024;
 
+/// Whether `native_entity_merge_nbt` reloads an entity of `kind` Horizon keeps
+/// without simulating it: markers, the three displays and interactions
+/// (`Display.readAdditionalSaveData`, `Interaction.readAdditionalSaveData`).
+/// Other kinds of that group are refused.
+pub(in crate::game) fn reloads_merged_nbt(kind: &str) -> bool {
+    matches!(
+        kind,
+        "minecraft:marker"
+            | "marker"
+            | "minecraft:text_display"
+            | "minecraft:block_display"
+            | "minecraft:item_display"
+    ) || super::interactions::is_interaction(kind)
+}
+
 impl Game<'_> {
     /// The entity's data as `/data get entity` shows it
     /// (`Entity.saveWithoutId`): its compound without `id`. An entity with no
@@ -30,9 +45,8 @@ impl Game<'_> {
     /// Merges `nbt` into the entity's data and loads the entity from it, as
     /// `/data merge entity` does (`EntityDataAccessor.setData`): true when it
     /// changed. False for a player (vanilla refuses them too), a kind Horizon
-    /// can't reload yet (only mobs, dropped items, armor stands and item
-    /// frames), data nested too deep, or data that changes nothing. API
-    /// 386.
+    /// can't reload yet (see `reloads_merged_nbt`), data nested too deep, or
+    /// data that changes nothing. API 386.
     pub(super) fn native_entity_merge_nbt(&mut self, entity: EntityRef, nbt: Compound) -> bool {
         if self.remote.is_some() {
             return false;

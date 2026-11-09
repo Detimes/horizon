@@ -1,6 +1,7 @@
 //! `/data` (DataCommands), `/tag` (TagCommand) and `/summon` with NBT: entity,
 //! block entity and storage data accessors over the game state.
 use super::{Arg, Context, Game, R, Target, err};
+use crate::game::native_entity_data;
 use horizon_client::{
     containers::BlockEntity,
     data_cmd::{self, Op, path_error},
@@ -684,11 +685,7 @@ impl Game<'_> {
                 let marker = self
                     .others
                     .iter_mut()
-                    .find(|o| {
-                        o.id == id
-                            && (matches!(o.kind.as_str(), "minecraft:marker" | "marker")
-                                || crate::game::interactions::is_interaction(&o.kind))
-                    })
+                    .find(|o| o.id == id && native_entity_data::reloads_merged_nbt(&o.kind))
                     .ok_or_else(stale)?;
                 let position = entity_nbt::position(&tag).ok_or_else(stale)?;
                 let [yaw, pitch] = entity_nbt::rotation(&tag);
@@ -699,6 +696,15 @@ impl Game<'_> {
                 if crate::game::interactions::is_interaction(&marker.kind) {
                     marker.interaction =
                         Some(crate::game::interactions::InteractionState::from_tag(&tag));
+                }
+                // The item display's transformation is kept apart from its saved
+                // tag, and saving takes it first: the merged one replaces it.
+                if marker.kind == "minecraft:item_display" {
+                    marker.item_transformation = Some(
+                        crate::game::native_entities::DisplayTransformation::from_tag(
+                            tag.get("transformation"),
+                        ),
+                    );
                 }
                 // Keep the existing marker identity even when the input edits UUID or id.
                 set_key(&mut tag, "UUID", Tag::IntArray(uuid.to_vec()));
