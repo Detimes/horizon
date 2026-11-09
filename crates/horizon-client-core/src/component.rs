@@ -176,6 +176,19 @@ impl Parser<'_> {
         }
         String::from_utf8_lossy(&self.s[start..self.i]).into_owned()
     }
+    /// The `digits` hex digits of a `\x`, `\u` or `\U` escape as a character.
+    fn hex_escape(&mut self, digits: usize) -> Result<char, String> {
+        let end = self.i + digits;
+        let hex = self
+            .s
+            .get(self.i..end)
+            .filter(|h| h.iter().all(u8::is_ascii_hexdigit))
+            .ok_or_else(|| format!("expected {digits} hex digits at {}", self.i))?;
+        self.i = end;
+        let code = u32::from_str_radix(std::str::from_utf8(hex).unwrap_or("0"), 16)
+            .map_err(|e| e.to_string())?;
+        char::from_u32(code).ok_or_else(|| format!("invalid code point U+{code:X}"))
+    }
     fn string(&mut self) -> Result<String, String> {
         self.ws();
         let Some(q @ (b'"' | b'\'')) = self.peek() else {
@@ -189,11 +202,30 @@ impl Parser<'_> {
                 b'\\' => {
                     let Some(e) = self.peek() else { break };
                     self.i += 1;
-                    out.push(match e {
-                        b'n' => b'\n',
-                        b't' => b'\t',
-                        other => other,
-                    });
+                    let simple = match e {
+                        b'n' => Some(b'\n'),
+                        b't' => Some(b'\t'),
+                        b'r' => Some(b'\r'),
+                        b'b' => Some(0x08),
+                        b'f' => Some(0x0c),
+                        b's' => Some(b' '),
+                        _ => None,
+                    };
+                    match (simple, e) {
+                        (Some(byte), _) => out.push(byte),
+                        // SnbtGrammar: \xXX, \uXXXX and \UXXXXXXXX code points.
+                        (None, b'x' | b'u' | b'U') => {
+                            let digits = match e {
+                                b'x' => 2,
+                                b'u' => 4,
+                                _ => 8,
+                            };
+                            let ch = self.hex_escape(digits)?;
+                            let mut buf = [0; 4];
+                            out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                        }
+                        (None, other) => out.push(other),
+                    }
                 }
                 c if c == q => return Ok(String::from_utf8_lossy(&out).into_owned()),
                 c => out.push(c),

@@ -5101,6 +5101,17 @@ the build. It stays loaded and keeps what it holds; what it registered at start 
 stays registered, and its `RenderHooks` keep drawing until a restart. Mixin code is not switched: it checks
 `native_on` itself, as before ([design/mod-hotload.md](design/mod-hotload.md)).
 
+### Text components from JSON
+
+A trait mod that takes a text component from its configuration (a tab list entry, a chat format, a script's
+message) reads it with `Text::from_json(&str) -> Result<Text, String>`, or `Text::from_json_value(&serde_json::Value) -> Text`
+for a value it already parsed. `Text` is `horizon_client::mod_api::Text`. `from_json` takes what `/tellraw` takes:
+one SNBT or JSON value (a string, a compound, a list, nested `extra`, colours, `click_event`/`clickEvent`), with
+nothing after it but whitespace. A bad value or trailing text is an `Err` with the reason. Selector components come
+out empty, since the game is not at hand to resolve them, and so do `nbt` and `score` components; the `\N{name}`
+escape is not read. Mixin code can call the same function as `horizon_client::text::Text::from_json`. This is a plain
+method on an existing type, not a hook or helper, so it has no fragment in `tools/native-hook-fragments/`.
+
 ### Dependencies between trait mods
 
 A mod can publish functions and statics from its `[api]` package for another mod to call:

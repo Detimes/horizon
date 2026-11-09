@@ -405,6 +405,23 @@ impl Text {
     pub fn is_empty(&self) -> bool {
         self.spans.iter().all(|s| s.text.is_empty())
     }
+    /// Reads a text component the way `/tellraw` does: one SNBT or JSON value (a string,
+    /// `{"text":"Hi","color":"gold"}`, `["a",{"text":"b"}]`, nested `extra`, `click_event`),
+    /// with nothing but whitespace after it. Selector components come out empty (no game state
+    /// here to resolve them against), and so do `nbt` and `score` components.
+    pub fn from_json(json: &str) -> Result<Self, String> {
+        let (value, used) = crate::component::parse_snbt(json)?;
+        if !json.as_bytes()[used..].iter().all(u8::is_ascii_whitespace) {
+            return Err(format!(
+                "unexpected text after the component at byte {used}"
+            ));
+        }
+        Ok(Self::from_json_value(&value))
+    }
+    /// A component already parsed to a `serde_json::Value`, read as `from_json` reads it.
+    pub fn from_json_value(value: &Value) -> Self {
+        crate::component::to_text(value, &mut |_| Text::empty())
+    }
     /// Parse legacy formatting codes (`§a`, `§l`, `§r`...) as the font does.
     pub fn legacy(s: &str) -> Self {
         let mut out = Text::default();
@@ -839,5 +856,116 @@ mod tests {
         assert_eq!(resolved.plain(), "Steve");
         assert_eq!(resolved.spans[0].style.color, Some(RED));
         assert_eq!(resolved.spans[0].style.bold, Some(false));
+    }
+
+    #[test]
+    fn from_json_reads_a_plain_string() {
+        let quoted = Text::from_json("\"Hello there\"").unwrap();
+        assert_eq!(quoted.plain(), "Hello there");
+        assert_eq!(quoted.spans.len(), 1);
+        assert_eq!(quoted.spans[0].style, Style::default());
+        // A bare word is an SNBT string, as `/tellraw @a hello` takes it.
+        assert_eq!(Text::from_json("hello").unwrap().plain(), "hello");
+        assert_eq!(Text::from_json("  \"padded\"\n").unwrap().plain(), "padded");
+        // Multi-byte text survives the byte-level reader.
+        assert_eq!(
+            Text::from_json("{\"text\":\"世界 é\"}").unwrap().plain(),
+            "世界 é"
+        );
+    }
+
+    #[test]
+    fn from_json_reads_an_array_with_siblings() {
+        let t = Text::from_json(r#"["a",{"text":"b","color":"red"}]"#).unwrap();
+        assert_eq!(t.plain(), "ab");
+        assert_eq!(t.spans[1].style.color, Some(RED));
+        // Siblings take the first component's style.
+        let t = Text::from_json(r#"[{"text":"a","bold":true},"b"]"#).unwrap();
+        assert_eq!(t.plain(), "ab");
+        assert!(t.spans.iter().all(|s| s.style.is_bold()));
+    }
+
+    #[test]
+    fn from_json_reads_nested_extra_with_inheritance() {
+        let json = r#"{"text":"a","bold":true,"extra":[{"text":"b","italic":true,
+            "extra":[{"text":"c"}]}]}"#;
+        let t = Text::from_json(json).unwrap();
+        assert_eq!(t.plain(), "abc");
+        assert!(t.spans[0].style.is_bold());
+        assert!(t.spans[1].style.is_bold() && t.spans[1].style.is_italic());
+        // The grandchild inherits bold and italic from its parents.
+        assert!(t.spans[2].style.is_bold() && t.spans[2].style.is_italic());
+    }
+
+    #[test]
+    fn from_json_reads_colors_named_hex_and_snbt_flags() {
+        let t = Text::from_json(r##"{"text":"x","color":"gold"}"##).unwrap();
+        assert_eq!(t.spans[0].style.color, Some(GOLD));
+        let t = Text::from_json(r##"{"text":"x","color":"#12AB34"}"##).unwrap();
+        assert_eq!(t.spans[0].style.color, Some(0x12AB34));
+        // The SNBT form `/tellraw` takes: unquoted keys, `'` strings and `1b` flags.
+        let t = Text::from_json("{text:'Hi ',color:red,extra:[{text:\"there\",underlined:1b}]}")
+            .unwrap();
+        assert_eq!(t.plain(), "Hi there");
+        assert_eq!(t.spans[0].style.color, named_color("red"));
+        assert_eq!(t.spans[1].style.underlined, Some(true));
+    }
+
+    #[test]
+    fn from_json_reads_click_events() {
+        let t = Text::from_json(
+            r#"{"text":"site","click_event":{"action":"open_url","url":"https://example.com"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            t.spans[0].style.click,
+            Some(ClickEvent::OpenUrl("https://example.com".into()))
+        );
+        let t = Text::from_json(
+            r#"{"text":"run","click_event":{"action":"run_command","command":"/seed"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            t.spans[0].style.click,
+            Some(ClickEvent::RunCommand("/seed".into()))
+        );
+        // The pre-datafixer SNBT names are read too.
+        let t =
+            Text::from_json(r#"{text:"copy",clickEvent:{action:copy_to_clipboard,value:"42"}}"#)
+                .unwrap();
+        assert_eq!(
+            t.spans[0].style.click,
+            Some(ClickEvent::CopyToClipboard("42".into()))
+        );
+    }
+
+    #[test]
+    fn from_json_decodes_escapes_like_snbt() {
+        let t = Text::from_json(r#""café \x41\U0001F600 tab\tend""#).unwrap();
+        assert_eq!(t.plain(), "café A\u{1F600} tab\tend");
+        let t = Text::from_json(r#""quote \" and \\ back""#).unwrap();
+        assert_eq!(t.plain(), "quote \" and \\ back");
+        assert!(
+            Text::from_json(r#""\uD800""#).is_err(),
+            "a surrogate is no code point"
+        );
+        assert!(Text::from_json(r#""\u12""#).is_err(), "short hex escape");
+    }
+
+    #[test]
+    fn from_json_refuses_what_is_not_one_component() {
+        assert!(Text::from_json("").is_err());
+        assert!(Text::from_json("{\"text\":\"a\"} trailing").is_err());
+        assert!(Text::from_json("{\"text\":\"unterminated").is_err());
+        assert!(Text::from_json("{\"text\":\"a\"}}").is_err());
+    }
+
+    #[test]
+    fn from_json_value_matches_the_string_form() {
+        let value = json!({"text": "Hi", "color": "aqua", "extra": [" there"]});
+        let from_value = Text::from_json_value(&value);
+        assert_eq!(from_value.plain(), "Hi there");
+        assert_eq!(from_value, Text::from_json(&value.to_string()).unwrap());
+        assert_eq!(from_value.spans[0].style.color, Some(AQUA));
     }
 }
