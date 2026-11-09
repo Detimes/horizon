@@ -315,7 +315,6 @@ mod native_packets;
 mod native_panel;
 mod native_panel_recipes;
 mod native_permissions;
-mod native_placed;
 mod native_player_break;
 mod native_player_fx;
 mod native_player_reads;
