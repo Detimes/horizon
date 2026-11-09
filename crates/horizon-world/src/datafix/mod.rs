@@ -31,7 +31,7 @@ mod tables;
 mod text;
 pub mod world_upgrader;
 
-use crate::nbt::Tag;
+use crate::nbt::{Compound, Tag};
 use dynamic::{as_str, string};
 use schema::{Key, Ty, key, walk};
 pub use tables::{available as tables_available, set_resources};
@@ -331,6 +331,44 @@ pub fn native_upgrade_block_state(
     };
     let new = block_state_data::upgrade_state(&old);
     (new.name, new.props)
+}
+
+/// A block entity's NBT saved at `data_version`, upgraded as the chunk loader upgrades the block entities of a
+/// chunk that version (`update_chunk`): the fixes of each block entity type, up to the current DataVersion. A
+/// block entity whose `id` the version doesn't know stays as it is, as a chunk keeps it. Fixes of the whole chunk
+/// (the blocks around it, the removal of bed block entities) have no block entity to act on and don't run here.
+/// A tag the fixes can't read comes back as it was saved. API @API:upgrade_entities@.
+pub fn native_upgrade_block_entity(data_version: i32, tag: Compound) -> Compound {
+    let known = schema::block_entity_known(
+        &Tag::Compound(tag.clone()),
+        key(data_version.max(0) as u32, 0),
+    );
+    if known {
+        upgrade_native(Ty::BlockEntity, tag, data_version)
+    } else {
+        tag
+    }
+}
+
+/// An entity's NBT saved at `data_version`, upgraded as the chunk loader upgrades the entities of an entity chunk
+/// of that version (`update_region_tag`): the fixes of each entity type and of its passengers, up to the current
+/// DataVersion. A tag the fixes can't read comes back as it was saved. API @API:upgrade_entities@.
+pub fn native_upgrade_entity(data_version: i32, tag: Compound) -> Compound {
+    upgrade_native(Ty::EntityTree, tag, data_version)
+}
+
+/// [`update`] of one value (of type `root`) for the native helpers: a value the fixes panic on is returned as it was.
+fn upgrade_native(root: Ty, tag: Compound, data_version: i32) -> Compound {
+    let original = tag.clone();
+    let mut value = Tag::Compound(tag);
+    let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        update(root, &mut value, data_version, CURRENT);
+    }))
+    .is_ok();
+    match value {
+        Tag::Compound(upgraded) if done => upgraded,
+        _ => original,
+    }
 }
 
 /// `SimpleRegionStorage.upgradeChunkTag` for entity chunks (default version -1)

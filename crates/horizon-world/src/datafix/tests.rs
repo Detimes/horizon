@@ -113,3 +113,62 @@ fn block_states_from_before_the_flattening_take_their_new_names() {
         ("minecraft:stone".to_owned(), granite.to_vec())
     );
 }
+
+const SIGN: &str = "{id: \"minecraft:sign\", x: 1, y: 64, z: 2, Text1: '{\"text\":\"north\"}', Text2: '\"\"', \
+                    Text3: '\"\"', Text4: '\"\"', Color: \"black\", GlowingText: 0b}";
+const VILLAGER: &str = "{id: \"minecraft:villager\", Pos: [0.5d, 64.0d, 0.5d], Profession: 1, Career: 2, \
+                        CareerLevel: 1, Health: 20.0f}";
+
+fn compound(tag: Tag) -> Compound {
+    match tag {
+        Tag::Compound(c) => c,
+        other => panic!("expected a compound, got {other:?}"),
+    }
+}
+
+#[test]
+fn native_block_entity_matches_the_chunk_loader() {
+    // A sign of DataVersion 3400: its four text lines become `front_text`, as the chunk loader does.
+    let old = 3400;
+    let sign = snbt(SIGN);
+    let mut chunk = Tag::compound([
+        ("DataVersion", Tag::Int(old)),
+        ("Status", dynamic::string("minecraft:full")),
+        ("block_entities", Tag::List(vec![sign.clone()])),
+    ]);
+    update_chunk(&mut chunk, "minecraft:overworld", None);
+    let through_chunk = &dynamic::stream(chunk.get("block_entities"))[0];
+    assert!(through_chunk.get("front_text").is_some());
+    assert!(through_chunk.get("Text1").is_none());
+
+    let native = native_upgrade_block_entity(old, compound(sign));
+    assert_eq!(&Tag::Compound(native), through_chunk);
+}
+
+#[test]
+fn native_entity_matches_the_entity_chunk_loader() {
+    // A villager of DataVersion 1900: profession and career become `VillagerData`, as the entity chunk loader does.
+    let old = 1900;
+    let villager = snbt(VILLAGER);
+    let mut record = Tag::compound([
+        ("DataVersion", Tag::Int(old)),
+        ("Entities", Tag::List(vec![villager.clone()])),
+    ]);
+    update_region_tag(Ty::EntityChunk, &mut record);
+    let through_chunk = &dynamic::stream(record.get("Entities"))[0];
+    assert!(through_chunk.get("VillagerData").is_some());
+    assert!(through_chunk.get("Profession").is_none());
+
+    let native = native_upgrade_entity(old, compound(villager));
+    assert_eq!(&Tag::Compound(native), through_chunk);
+}
+
+#[test]
+fn native_upgrades_leave_current_and_unknown_data_alone() {
+    let sign = compound(snbt(SIGN));
+    assert_eq!(native_upgrade_block_entity(CURRENT, sign.clone()), sign);
+    let unknown = compound(snbt(
+        "{id: \"minecraft:no_such_block_entity\", Text1: '\"x\"', x: 0, y: 0, z: 0}",
+    ));
+    assert_eq!(native_upgrade_block_entity(3400, unknown.clone()), unknown);
+}

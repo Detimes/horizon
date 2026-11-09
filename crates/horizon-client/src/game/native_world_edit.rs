@@ -4,7 +4,7 @@ use super::{
     Game,
     native_claimed_items::{NativeHit, RAYCAST_MAX},
 };
-use horizon_world::nbt::Tag;
+use horizon_world::nbt::{Compound, Tag};
 use horizon_world::registry::{BlockRegistry, BlockStateId};
 
 /// Which of a column's heights (`Heightmap.Types`) a run's `y` counts from.
@@ -59,6 +59,18 @@ impl Game<'_> {
         data_version: i32,
     ) -> (String, Vec<(String, String)>) {
         horizon_world::datafix::native_upgrade_block_state(name, props, data_version)
+    }
+
+    /// A block entity's NBT saved at `data_version`, upgraded as the chunk loader upgrades it
+    /// (`horizon_world::datafix::native_upgrade_block_entity`). API @API:upgrade_entities@.
+    pub(super) fn native_upgrade_block_entity(&self, data_version: i32, tag: Compound) -> Compound {
+        horizon_world::datafix::native_upgrade_block_entity(data_version, tag)
+    }
+
+    /// An entity's NBT saved at `data_version`, upgraded as the chunk loader upgrades it
+    /// (`horizon_world::datafix::native_upgrade_entity`). API @API:upgrade_entities@.
+    pub(super) fn native_upgrade_entity(&self, data_version: i32, tag: Compound) -> Compound {
+        horizon_world::datafix::native_upgrade_entity(data_version, tag)
     }
 
     /// For a server mod: the runs made at once, straight into the chunks of the authoritative level `dimension`

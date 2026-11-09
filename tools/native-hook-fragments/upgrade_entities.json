@@ -1,0 +1,10 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "upgrade_block_entity", "target": "horizon_client::game::native_world_edit::Game<'_>::native_upgrade_block_entity"},
+    {"name": "upgrade_entity", "target": "horizon_client::game::native_world_edit::Game<'_>::native_upgrade_entity"}
+  ],
+  "rust_summary": "`native_upgrade_block_entity(data_version, tag)` and `native_upgrade_entity(data_version, tag)`: block entity and entity NBT saved at an older DataVersion, upgraded as the chunk loader upgrades them.",
+  "doc_summary": "`native_upgrade_block_entity(data_version, tag)` and `native_upgrade_entity(data_version, tag)` give a block entity's or an entity's NBT (a compound) as the chunk loader upgrades it when it was saved at `data_version`: the same fixes, from that DataVersion up to the current one, so a block entity or entity of an older world, or a blueprint that carries its DataVersion, comes out in the current format. A block entity whose `id` the version doesn't know, and data at the current DataVersion or newer, come back as they are. Fixes of the whole chunk (the blocks around a block entity, the removal of bed block entities) don't run on one block entity. Bundles need \"hooks\": @API:upgrade_entities@.",
+  "comments": ["crates/horizon-world/src/datafix/mod.rs", "crates/horizon-client/src/game/native_world_edit.rs"]
+}
