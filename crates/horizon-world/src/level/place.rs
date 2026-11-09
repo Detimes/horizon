@@ -5,6 +5,7 @@ use super::{
     Behaviours, LevelAccess, LevelEvent, Sim, Ticks,
     classes::Class,
     data::ItemKind,
+    flags,
     query::{axis_of, clockwise, counter_clockwise, is_horizontal},
     states::BlockId,
     update::{HORIZONTAL, above, below, rel},
@@ -1653,14 +1654,9 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             };
             self.set_block(above_pos, replacement, 27);
         }
-        if !self.set_block(ctx.pos, state, 11) {
+        let Some(placed) = self.write_placed(ctx.pos, state, PLACE_FLAGS) else {
             return PlaceOutcome::Failed;
-        }
-        let placed = self.state(ctx.pos);
-        if b.block(placed) == b.block(state) {
-            self.set_placed_by(ctx.pos, placed);
-        }
-        let placed = self.state(ctx.pos);
+        };
         let sounds = b.data(placed).sounds.clone();
         self.emit(LevelEvent::Sound {
             pos: ctx.pos,
@@ -1673,6 +1669,25 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             pos: ctx.pos,
             state: placed,
         }
+    }
+    /// The write `BlockItem.place` makes: `setBlock` with `flags`, then
+    /// `Block.setPlacedBy` when the block standing there is the one placed (a
+    /// bed's head, a door's upper half). The state now there, or None when
+    /// nothing was written.
+    fn write_placed(
+        &mut self,
+        pos: BlockPos,
+        state: BlockStateId,
+        update: i32,
+    ) -> Option<BlockStateId> {
+        if !self.set_block(pos, state, update) {
+            return None;
+        }
+        let placed = self.state(pos);
+        if self.b.block(placed) == self.b.block(state) {
+            self.set_placed_by(pos, placed);
+        }
+        Some(self.state(pos))
     }
     /// `ScaffoldingBlockItem.updatePlacementContext`.
     fn scaffolding_update_context(
@@ -1735,7 +1750,32 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
     }
 }
 
+/// The `setBlock` flags of `BlockItem.place`: `UPDATE_NEIGHBORS | UPDATE_CLIENTS | UPDATE_IMMEDIATE`.
+/// Without `UPDATE_KNOWN_SHAPE` the neighbours' shapes are updated too.
+const PLACE_FLAGS: i32 = flags::UPDATE_NEIGHBORS | flags::UPDATE_CLIENTS | flags::UPDATE_IMMEDIATE;
+
 impl Behaviours {
+    /// A block written for a player as `BlockItem.place` writes one, from a
+    /// state already chosen (a mod's single block): `setBlock` with the
+    /// placement's flags, so the neighbours hear of it and, unless
+    /// `update_neighbour_shapes` is off, their shapes update (fences, walls and
+    /// stairs connect), then `Block.setPlacedBy` (a bed's head, a door's upper
+    /// half). No place sound, no game event and no item stack. The state there
+    /// afterwards, or None when nothing was written.
+    pub fn place_block_state<L: LevelAccess + ?Sized>(
+        &self,
+        level: &mut L,
+        ticks: &mut Ticks,
+        pos: BlockPos,
+        state: BlockStateId,
+        update_neighbour_shapes: bool,
+    ) -> Option<BlockStateId> {
+        let mut update = PLACE_FLAGS;
+        if !update_neighbour_shapes {
+            update |= flags::UPDATE_KNOWN_SHAPE;
+        }
+        self.sim(level, ticks).write_placed(pos, state, update)
+    }
     /// `BlockItem.place` for the item in `ctx`: resolves the replaced
     /// position, computes `getStateForPlacement`, checks survival and entity
     /// obstruction, writes the block (flags 11), runs `setPlacedBy` (second

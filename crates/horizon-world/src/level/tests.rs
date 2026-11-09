@@ -4172,4 +4172,5 @@ fn fresh_chunk_block_events_do_not_wait_for_ticking_readiness() {
 }
 
 mod barrel;
+mod place_state_tests;
 mod trigger_tests;
