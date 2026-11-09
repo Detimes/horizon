@@ -217,3 +217,109 @@ impl Game<'_> {
         Some((host, g))
     }
 }
+
+impl Game<'_> {
+    /// Whether the player `viewer` sees the player `target` now, by the rules their clients track
+    /// players with (`lan::entity`'s `broadcast_to_player`, as vanilla's `ServerPlayer.broadcastToPlayer`):
+    /// a spectator is seen only by spectators, and only while it watches through its own camera; a
+    /// player a mod vanished (`native_hide_player`) is seen by viewers of at least its level; and a
+    /// player the viewer was hidden from (`native_hide_entity_from`) is not seen by them. Distance and
+    /// chunks are not part of it: a player out of range is still seen (their Tab list entry shows).
+    /// False when either is not on, and on a client. Read-only, so it changes nothing; the viewer
+    /// and the target may be the same player. API @API:player_visible_to@.
+    pub(super) fn native_player_visible_to(&self, viewer: u128, target: u128) -> bool {
+        let (Some((host, v)), Some((_, t))) = (self.hub_guest(viewer), self.hub_guest(target))
+        else {
+            return false;
+        };
+        visible(
+            Seen {
+                spectator: v.spectator(),
+                watching: v.watching,
+                permission: v.permission,
+            },
+            Seen {
+                spectator: t.spectator(),
+                watching: t.watching,
+                permission: t.permission,
+            },
+            host.hub.hidden.get(&target).copied(),
+            v.tracker.hidden.contains(&t.entity_id),
+        )
+    }
+}
+
+/// What the visibility rules read of one player.
+#[derive(Clone, Copy)]
+struct Seen {
+    spectator: bool,
+    watching: bool,
+    permission: u8,
+}
+
+/// `lan::entity`'s `broadcast_to_player` for a player: `vanish` is the level a mod hid the target
+/// at, `hidden_from_viewer` whether the viewer's client was hidden from the target's entity.
+fn visible(viewer: Seen, target: Seen, vanish: Option<u8>, hidden_from_viewer: bool) -> bool {
+    let shown = if viewer.spectator {
+        !target.watching
+    } else {
+        !target.spectator
+    };
+    shown && vanish.is_none_or(|level| viewer.permission >= level) && !hidden_from_viewer
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::{Seen, visible};
+
+    const PLAYER: Seen = Seen {
+        spectator: false,
+        watching: false,
+        permission: 0,
+    };
+    const SPECTATOR: Seen = Seen {
+        spectator: true,
+        watching: false,
+        permission: 0,
+    };
+    const WATCHING: Seen = Seen {
+        spectator: true,
+        watching: true,
+        permission: 0,
+    };
+
+    #[test]
+    fn a_player_sees_another_unless_it_is_vanished_or_hidden_from_them() {
+        assert!(visible(PLAYER, PLAYER, None, false));
+        assert!(!visible(PLAYER, PLAYER, None, true));
+        // Vanished at level 0: everyone is at least that level.
+        assert!(visible(PLAYER, PLAYER, Some(0), false));
+    }
+
+    #[test]
+    fn a_spectator_is_seen_by_spectators_only_and_not_while_watching_a_camera() {
+        assert!(!visible(PLAYER, SPECTATOR, None, false));
+        assert!(visible(SPECTATOR, SPECTATOR, None, false));
+        assert!(visible(SPECTATOR, PLAYER, None, false));
+        // Watching through a camera hides a spectator from every other player.
+        assert!(!visible(SPECTATOR, WATCHING, None, false));
+        assert!(!visible(PLAYER, WATCHING, None, false));
+    }
+
+    #[test]
+    fn a_vanished_player_is_seen_from_its_level_up_only() {
+        let op = Seen {
+            permission: 3,
+            ..PLAYER
+        };
+        assert!(!visible(PLAYER, PLAYER, Some(3), false));
+        assert!(visible(op, PLAYER, Some(3), false));
+        // Vanished at level 2: a level 3 viewer sees them, a level 1 viewer does not.
+        let mod_viewer = Seen {
+            permission: 1,
+            ..PLAYER
+        };
+        assert!(!visible(mod_viewer, PLAYER, Some(2), false));
+        assert!(visible(op, PLAYER, Some(2), false));
+    }
+}

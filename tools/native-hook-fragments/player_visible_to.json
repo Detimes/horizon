@@ -1,0 +1,9 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "player_visible_to", "target": "horizon_client::game::native_player_reads::Game<'_>::native_player_visible_to"}
+  ],
+  "rust_summary": "whether one player sees another (`native_player_visible_to`): vanish levels, per-viewer hides and spectators, as the tracker applies them.",
+  "doc_summary": "`native_player_visible_to(viewer, target)` tells whether the player `viewer` sees the player `target` now, by the rules their clients track players with: spectators seen only by spectators (and not while watching a camera), a vanished player seen from its level up (`native_hide_player`), and a player hidden from the viewer (`native_hide_entity_from`) not seen. Read-only; false when either is not on. Bundles need \"hooks\": @API:player_visible_to@.",
+  "comments": ["crates/horizon-client/src/game/native_player_reads.rs"]
+}

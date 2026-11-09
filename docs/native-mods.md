@@ -3072,6 +3072,14 @@ None.
   sent it and its wire bytes in and out (Paper's `getClientBrandName`, `locale`, `getClientViewDistance`). It
   reads the hub, so it is None inside a player's hook while the hub is out of reach, the acting player's too.
   Bundles need `"hooks": @API:player_client@`.
+- Helper **`native_player_visible_to(viewer, target) -> bool`** (`host.player_visible_to`): whether the player `viewer`
+  sees the player `target` now, by the rules their clients track players with: a spectator is seen only by spectators,
+  and only while it watches through its own camera (vanilla's `ServerPlayer.broadcastToPlayer`); a player a mod vanished
+  (`native_hide_player`) is seen by viewers of at least its level; and a player the viewer was hidden from by
+  `native_hide_entity_from` is not seen by them. A chat or Tab list mod uses it to leave out, and not announce, players
+  that the viewer cannot see. Distance and chunks are not part of it: a player out of range is still seen. It is
+  read-only, so it changes nothing; `viewer` may be `target`. False when either is not on, and on a client, or when
+  the hub is out of reach (as `native_player_client`). Bundles need `"hooks": @API:player_visible_to@`.
 - Helpers **`native_player_stats(uuid)`**, **`native_player_stat(uuid, stat_type, key)`** and
   **`native_set_player_stats(uuid, stats)`** (`host.player_stats`, ...): the player's statistics as vanilla's
   `players/stats/<uuid>.json` holds them (`{"stats": {"minecraft:custom": {"minecraft:jump": 3}}, "DataVersion":
