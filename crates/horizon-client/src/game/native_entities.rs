@@ -9,6 +9,7 @@ use super::{
     Game,
     commands::{Target, place_summoned},
 };
+use crate::mod_api::NativeEntityEditKind;
 use horizon_core::geometry::Vec3;
 use horizon_world::nbt::{Compound, Tag};
 
@@ -720,6 +721,29 @@ impl Game<'_> {
     }
 }
 
+impl Game<'_> {
+    /// Whether the editing mod may spawn, remove or edit an entity of `entity_type` at `pos` in the
+    /// server level `dimension`, for `player`'s action (None when there is none). Fires
+    /// `native_mod_entity_edit` and is false when a mod cancels it. API @API:mod_entity_edit@.
+    pub(super) fn native_mod_entity_edit_allowed(
+        &mut self,
+        player: Option<u128>,
+        dimension: &str,
+        action: NativeEntityEditKind,
+        entity_type: &str,
+        pos: [f64; 3],
+    ) -> bool {
+        let kind = match action {
+            NativeEntityEditKind::Spawn => "spawn",
+            NativeEntityEditKind::Remove => "remove",
+            NativeEntityEditKind::Edit => "edit",
+        };
+        let mut canceled = false;
+        self.native_mod_entity_edit(player, dimension, kind, entity_type, pos, &mut canceled);
+        !canceled
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -828,3 +852,7 @@ mod tests {
 #[cfg(test)]
 #[path = "native_summon_tests.rs"]
 mod native_summon_tests;
+
+#[cfg(test)]
+#[path = "native_mod_entity_edit_tests.rs"]
+mod native_mod_entity_edit_tests;

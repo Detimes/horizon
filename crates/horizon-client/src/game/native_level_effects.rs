@@ -3,7 +3,8 @@
 //! Every player in range hears or sees them, as `ServerLevel.playSound` and
 //! `sendParticles` send them. They return false on a client, for a handle of
 //! an earlier open, or for arguments the network can't carry.
-use super::native_hooks::{mod_particles_ok, mod_sound_ok};
+use super::native_guards::mod_particles_ok;
+use super::native_hooks::mod_sound_ok;
 use super::{Dim, Game, creatures::NativeSound, lan_particles::QueuedParticle};
 use horizon_client::mod_api::{LevelRef, ParticleOptions};
 use horizon_world::registry::BlockStateId;

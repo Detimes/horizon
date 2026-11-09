@@ -5520,3 +5520,12 @@ particles or entity effects. The pending fragment assigns its API number at merg
 ### Advancement displays
 
 The pending `advancement_display` helper (`host.advancement_display`) returns an `AdvancementDisplay` for an advancement id in the loaded tree: `title` and `description` as `Text` (the components as the datapack wrote them), `frame` as `task`, `goal` or `challenge`, `announce_to_chat` and `hidden`. It is None for an unknown id or one without a display. The helper loads the tree on first use, so it is for server-side reads, not hot paths. The pending fragment assigns its API number at merge (`@API:advancement_display@`).
+
+### Entity edits a mod asks about first
+
+`native_mod_entity_edit_allowed(player, dimension, action, entity_type, pos)` is for an editor mod (such as Axiom's spawn,
+remove and edit tools): it asks the other mods before the editor's own `native_summon`, `native_remove_entity` or
+`native_entity_merge_nbt`. `player` is the acting player's UUID or none, `action` is `NativeEntityEditKind::Spawn`,
+`Remove` or `Edit`. Each call fires `native_mod_entity_edit` (`kind` is `spawn`, `remove` or `edit`) to the mods, and returns
+false when one of them sets `canceled`, so the editor leaves the world alone. Nothing changes for a mod that never asks. Source:
+`crates/horizon-client/src/game/native_entities.rs`. Bundles need `"hooks": @API:mod_entity_edit@`.

@@ -1,0 +1,25 @@
+{
+  "hooks": [
+    {
+      "name": "mod_entity_edit",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_mod_entity_edit",
+      "side": "server",
+      "cancellable": true,
+      "mod_api": {
+        "contract": "cancel",
+        "out": "canceled"
+      }
+    }
+  ],
+  "helpers": [
+    {
+      "name": "mod_entity_edit_allowed",
+      "target": "horizon_client::game::native_entities::Game<'_>::native_mod_entity_edit_allowed"
+    }
+  ],
+  "rust_summary": "an editing mod asks before it spawns, removes or edits an entity (`native_mod_entity_edit`, `native_mod_entity_edit_allowed`).",
+  "doc_summary": "`native_mod_entity_edit_allowed(player, dimension, action, entity_type, pos)` is what an editor mod (such as Axiom's spawn, remove and edit tools) asks before each `native_summon`, `native_remove_entity` or `native_entity_merge_nbt` it makes, with `action` `Spawn`, `Remove` or `Edit`. It fires `native_mod_entity_edit` (`kind` `spawn`, `remove` or `edit`) to every mod: a mod that sets `canceled` makes it return false, and the editor leaves the world alone. Returns true when no mod cancels, so a mod that never asks sees no change. Bundles need \"hooks\": @API:mod_entity_edit@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_entities.rs"
+  ]
+}

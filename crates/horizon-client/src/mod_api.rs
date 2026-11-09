@@ -135,6 +135,15 @@ pub enum NativeChunkLoad {
     Failed,
 }
 
+/// What an editing mod does to an entity, asked with `native_mod_entity_edit_allowed`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NativeEntityEditKind {
+    Spawn,
+    Remove,
+    Edit,
+}
+
 /// An owned fluid payload. Component additions and removals are preserved exactly;
 /// the amount is in millibuckets. Empty/negative stacks are not transferable.
 #[derive(Clone, Debug, PartialEq)]

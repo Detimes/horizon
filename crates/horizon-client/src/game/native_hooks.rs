@@ -990,7 +990,7 @@
 //! Bodies have no `cfg` and no macros: horizon-mixins refuses a target with
 //! either (`tests::hook_points_stay_hookable`).
 use super::native_data_maps::NativeDataMapType;
-use super::native_guards::{box_meets, finite, finite_params, mod_image_fits};
+use super::native_guards::{box_meets, finite, finite_params, mod_image_fits, mod_particles_ok};
 use super::native_item_energy::ItemEnergyBuffer;
 use super::native_world_edit::{property_change, with_property};
 use super::{
@@ -9057,6 +9057,30 @@ impl Game<'_> {
             canceled,
         );
     }
+    /// A mod is about to spawn, remove or edit an entity of `entity_type` at `pos` in the server level
+    /// `dimension`: `kind` is `spawn`, `remove` or `edit`. `player` is the acting player's UUID when there is one.
+    /// Asked by `native_mod_entity_edit_allowed`, so only an editing mod hears it. Set `canceled` to leave it
+    /// undone. API @API:mod_entity_edit@.
+    pub(super) fn native_mod_entity_edit(
+        &mut self,
+        player: Option<u128>,
+        dimension: &str,
+        kind: &str,
+        entity_type: &str,
+        pos: [f64; 3],
+        canceled: &mut bool,
+    ) {
+        mod_api::dispatch_mod_entity_edit(
+            self,
+            mod_api::mods(),
+            player,
+            dimension,
+            kind,
+            entity_type,
+            pos,
+            canceled,
+        );
+    }
     /// Whether a mod listens to `native_entity_tick_pre` and `native_entity_tick_post`: a mod
     /// that hooks them hooks this one too and sets `listened` (HEAD, `*listened = true`).
     /// Without it the game tells no entity's tick, and keeps no list of them. Asked once for
@@ -10011,50 +10035,6 @@ pub(super) fn mod_sound_ok(
         && source < horizon_client::settings::SOUND_SOURCES.len()
         && position_ok
         && gain_ok
-}
-
-/// Whether a native mod's particles can be sent. Block particle types need
-/// a known state (`state_ok`); item, trail and vibration particles aren't
-/// supported by the network dispatch; a mod's own type must be namespaced.
-pub(super) fn mod_particles_ok(
-    options: &ParticleOptions,
-    state: Option<BlockStateId>,
-    state_ok: impl Fn(BlockStateId) -> bool,
-    at: [f64; 3],
-    spread: [f64; 3],
-    speed: f64,
-) -> bool {
-    use ParticleType as T;
-    // A native mod's own type: the name has to be namespaced, and a client
-    // draws it only when its pack has the sprite set.
-    if let Some(name) = &options.mod_particle {
-        let namespaced = name
-            .split_once(':')
-            .is_some_and(|(ns, path)| !ns.is_empty() && !path.is_empty());
-        if !namespaced {
-            return false;
-        }
-    }
-    let supported = match options.ty {
-        T::Block | T::BlockMarker | T::FallingDust | T::DustPillar | T::BlockCrumble => {
-            state.is_some_and(state_ok)
-        }
-        T::Item | T::Trail | T::Vibration => false,
-        T::Geyser | T::GeyserPlume | T::GeyserBase | T::GeyserPoof => options
-            .geyser
-            .is_some_and(|(_, impulse)| impulse.is_finite()),
-        _ => true,
-    };
-    supported
-        && at.into_iter().all(f64::is_finite)
-        && spread
-            .into_iter()
-            .all(|v| v.is_finite() && v.abs() <= f32::MAX as f64)
-        && speed.is_finite()
-        && speed.abs() <= f32::MAX as f64
-        && options.color.into_iter().all(f32::is_finite)
-        && options.to_color.into_iter().all(f32::is_finite)
-        && options.scale.is_finite()
 }
 
 fn sound_id(id: &str) -> bool {
