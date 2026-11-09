@@ -1,0 +1,10 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "anticheat_exempt", "target": "horizon_client::game::native_server::Game<'_>::native_anticheat_exempt"},
+    {"name": "anticheat_exempted", "target": "horizon_client::game::native_server::Game<'_>::native_anticheat_exempted"}
+  ],
+  "rust_summary": "exempt a player from the anticheat (`native_anticheat_exempt`, `native_anticheat_exempted`).",
+  "doc_summary": "`anticheat_exempt(uuid, exempt)` exempts that player from the dedicated server's anticheat while `exempt` is set: its checks flag nothing about them (no violation level, setback, kick or ban). Cleared when they leave, or by setting it back to false. `anticheat_exempted(uuid)` reads it. False when they aren't on, and where the player's state is swapped in (inside a player's hook). Bundles need \"hooks\": @API:anticheat_exempt@.",
+  "comments": ["crates/horizon-client/src/game/native_server.rs"]
+}

@@ -557,6 +557,41 @@ impl Game<'_> {
         };
         true
     }
+    /// Exempts that player from the dedicated server's anticheat while
+    /// `exempt` is set (a mod that moves the player itself: a bot, a
+    /// scripted cutscene, an editor): the checks flag nothing about them, so
+    /// no violation level, log line, setback, kick or ban. Cleared when they
+    /// leave (a rejoining player is checked again) or by a mod setting it
+    /// back to false. Only where no player's state is swapped in, as
+    /// `native_run_command`; false there and when they aren't on. API
+    /// @API:anticheat_exempt@.
+    pub(super) fn native_anticheat_exempt(&mut self, uuid: u128, exempt: bool) -> bool {
+        let Some(host) = &mut self.lan else {
+            return false;
+        };
+        let Some(g) = host
+            .hub
+            .guests
+            .iter_mut()
+            .find(|g| g.placed && g.uuid == uuid)
+        else {
+            return false;
+        };
+        g.anticheat.exempt = exempt;
+        true
+    }
+    /// Whether that player is exempt from the anticheat (see
+    /// `native_anticheat_exempt`). False when they aren't on, or where no
+    /// player's state is swapped in, as `native_run_command`. API
+    /// @API:anticheat_exempt@.
+    pub(super) fn native_anticheat_exempted(&self, uuid: u128) -> bool {
+        self.lan.as_ref().is_some_and(|host| {
+            host.hub
+                .guests
+                .iter()
+                .any(|g| g.placed && g.uuid == uuid && g.anticheat.exempt)
+        })
+    }
     /// Shows `nickname` in place of that player's name in chat (their
     /// messages, `/me`, `/msg`) and in the Tab list; None shows their name
     /// again. Hovering the shown name gives the real one, which stays in the

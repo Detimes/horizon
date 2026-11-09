@@ -1376,3 +1376,46 @@ fn memory_connection_first_view_sends_every_ready_column() {
         "an empty queue sends nothing"
     );
 }
+
+#[test]
+fn an_exempt_guests_violating_move_is_not_flagged() {
+    use horizon_anticheat::{Check, Config};
+    // A prediction that is far off, flagged hard: setback at once, alert at once.
+    let config = Config::from_server_toml(
+        "[anticheat]\nenabled = true\nlog = \"\"\nstrikes = \"\"\n\
+         [anticheat.prediction]\nsetback = 2\nalert = 5\nkick = 60\n",
+    )
+    .unwrap();
+    let over = crate::lan::prediction::Over {
+        ticks: 1,
+        worst: 0.5,
+        weight: 5.0,
+        at_worst: None,
+        moved: true,
+    };
+    let agreed = [0.5, 64.0, 0.5];
+
+    let (mut hub, _rx) = hub_with_a_guest();
+    hub.set_anticheat(config.clone());
+    hub.guests[0].anticheat.exempt = true;
+    let events = hub.anticheat_prediction(1, &over, agreed);
+    assert!(events.is_empty(), "an exempt player is told of nothing");
+    assert_eq!(
+        hub.guests[0].anticheat.vl(&config, Check::Prediction, 0),
+        0.0,
+        "an exempt player gains no violation level"
+    );
+    assert!(
+        hub.guests[0].awaiting_teleport.is_none(),
+        "an exempt player is not sent back"
+    );
+
+    // Cleared: the same move is flagged again, with its setback and alert.
+    hub.guests[0].anticheat.exempt = false;
+    let events = hub.anticheat_prediction(1, &over, agreed);
+    assert!(!events.is_empty(), "a player who is not exempt is alerted");
+    assert!(
+        hub.guests[0].anticheat.vl(&config, Check::Prediction, 0) > 0.0,
+        "a player who is not exempt gains a violation level"
+    );
+}

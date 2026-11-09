@@ -3216,6 +3216,13 @@ injections before.
   later tick, which is heard again, so a vanish mod cancels every time the target is a vanished player. A target that
   is neither a player nor a mob is not heard. No `self` (the mobs are out of the game while they tick), so a mod
   decides from its own state. Server-side. Bundles need `"hooks": @API:living_change_target@`.
+- Helpers **`native_anticheat_exempt(uuid, exempt)`** and **`native_anticheat_exempted(uuid)`** (`host.anticheat_exempt`,
+  `host.anticheat_exempted`): exempt an online player from the dedicated server's anticheat while `exempt` is set, for a
+  mod that moves the player itself (a bot, a scripted cutscene, an editor). The checks flag nothing about that player (no
+  violation level, log line, setback, kick or ban) while they are exempt; the flag is kept by UUID only on their record
+  and is cleared when they leave, so a rejoining player is checked again. `native_anticheat_exempted` reads it. False when
+  they aren't on, and inside a player's hook, where their state is swapped in. Server-side; the anticheat itself is in
+  [anticheat.md](anticheat.md). Bundles need `"hooks": @API:anticheat_exempt@`.
 - Helper **`native_hide_entity_from(viewer, entity, hidden)`** (`host.hide_entity_from`): hides the entity with
   network id `entity` (a mob, a display, another player's `NativeServerPlayer.entity_id`) from the player `viewer`
   alone, or shows it again, as Bukkit's `Player.hideEntity`/`showEntity` (`hidePlayer` for a player). From the next

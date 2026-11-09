@@ -189,7 +189,7 @@ impl Hub {
         let Some(ac) = self.anticheat.as_deref() else {
             return false;
         };
-        if !ac.config.runs(Check::Combat) {
+        if !ac.config.runs(Check::Combat) || self.guests[i].anticheat.exempt {
             return false;
         }
         if let Some(foul) = self.guests[i].anticheat.attacks.attack(target)
@@ -311,7 +311,7 @@ impl Hub {
         ctx: &TickCtx,
         events: &mut Vec<HostEvent>,
     ) -> Option<bool> {
-        if !self.anticheat.as_deref()?.config.runs(Check::Ground) {
+        if !self.anticheat.as_deref()?.config.runs(Check::Ground) || self.guests[i].anticheat.exempt {
             return None;
         }
         // Standing still: no fall to skip, whatever holds the player up (a block the server doesn't
@@ -424,6 +424,11 @@ impl Hub {
         self.flag_to(i, check, weight, detail, events, None)
     }
 
+    /// Whether guest `i` is exempt from the checks (see [`horizon_anticheat::Player::exempt`]).
+    pub(super) fn exempt(&self, i: usize) -> bool {
+        self.guests[i].anticheat.exempt
+    }
+
     /// `prediction`: guest `conn`'s ticks that landed off the replay. A setback sends the player
     /// back to `agreed`, where its moves last agreed.
     pub fn anticheat_prediction(
@@ -466,6 +471,10 @@ impl Hub {
         events: &mut Vec<HostEvent>,
         back: Option<[f64; 3]>,
     ) -> bool {
+        // An exempt player is flagged by nothing: no level, no log line, no setback, kick or ban.
+        if self.exempt(i) {
+            return false;
+        }
         let ticks = self.ticks;
         let Some(ac) = self.anticheat.as_deref_mut() else {
             return false;

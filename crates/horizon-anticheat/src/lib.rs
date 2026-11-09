@@ -290,6 +290,9 @@ pub struct Player {
     pub sprinting: bool,
     /// The attacks of the client tick being heard.
     pub attacks: combat::Attacks,
+    /// Exempt from every check while set (a native mod moves the player itself): nothing is flagged
+    /// and no setback, kick or ban follows. Set by the mod, cleared when the player leaves.
+    pub exempt: bool,
 }
 
 impl Player {
