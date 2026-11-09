@@ -3525,6 +3525,15 @@ while no mod asks for it.
   `horizon_protocol::ids::play`'s as the server sent or read it (before an older client's renumbering; keep-alives
   and the disconnect included), the bytes are id and payload before compression and encryption. A tick stalled for
   long keeps at most 65536 packets each way. Bundles need `"hooks": @API:server_packets@`.
+- **`native_player_chunk_sent(player, dimension, chunk)`**, **`native_player_chunk_forgotten(player, dimension, chunk)`** and
+  **`native_player_chunk_listened(listened)`**: the chunk columns each player's client is sent and told to forget, for a
+  map or a diagnostics mod. `player` is the uuid, `dimension` the level's id, `chunk` the column's `[x, z]`. Sent is
+  heard once per column in the batch that carried it, after the batch is sent
+  (`ClientboundLevelChunkWithLightPacket`); forgotten once the view moved past it, before the packet goes out
+  (`ClientboundForgetLevelChunkPacket`). Both only hear. Nothing is recorded until a mod sets `*listened` in
+  `native_player_chunk_listened`, which the game asks once a server tick (so a mod that starts to listen hears from the
+  next tick on); the chunks of a tick are heard at its end, in order. A mod that hooks either sets `listened`. Bundles
+  need `"hooks": @API:player_chunk_events@`.
 - **`native_server_tick_timed(wall_ms, cpu_ms, spans)`**, **`native_spans(on)`**, **`native_mob_cost_sampling(on)`**
   and **`native_take_mob_costs()`**: a profiler by tick step instead of by stack, as spark's. After each pass of the
   server tick (paused ones too) while its spans are recorded, the hook gets the pass's wall time, the server thread's

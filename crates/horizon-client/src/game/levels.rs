@@ -701,9 +701,11 @@ impl Game<'_> {
             let _span = horizon_client::spans::guard("mods_server_tick_end");
             self.native_lifecycle_server_tick_end(paused);
         }
-        // The packets counted for `native_server_packets` (only while a mod counts them).
+        // The packets counted for `native_server_packets` (only while a mod counts them), and the
+        // chunks sent and forgotten for the chunk hooks (only while a mod listens).
         if server {
             self.diagnostics_packets_tick();
+            self.diagnostics_chunks_tick();
         }
         Ok(())
     }

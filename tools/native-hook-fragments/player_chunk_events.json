@@ -1,0 +1,39 @@
+{
+  "hooks": [
+    {
+      "name": "player_chunk_sent",
+      "target": "horizon_client::game::native_diagnostics::Game<'_>::native_player_chunk_sent",
+      "neoforge": "none (NeoForge has no chunk-sent event; Paper's PlayerChunkLoadEvent is the nearest)",
+      "side": "server",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "listen"
+      }
+    },
+    {
+      "name": "player_chunk_forgotten",
+      "target": "horizon_client::game::native_diagnostics::Game<'_>::native_player_chunk_forgotten",
+      "neoforge": "none (NeoForge has no chunk-forgotten event)",
+      "side": "server",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "listen"
+      }
+    },
+    {
+      "name": "player_chunk_listened",
+      "target": "horizon_client::game::native_diagnostics::Game<'_>::native_player_chunk_listened",
+      "side": "server",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "collect",
+        "out": "listened"
+      }
+    }
+  ],
+  "rust_summary": "the chunk columns the hub sends a server player and the ones it forgets (`native_player_chunk_sent`, `native_player_chunk_forgotten`), told only while a mod sets `native_player_chunk_listened`.",
+  "doc_summary": "a server player's chunk columns: `native_player_chunk_sent(player, dimension, chunk)` is heard once for each column the server sends a player (`ClientboundLevelChunkWithLightPacket`), after its batch is sent, and `native_player_chunk_forgotten(player, dimension, chunk)` for each column the view moved past and the player is told to forget (`ClientboundForgetLevelChunkPacket`), before the packet goes out. `player` is the player's uuid, `dimension` the level's id (`minecraft:overworld`), `chunk` the column's [x, z]. Both are listen only. Nothing is recorded until a mod sets `*listened` in `native_player_chunk_listened(listened)`, asked once a server tick (the mods that hear either set it); a column sent or forgotten in a tick is heard at its end. Bundles need \"hooks\": @API:player_chunk_events@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_diagnostics.rs"
+  ]
+}

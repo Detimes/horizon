@@ -2887,7 +2887,7 @@ impl Hub {
                 }
                 sent.then_some(key)
             }));
-            g.sent_chunks.extend(seen);
+            super::chunk_events::sent(g.uuid, &self.config.dimension, seen, &mut g.sent_chunks);
         }
     }
 
@@ -2916,7 +2916,7 @@ impl Hub {
             .copied()
             .filter(|&(x, z)| !tracked(cx, cz, reach, x, z))
             .collect();
-        for (x, z) in forget {
+        for (x, z) in super::chunk_events::forgetting(g.uuid, &self.config.dimension, forget) {
             g.sent_chunks.remove(&(x, z));
             g.far_sent_chunks.remove(&(x, z));
             g.send(&C::ForgetLevelChunk(play::ForgetLevelChunk { pos: [x, z] }));
