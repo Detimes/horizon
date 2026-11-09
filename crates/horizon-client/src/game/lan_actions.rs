@@ -958,7 +958,7 @@ impl Game<'_> {
         play.swings += self.swings_started.wrapping_sub(swings);
         self.swings_started = swings;
         for packet in std::mem::replace(&mut self.guest_packets, packets) {
-            host.hub.send_to(conn, &packet);
+            host.hub.send_turn_packet(conn, &packet);
         }
         // ServerPlayer.connection.send: the guest's own entity events.
         let entity_id = host.hub.guests[i].entity_id;

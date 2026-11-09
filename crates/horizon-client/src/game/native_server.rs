@@ -435,6 +435,35 @@ impl Game<'_> {
     pub(super) fn native_send(&mut self, uuid: u128, packet: C) -> bool {
         self.native_send_all(uuid, vec![packet])
     }
+    /// Acknowledges the block interactions a client predicted up to `sequence`
+    /// (`ClientboundBlockChangedAckPacket`), as vanilla's `ackBlockChangesUpTo`: the highest
+    /// sequence is kept and sent by the tick, after that tick's block changes. Inside the player's
+    /// own hook it is kept with the turn's packets and taken on when the turn returns, so the tick
+    /// still sends it after the block changes. False when they aren't on, or `sequence` is negative
+    /// (vanilla throws). API @API:ack_block_changes@.
+    pub(super) fn native_ack_block_changes(&mut self, player: u128, sequence: i32) -> bool {
+        if sequence < 0 {
+            return false;
+        }
+        if self.lan_acting_uuid == Some(player) {
+            self.guest_packets
+                .push(C::BlockChangedAck(play::BlockChangedAck { sequence }));
+            return true;
+        }
+        let Some(host) = &self.lan else {
+            return false;
+        };
+        let Some(g) = host
+            .hub
+            .guests
+            .iter()
+            .find(|g| g.placed && g.uuid == player)
+        else {
+            return false;
+        };
+        host.hub.ack(g.conn, sequence);
+        true
+    }
     fn native_send_all(&mut self, uuid: u128, packets: Vec<C>) -> bool {
         if self.lan_acting_uuid == Some(uuid) {
             self.guest_packets.extend(packets);

@@ -1376,3 +1376,90 @@ fn memory_connection_first_view_sends_every_ready_column() {
         "an empty queue sends nothing"
     );
 }
+
+/// The block-change acks a guest is sent, in order.
+fn sent_block_acks(rx: &std::sync::mpsc::Receiver<crate::lan::Out>) -> Vec<i32> {
+    let mut sent = Vec::new();
+    while let Ok(out) = rx.try_recv() {
+        let crate::lan::Out::Packet(body) = out else {
+            continue;
+        };
+        let mut r = horizon_protocol::buf::Reader::new(&body);
+        let id = r.varint().unwrap();
+        if let Ok(C::BlockChangedAck(p)) = C::decode(id, r.rest()) {
+            sent.push(p.sequence);
+        }
+    }
+    sent
+}
+
+/// One tick of the level, as `tick_packet` runs it, with nothing from the guest to handle.
+fn tick_level_once(hub: &mut Hub, world: &mut World) {
+    let mut next_entity = 2;
+    let border = crate::worldborder::WorldBorder::default();
+    let mut ctx = TickCtx {
+        sea_level: 63,
+        world,
+        entities: &[],
+        next_entity: &mut next_entity,
+        spawn: [0.5, 64.0, 0.5],
+        spawn_angle: [0.0; 2],
+        difficulty: 2,
+        difficulty_locked: false,
+        clock_rate: 1.0,
+        tick_rate: 20.0,
+        tick_frozen: false,
+        tick_steps: Default::default(),
+        collision: None,
+        border: &border,
+        streaming: None,
+    };
+    let _ = hub.tick_level(&mut ctx);
+}
+
+/// ServerGamePacketListenerImpl.ackBlockChangesUpTo: the highest sequence is kept, a negative one
+/// is ignored, and the tick sends one ack, once.
+#[test]
+fn a_block_change_ack_keeps_the_highest_sequence_and_is_sent_once_at_the_tick() {
+    let (mut hub, rx) = hub_with_a_guest();
+    let mut world = floor_at(0);
+    hub.ack(1, 5);
+    hub.ack(1, 9);
+    hub.ack(1, 7);
+    hub.ack(1, -1);
+    assert!(
+        sent_block_acks(&rx).is_empty(),
+        "nothing goes before the tick"
+    );
+    tick_level_once(&mut hub, &mut world);
+    assert_eq!(sent_block_acks(&rx), [9]);
+    tick_level_once(&mut hub, &mut world);
+    assert!(sent_block_acks(&rx).is_empty(), "the ack is sent once");
+}
+
+/// A turn's block-change ack waits for the tick like `ackBlockChangesUpTo`, while its other
+/// packets are sent when the turn returns.
+#[test]
+fn a_turns_block_change_ack_waits_for_the_tick_and_other_packets_go_at_once() {
+    let (mut hub, rx) = hub_with_a_guest();
+    let mut world = floor_at(0);
+    hub.send_turn_packet(
+        1,
+        &C::BlockChangedAck(play::BlockChangedAck { sequence: 4 }),
+    );
+    hub.send_turn_packet(
+        1,
+        &C::BlockChangedAck(play::BlockChangedAck { sequence: 6 }),
+    );
+    hub.send_turn_packet(
+        1,
+        &C::BlockUpdate(play::BlockUpdate {
+            pos: [1, 2, 3],
+            state: 5,
+        }),
+    );
+    assert_eq!(sent_block_updates(&rx), [([1, 2, 3], 5)]);
+    assert!(sent_block_acks(&rx).is_empty(), "the ack is not sent yet");
+    tick_level_once(&mut hub, &mut world);
+    assert_eq!(sent_block_acks(&rx), [6]);
+}

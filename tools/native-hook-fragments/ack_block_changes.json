@@ -1,0 +1,9 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "ack_block_changes", "target": "horizon_client::game::native_server::Game<'_>::native_ack_block_changes"}
+  ],
+  "rust_summary": "the block-change ack for a player (`native_ack_block_changes`), as vanilla's `ackBlockChangesUpTo`.",
+  "doc_summary": "`ack_block_changes(uuid, sequence)` acknowledges the block interactions a client predicted up to `sequence` (`ClientboundBlockChangedAckPacket`): the highest sequence is kept and sent with the tick's block changes, as vanilla does. False when the player isn't on or `sequence` is negative. Bundles need \"hooks\": @API:ack_block_changes@.",
+  "comments": ["crates/horizon-client/src/game/native_server.rs"]
+}

@@ -3225,6 +3225,12 @@ injections before.
   id: forgotten when they leave, and a player who rejoins has another id (hide them again from
   `native_player_logged_in`). Outside a player's hook; false there, when the viewer isn't on and for their own entity.
   Bundles need `"hooks": @API:hide_entity_from@`.
+- Helper **`native_ack_block_changes(player, sequence)`** (`host.ack_block_changes`): acknowledges the block
+  interactions a client predicted up to `sequence` (`ClientboundBlockChangedAckPacket`), as vanilla's
+  `ServerGamePacketListenerImpl.ackBlockChangesUpTo`: the highest sequence is kept and sent by the tick, after that
+  tick's block changes, so the client ends its predictions once the changes are on their way. Inside the player's
+  own hook the ack is kept with the turn and taken on when it returns, so it still goes out with the tick. False when
+  the player isn't on or `sequence` is negative (vanilla throws). Bundles need `"hooks": @API:ack_block_changes@`.
 - Helpers **`native_client_entity_spawn(viewer, kind, pos, yaw, nbt)`**, **`native_client_entity_set(viewer, id, nbt)`**,
   **`native_client_entity_move(viewer, id, pos, yaw)`**, **`native_client_entity_remove(viewer, ids)`** and
   **`native_reserve_entity_id()`** (`host.client_entity_spawn`...): an entity shown to one player's client alone, a
