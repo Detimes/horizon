@@ -718,7 +718,74 @@ impl Game<'_> {
             self.native_entity_leave_level(dimension, id, &kind);
         }
     }
+
+    /// Turns the painting, item frame or glow item frame `entity` of the level in place to the
+    /// 3D data value `facing` (Direction.get3DDataValue: down 0, up 1, north 2, south 3, west 4,
+    /// east 5), as `HangingEntity.setDirection` and `ItemFrame.setDirection` do (Bukkit's
+    /// `Hanging.setFacingDirection`): the facing, the yaw and pitch it gives and the bounds, and
+    /// nothing else. Like vanilla it does not check survival or the other hanging entities, and
+    /// a painting takes only a horizontal facing (its `setDirection` asserts one). Trackers are
+    /// told at the next tick, from the state rebuilt from it. False for no such hanging entity
+    /// in the level, a facing outside 0..=5, a vertical one for a painting, and on a client.
+    /// API @API:hanging_facing@.
+    pub(super) fn native_set_hanging_facing(&mut self, entity: u32, facing: u8) -> bool {
+        if !self.native_serves() || facing > 5 {
+            return false;
+        }
+        if let Some(f) = self.item_frames.iter_mut().find(|f| f.id == entity) {
+            f.facing = facing;
+            let pos = f.pos;
+            self.world.modified.insert((pos[0] >> 4, pos[2] >> 4));
+            return true;
+        }
+        let Some(p) = self.paintings.iter_mut().find(|p| p.id == entity) else {
+            return false;
+        };
+        let Some(facing) = painting_facing_2d(facing) else {
+            return false;
+        };
+        p.facing = facing;
+        let pos = p.pos;
+        self.world.modified.insert((pos[0] >> 4, pos[2] >> 4));
+        true
+    }
+
+    /// Turns the item in the item frame or glow item frame `entity` of the level in place to
+    /// `rotation` (0..=7, in 45 degree steps), as `ItemFrame.setRotation` does (Bukkit's
+    /// `ItemFrame.setRotation`): the comparators reading the frame take its new signal. A
+    /// rotation of 8 or more is refused rather than wrapped. Trackers are told at the next tick.
+    /// False for no item frame in the level, a rotation above 7, and on a client. API
+    /// @API:hanging_facing@.
+    pub(super) fn native_set_item_frame_rotation(&mut self, entity: u32, rotation: u8) -> bool {
+        if !self.native_serves() || rotation > 7 {
+            return false;
+        }
+        let Some(i) = self.item_frames.iter().position(|f| f.id == entity) else {
+            return false;
+        };
+        self.item_frames[i].rotation = rotation;
+        let pos = self.item_frames[i].pos;
+        self.world.modified.insert((pos[0] >> 4, pos[2] >> 4));
+        self.frame_output_changed(pos);
+        true
+    }
 }
+
+/// The 2D data value a painting keeps (Direction.get2DDataValue: south 0, west 1, north 2,
+/// east 3) of a horizontal 3D data value; None for up and down.
+fn painting_facing_2d(facing: u8) -> Option<u8> {
+    Some(match facing {
+        3 => 0,
+        4 => 1,
+        2 => 2,
+        5 => 3,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+#[path = "native_hanging_tests.rs"]
+mod native_hanging_tests;
 
 #[cfg(test)]
 mod tests {

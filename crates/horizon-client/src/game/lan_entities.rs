@@ -398,6 +398,8 @@ impl Game<'_> {
                 e.meta
                     .push((8, serializer::DIRECTION, Value::Id(i32::from(f.facing))));
             }
+            // Back to south (a `native_set_hanging_facing`) clears the clients' facing.
+            e.defaults.push((8, serializer::DIRECTION, Value::Id(3)));
             if f.item.is_some() {
                 e.meta
                     .push((9, serializer::ITEM_STACK, Value::Item(hub.stack(&f.item))));
@@ -435,6 +437,7 @@ impl Game<'_> {
             if facing != 3 {
                 e.meta.push((8, serializer::DIRECTION, Value::Id(facing)));
             }
+            e.defaults.push((8, serializer::DIRECTION, Value::Id(3)));
             // Painting.DATA_PAINTING_VARIANT_ID, a registry holder (id + 1),
             // set unless it is the registry's first variant (VariantUtils.getAny).
             if let Some(id) = hub.registry_id("minecraft:painting_variant", &p.variant)

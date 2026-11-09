@@ -1,0 +1,10 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "set_hanging_facing", "target": "horizon_client::game::native_entities::Game<'_>::native_set_hanging_facing"},
+    {"name": "set_item_frame_rotation", "target": "horizon_client::game::native_entities::Game<'_>::native_set_item_frame_rotation"}
+  ],
+  "rust_summary": "a painting's or item frame's facing turned (`native_set_hanging_facing`) and an item frame's item turned (`native_set_item_frame_rotation`), as `HangingEntity.setDirection` and `ItemFrame.setRotation`.",
+  "doc_summary": "`native_set_hanging_facing(entity, facing)` turns a painting, item frame or glow item frame of the level in place to the 3D data value `facing` (a painting only horizontally), as vanilla's `setDirection` does: its yaw, pitch and bounds follow, with no survival check. `native_set_item_frame_rotation(entity, rotation)` turns the item in an item frame to `rotation` 0..=7 and updates the comparators, as `ItemFrame.setRotation`. Bundles need \"hooks\": @API:hanging_facing@.",
+  "comments": ["crates/horizon-client/src/game/native_entities.rs"]
+}

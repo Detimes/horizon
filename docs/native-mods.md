@@ -903,6 +903,15 @@ UUIDs"). Passengers in `nbt` are spawned and mounted as in `/summon`; mount and 
 through `native_entity_merge_nbt` (`/data merge entity`, which refuses players). Bundles need
 `"hooks": @API:summon_with_uuid@`.
 
+`native_set_hanging_facing(entity, facing)` turns a painting, item frame or glow item frame of the level in place to
+the 3D data value `facing` (`Direction.get3DDataValue`: down 0, up 1, north 2, south 3, west 4, east 5), as vanilla's
+`HangingEntity.setDirection` and `ItemFrame.setDirection` do (Bukkit's `Hanging.setFacingDirection`): the facing, the yaw
+and pitch it gives and the bounds change, and nothing else. A painting takes only a horizontal facing; no survival check
+and no coexistence check, as in vanilla. `native_set_item_frame_rotation(entity, rotation)` turns the item in an item frame
+to `rotation` 0..=7 (45 degree steps; 8 and more are refused, not wrapped) and updates the comparators, as
+`ItemFrame.setRotation` does. Both return false for no such entity in the level, a bad value, or on a client, and tell the
+trackers at the next tick. Bundles need `"hooks": @API:hanging_facing@`.
+
 API 60 adds `native_item_bar(stack, bar)`: the small bar `GuiGraphicsExtractor.itemDecorations` draws under an item,
 wherever the game shows one. `bar` arrives holding
 vanilla's choice (the damage bar, or a bundle's fullness, already applied); set it to a width `0..=13` and an

@@ -37,7 +37,7 @@ fn teleportable(pos: [f64; 3]) -> bool {
 // Native mods use these; nothing in Horizon does.
 impl Game<'_> {
     /// Whether this game is a server (its thread or a dedicated one), never a client.
-    fn native_serves(&self) -> bool {
+    pub(super) fn native_serves(&self) -> bool {
         self.serving.is_some() || self.options.dedicated.is_some()
     }
 

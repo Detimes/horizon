@@ -416,7 +416,7 @@ impl Game<'_> {
     }
     /// `ItemFrame.setItem` / `setRotation`: `updateNeighbourForOutputSignal`, so
     /// the comparators reading the frame take its new signal.
-    fn frame_output_changed(&mut self, pos: [i32; 3]) {
+    pub(super) fn frame_output_changed(&mut self, pos: [i32; 3]) {
         let at = BlockPos::new(pos[0], pos[1], pos[2]);
         self.with_level(|b, level, ticks| b.update_neighbour_for_output_signal(level, ticks, at));
     }

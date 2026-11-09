@@ -4,7 +4,7 @@ use super::super::*;
 use horizon_client::mod_api::NativeAuthority;
 use horizon_world::nbt::{Compound, Tag};
 
-fn game() -> Game<'static> {
+pub(super) fn game() -> Game<'static> {
     let root = std::path::PathBuf::from(
         std::env::var_os("HORIZON_TEST_RESOURCES")
             .expect("set HORIZON_TEST_RESOURCES to prepared resources"),
