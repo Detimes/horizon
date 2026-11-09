@@ -329,8 +329,13 @@ mod tests {
         std::fs::write(root.join("gameplay-facts.json"), gameplay.to_string()).unwrap();
         let behaviours = serde_json::json!({
             "states": [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-            "blocks": ["air", "stone", "chest", "water", "heater"]
-                .map(|name| serde_json::json!({"name": if name == "heater" { "test:heater".to_owned() } else { format!("minecraft:{name}") }, "class": ["Block"]})),
+            "blocks": [
+                {"name": "minecraft:air", "class": ["Block"]},
+                {"name": "minecraft:stone", "class": ["Block"]},
+                {"name": "minecraft:chest", "class": ["Block"]},
+                {"name": "minecraft:water", "class": ["Block"]},
+                {"name": "test:heater", "class": ["Block"]}
+            ],
         });
         let block_facts =
             BlockFacts::load_with_behaviour_json(&root, &registry, &behaviours).unwrap();
