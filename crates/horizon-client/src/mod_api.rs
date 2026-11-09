@@ -757,8 +757,8 @@ pub struct NativeClientInfo {
 /// `pay <player:player> <amount:integer>`, `balance [player:player]`,
 /// `eco give <player:player> <amount:integer>`. Kinds: `word`, `text` (the
 /// rest of the line, last), `integer`, `number`, `boolean`, `player`,
-/// `item`, `block_pos`; and the kinds whose completions the player's client
-/// asks the server for (`native_tab_complete_v2`): `word?`, `text?` and
+/// `item`, `block_pos`, `vec3` (the player's client accepts `~` and `^`
+/// coordinates; the mod gets the words as typed); and the kinds whose completions the player's client asks the server for (`native_tab_complete_v2`): `word?`, `text?` and
 /// `player_name` (a word, any name accepted, that the server completes with
 /// the online players' names). Usages of one command share their words; the
 /// server merges them into one tree.

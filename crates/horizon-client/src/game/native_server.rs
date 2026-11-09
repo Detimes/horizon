@@ -49,6 +49,7 @@ fn parser(kind: &str) -> Option<(&'static str, Value)> {
         ),
         "item" => ("minecraft:item_stack", Value::Null),
         "block_pos" => ("minecraft:block_pos", Value::Null),
+        "vec3" => ("minecraft:vec3", Value::Null),
         _ => return None,
     })
 }
@@ -98,7 +99,7 @@ fn usage_nodes(usage: &str) -> Result<Vec<(String, Value, bool)>, String> {
             let literal = !checked.is_empty()
                 && checked
                     .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_-".contains(c));
+                    .all(|c| c.is_ascii_alphanumeric() || "_-.+".contains(c));
             if !literal {
                 return Err(format!("`{usage}`: `{word}` is not a command word"));
             }
@@ -1986,7 +1987,7 @@ mod tests {
             NativeCommand::new("b <x:text> <y:word>"),
             NativeCommand::new("c <x:colour>"),
             NativeCommand::new("<x:integer>"),
-            NativeCommand::new("Bad"),
+            NativeCommand::new("Ba$d"),
             NativeCommand::new("d <x:integer>"),
             NativeCommand::new("d <x:word>"),
         ]);
@@ -2120,6 +2121,71 @@ mod tests {
         let (ran, lines) = run("time query time", true);
         assert!(ran && lines.is_empty(), "{lines:?}");
         assert!(game.console_broadcast.is_none());
+    }
+
+    #[test]
+    fn literal_words_take_vanilla_unquoted_characters() {
+        // Vanilla's StringReader.isAllowedInUnquotedString: 0-9 A-Z a-z _ - . +
+        let commands = [
+            NativeCommand::op("invsee+ <player:player>", 2),
+            NativeCommand::new("a.b"),
+            NativeCommand::new("Mixed_Case-1"),
+        ];
+        let (t, levels, problems) = tree(&commands);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(levels["invsee+"], 2);
+        assert_eq!(
+            t["children"]["invsee+"]["children"]["player"]["parser"],
+            "minecraft:entity"
+        );
+        assert!(usage_for_line(&commands, "invsee+ bob").is_some());
+        assert!(usage_for_line(&commands, "a.b").is_some());
+        assert!(usage_for_line(&commands, "Mixed_Case-1").is_some());
+    }
+
+    #[test]
+    fn coordinates_take_vanilla_parsers() {
+        let (t, _, problems) = tree(&[
+            NativeCommand::new("mark <pos:block_pos>"),
+            NativeCommand::new("tp <pos:vec3>"),
+        ]);
+        assert!(problems.is_empty(), "{problems:?}");
+        let mark = &t["children"]["mark"]["children"]["pos"];
+        assert_eq!(mark["parser"], "minecraft:block_pos");
+        assert!(mark.get("properties").is_none());
+        let tp = &t["children"]["tp"]["children"]["pos"];
+        assert_eq!(tp["parser"], "minecraft:vec3");
+        assert!(tp.get("properties").is_none());
+    }
+
+    #[test]
+    fn greedy_and_optional_trailing_arguments_match_their_words() {
+        let commands = [
+            NativeCommand::new("say <text:text>"),
+            NativeCommand::new("warp [name:word]"),
+            NativeCommand::new("tell [who:player] [text:text]"),
+        ];
+        let usage = |line: &str| usage_for_line(&commands, line).map(|u| u.usage.clone());
+        assert_eq!(usage("say"), None, "a required greedy text is missing");
+        assert_eq!(usage("say a b c").as_deref(), Some("say <text:text>"));
+        assert_eq!(usage("warp").as_deref(), Some("warp [name:word]"));
+        assert_eq!(usage("warp a b"), None, "one optional word at most");
+        assert_eq!(
+            usage("tell").as_deref(),
+            Some("tell [who:player] [text:text]")
+        );
+        assert_eq!(
+            usage("tell bob hi there friend").as_deref(),
+            Some("tell [who:player] [text:text]")
+        );
+        let (t, _, problems) = tree(&commands);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(t["children"]["warp"]["executable"], true);
+        assert_eq!(t["children"]["say"]["executable"], false);
+        assert_eq!(t["children"]["say"]["children"]["text"]["executable"], true);
+        assert_eq!(t["children"]["tell"]["executable"], true);
+        let (_, _, problems) = tree(&[NativeCommand::new("a <t:text> [x:integer]")]);
+        assert_eq!(problems.len(), 1, "a text argument must be last");
     }
 
     #[test]
