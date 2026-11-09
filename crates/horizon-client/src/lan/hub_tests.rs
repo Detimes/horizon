@@ -1409,6 +1409,7 @@ fn shown_blocks_reach_only_their_player() {
     while rx.try_recv().is_ok() {}
 
     // (5, 63, 5) and (6, 63, 5) share section (0, 3, 0); (-1, 70, 3) is alone in section (-1, 4, 0).
+    // Sections go in order, and (-1, 4, 0) comes before (0, 3, 0).
     hub.show_blocks_to(1, &[([5, 63, 5], 7), ([6, 63, 5], 9), ([-1, 70, 3], 4)]);
 
     let packets = |rx: &std::sync::mpsc::Receiver<crate::lan::Out>| {
@@ -1425,6 +1426,10 @@ fn shown_blocks_reach_only_their_player() {
     let sent = packets(&rx);
     assert_eq!(sent.len(), 2);
     match &sent[0] {
+        C::BlockUpdate(p) => assert_eq!((p.pos, p.state), ([-1, 70, 3], 4)),
+        _ => panic!("a lone block goes as a BlockUpdate"),
+    }
+    match &sent[1] {
         C::SectionBlocksUpdate(p) => {
             assert_eq!(p.section, [0, 3, 0]);
             // Each change is state << 12 | x << 8 | z << 4 | y, with x, z, y taken within the section.
@@ -1437,10 +1442,6 @@ fn shown_blocks_reach_only_their_player() {
             );
         }
         _ => panic!("two blocks in one section go as a SectionBlocksUpdate"),
-    }
-    match &sent[1] {
-        C::BlockUpdate(p) => assert_eq!((p.pos, p.state), ([-1, 70, 3], 4)),
-        _ => panic!("a lone block goes as a BlockUpdate"),
     }
     assert!(packets(&other).is_empty(), "nobody else is sent the blocks");
     assert_eq!(world.block(5, 63, 5).0, 1, "the world keeps its block");
