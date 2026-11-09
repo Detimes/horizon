@@ -3139,6 +3139,14 @@ per-player helpers for these (a NeoForge mod sends `ServerPlayer.connection.send
   compass and a recovery compass keep their own targets. Queued as `native_play_sound_to`, with the same answers; also
   false for a dimension that isn't a namespaced id or a position a block position can't carry. Bundles need
   `"hooks": @API:compass_target@`.
+- Helpers **`native_show_block(uuid, pos, state)`** and **`native_show_blocks(uuid, blocks)`** (`blocks` is a list of
+  (position, block state id)): show a block to that player alone, as Bukkit's `Player.sendBlockChange`, for selection
+  outlines and placement previews. A block alone goes as a `ClientboundBlockUpdatePacket`; blocks in one section go as
+  one `ClientboundSectionBlocksUpdatePacket` per section, in section order (a later entry for a position wins). The
+  world is not changed, and nobody else gets the packet. The real block comes back when its chunk or block next
+  updates, as in vanilla, so a mod that keeps a block shown sends it again then. Queued as `native_play_sound_to`, with
+  the same answers; false for an empty list, a state id that isn't a block state, on a client, and for a player who
+  isn't on. Bundles need `"hooks": @API:show_block@`.
 
 #### Server hooks for plugin ports: packets
 

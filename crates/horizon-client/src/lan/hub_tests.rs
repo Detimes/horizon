@@ -1376,3 +1376,72 @@ fn memory_connection_first_view_sends_every_ready_column() {
         "an empty queue sends nothing"
     );
 }
+
+/// `native_show_blocks` (`Player.sendBlockChange`): the blocks reach the connection named and no other,
+/// a lone block as a `BlockUpdate` and two in one section as a `SectionBlocksUpdate`; the world is not
+/// touched.
+#[test]
+fn shown_blocks_reach_only_their_player() {
+    let (mut hub, rx) = hub_with_a_guest();
+    let (tx, other) = std::sync::mpsc::channel();
+    let mut ann = Guest::new(
+        crate::lan::Joined {
+            conn: 2,
+            uuid: 2,
+            name: "Ann".into(),
+            properties: Vec::new(),
+            info: horizon_protocol::packets::configuration::ClientInformation::new(8),
+            brand: "vanilla".into(),
+            sender: crate::lan::PlayerSender::new(tx, std::sync::Arc::default()),
+            latency: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0)),
+            address: "127.0.0.1:25566".parse().unwrap(),
+            expected: false,
+            configured: Default::default(),
+        },
+        2,
+        [0.5, 64.0, 0.5],
+        8,
+    );
+    ann.placed = true;
+    ann.dimension = "minecraft:overworld".into();
+    hub.guests.push(ann);
+    let world = floor_at(1);
+    while rx.try_recv().is_ok() {}
+
+    // (5, 63, 5) and (6, 63, 5) share section (0, 3, 0); (-1, 70, 3) is alone in section (-1, 4, 0).
+    hub.show_blocks_to(1, &[([5, 63, 5], 7), ([6, 63, 5], 9), ([-1, 70, 3], 4)]);
+
+    let packets = |rx: &std::sync::mpsc::Receiver<crate::lan::Out>| {
+        let mut sent = Vec::new();
+        while let Ok(crate::lan::Out::Packet(body)) = rx.try_recv() {
+            let mut r = horizon_protocol::buf::Reader::new(&body);
+            let id = r.varint().unwrap();
+            if let Ok(packet) = C::decode(id, r.rest()) {
+                sent.push(packet);
+            }
+        }
+        sent
+    };
+    let sent = packets(&rx);
+    assert_eq!(sent.len(), 2);
+    match &sent[0] {
+        C::SectionBlocksUpdate(p) => {
+            assert_eq!(p.section, [0, 3, 0]);
+            // Each change is state << 12 | x << 8 | z << 4 | y, with x, z, y taken within the section.
+            assert_eq!(
+                p.changes,
+                vec![
+                    7 << 12 | 5 << 8 | 5 << 4 | 15,
+                    9 << 12 | 6 << 8 | 5 << 4 | 15
+                ]
+            );
+        }
+        _ => panic!("two blocks in one section go as a SectionBlocksUpdate"),
+    }
+    match &sent[1] {
+        C::BlockUpdate(p) => assert_eq!((p.pos, p.state), ([-1, 70, 3], 4)),
+        _ => panic!("a lone block goes as a BlockUpdate"),
+    }
+    assert!(packets(&other).is_empty(), "nobody else is sent the blocks");
+    assert_eq!(world.block(5, 63, 5).0, 1, "the world keeps its block");
+}

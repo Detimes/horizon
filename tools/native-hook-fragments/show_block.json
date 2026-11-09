@@ -1,0 +1,16 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "show_block",
+      "target": "horizon_client::game::native_player_fx::Game<'_>::native_show_block"
+    },
+    {
+      "name": "show_blocks",
+      "target": "horizon_client::game::native_player_fx::Game<'_>::native_show_blocks"
+    }
+  ],
+  "rust_summary": "blocks shown to one player alone (`native_show_block`, `native_show_blocks`), as Bukkit's `Player.sendBlockChange`.",
+  "doc_summary": "`native_show_block(uuid, pos, state)` shows a block state to one player alone, at `pos` in their level, and `native_show_blocks(uuid, blocks)` shows a list of them, as Bukkit's `Player.sendBlockChange`: a `ClientboundBlockUpdatePacket` for a section with one block and a `ClientboundSectionBlocksUpdatePacket` for each section with more. The world is not changed, and the real block comes back when its chunk or block next updates, as in vanilla. It leaves at the tick's end, so it works from any server hook; true means queued. Bundles need \"hooks\": @API:show_block@.",
+  "comments": ["crates/horizon-client/src/game/native_player_fx.rs"]
+}

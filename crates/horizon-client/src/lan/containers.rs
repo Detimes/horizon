@@ -18,6 +18,41 @@ use horizon_protocol::{
 use horizon_world::nbt::Tag;
 use std::collections::HashMap;
 
+/// The packets that show `blocks` to one client: a `BlockUpdate` for a section with a single change, else one
+/// `SectionBlocksUpdate` per section, sections in order. A section's changes apply in order, so a later entry
+/// for a position wins.
+pub fn show_block_packets(blocks: &[([i32; 3], u32)]) -> Vec<C> {
+    let mut sections: std::collections::BTreeMap<[i32; 3], Vec<([i32; 3], u32)>> =
+        std::collections::BTreeMap::new();
+    for &(pos, state) in blocks {
+        sections
+            .entry(pos.map(|v| v >> 4))
+            .or_default()
+            .push((pos, state));
+    }
+    sections
+        .into_iter()
+        .map(|(section, changes)| match changes.as_slice() {
+            [(pos, state)] => C::BlockUpdate(play::BlockUpdate {
+                pos: *pos,
+                state: *state as i32,
+            }),
+            _ => C::SectionBlocksUpdate(play::SectionBlocksUpdate {
+                section,
+                changes: changes
+                    .iter()
+                    .map(|&([x, y, z], state)| {
+                        i64::from(state) << 12
+                            | i64::from(x & 15) << 8
+                            | i64::from(z & 15) << 4
+                            | i64::from(y & 15)
+                    })
+                    .collect(),
+            }),
+        })
+        .collect()
+}
+
 /// Encode a captured level sound and its broadcast radius without a live hub.
 /// Entity-bound events use the entity packet; ordinary level sounds retain
 /// their fixed-point coordinates. The caller supplies the synced registry id.
@@ -70,6 +105,15 @@ impl Hub {
             } else {
                 g.send(packet);
             }
+        }
+    }
+
+    /// Shows the connection `conn` the blocks in `blocks` (a position and a block state id each) and
+    /// nobody else, as `Player.sendBlockChange`: the world is not touched, and a real block comes back
+    /// when its chunk or block next updates, as in vanilla.
+    pub fn show_blocks_to(&self, conn: u32, blocks: &[([i32; 3], u32)]) {
+        for packet in show_block_packets(blocks) {
+            self.send_to(conn, &packet);
         }
     }
 
