@@ -5520,3 +5520,7 @@ particles or entity effects. The pending fragment assigns its API number at merg
 ### Advancement displays
 
 The pending `advancement_display` helper (`host.advancement_display`) returns an `AdvancementDisplay` for an advancement id in the loaded tree: `title` and `description` as `Text` (the components as the datapack wrote them), `frame` as `task`, `goal` or `challenge`, `announce_to_chat` and `hidden`. It is None for an unknown id or one without a display. The helper loads the tree on first use, so it is for server-side reads, not hot paths. The pending fragment assigns its API number at merge (`@API:advancement_display@`).
+
+### Block state properties
+
+The pending `block_state_props` helper (`host.block_state_props`) answers, for one block state id, what the state is, with no world lookup: `native_block_state_props(state)` returns a `NativeBlockStateProps` or None for a state the registry lacks. `is_air` and `replaceable` come from the block tables. `has_block_entity` is vanilla's `EntityBlock` flag, and `block_entity_type` is its type id (`minecraft:chest`): a sign's form first, then Horizon's vanilla name table, and a mod block's own name. It is None without a block entity or for a type the table lacks. `fluid` is `(fluid id, amount, source)`: level 0 water is `minecraft:water` with amount 8 and source true, level 3 water is `minecraft:flowing_water` with amount 5, and stone has none. Set-block tools use it per state instead of guessing from the block name. The pending fragment assigns its API number at merge (`@API:block_state_props@`).

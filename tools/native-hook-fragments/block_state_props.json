@@ -1,0 +1,11 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "block_state_props", "target": "horizon_client::game::native_world_read::Game<'_>::native_block_state_props"}
+  ],
+  "rust_summary": "what a block state is: air, replaceable, its block entity type and its fluid (`native_block_state_props`, `NativeBlockStateProps`).",
+  "doc_summary": "`native_block_state_props(state)` answers, from the game's block tables and with no world lookup, what a block state is: `is_air`, `replaceable`, `has_block_entity` and `block_entity_type` (`minecraft:chest`; a sign's form, then the vanilla name table, a mod block's own name; none without a block entity) and `fluid` as (fluid id, amount 1..=8, source), where level 0 water is the source, flowing water `minecraft:flowing_water` with 8 minus its level, and no fluid is none. None for a state the registry does not have. A set-block tool uses it per state instead of guessing from the block name. Bundles need \"hooks\": @API:block_state_props@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_world_read.rs"
+  ]
+}

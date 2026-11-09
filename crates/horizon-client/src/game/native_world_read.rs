@@ -1,11 +1,16 @@
 //! Read-only block and tag queries for native server hooks.
 use super::{Dim, Game};
+use horizon_client::blocks::BlockFacts;
 use horizon_client::mod_api::NativeLifecycleContext;
 use horizon_client::{
     items::{ItemStack, Items},
     world::World,
 };
-use horizon_world::{chunk::BlockState, registry::BlockRegistry};
+use horizon_world::{
+    chunk::BlockState,
+    fluid::FluidState,
+    registry::{BlockRegistry, BlockStateId},
+};
 
 /// Why a server block or tag cannot be read.
 #[derive(Debug, PartialEq, Eq)]
@@ -157,6 +162,78 @@ impl Game<'_> {
     }
 }
 
+/// What a block state is, from the game's block tables (no world lookup).
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeBlockStateProps {
+    /// `minecraft:air`, `cave_air` or `void_air`.
+    pub is_air: bool,
+    /// The `replaceable` flag: `Block.canBeReplaced` for a plain placement.
+    pub replaceable: bool,
+    /// The state's block is an `EntityBlock` (vanilla's `block_entity` flag).
+    pub has_block_entity: bool,
+    /// Its block entity type id (`minecraft:chest`). A sign's form decides
+    /// first, then the vanilla name table; a mod block's type is its own name.
+    /// None without a block entity, or for a type Horizon does not know.
+    pub block_entity_type: Option<String>,
+    /// Its fluid: the fluid id (`minecraft:flowing_water`), the amount 1..=8
+    /// (8 for a source and a falling column) and whether it is a source.
+    /// None for no fluid.
+    pub fluid: Option<(String, u8, bool)>,
+}
+
+#[allow(dead_code)]
+fn block_state_props(
+    facts: &BlockFacts,
+    registry: &BlockRegistry,
+    id: BlockStateId,
+) -> Option<NativeBlockStateProps> {
+    let state = registry.state(id)?;
+    let info = facts.get(id);
+    let has_block_entity = info.block_entity;
+    let block_entity_type = has_block_entity
+        .then(|| {
+            info.sign_form()
+                .map(|form| form.block_entity_type())
+                .or_else(|| horizon_client::lan::chunks::block_entity_type(&state.name))
+                .map(str::to_owned)
+                .or_else(|| (!state.name.starts_with("minecraft:")).then(|| state.name.clone()))
+        })
+        .flatten();
+    let fluid = FluidState::from_block(state)
+        .ok()
+        .filter(|fluid| *fluid != FluidState::EMPTY)
+        .map(|fluid| {
+            (
+                fluid.kind().name().to_owned(),
+                fluid.amount(),
+                fluid.is_source(),
+            )
+        });
+    Some(NativeBlockStateProps {
+        is_air: facts.is_air(id),
+        replaceable: info.replaceable,
+        has_block_entity,
+        block_entity_type,
+        fluid,
+    })
+}
+
+impl Game<'_> {
+    /// The block state `state`'s facts (`NativeBlockStateProps`): what a
+    /// set-block tool needs per state. Read-only and cheap; none for a state
+    /// the registry does not have. Same answer on a client and a server.
+    /// API @API:block_state_props@.
+    #[allow(dead_code)]
+    pub(super) fn native_block_state_props(&self, state: u32) -> Option<NativeBlockStateProps> {
+        block_state_props(
+            self.res.facts(),
+            self.pack.assets.registry,
+            BlockStateId(state),
+        )
+    }
+}
+
 /// Resolve an existing world state, preserving unloaded and invalid states.
 fn read_block(
     world: &World,
@@ -224,5 +301,68 @@ mod tests {
             Err(NativeBlockReadError::InvalidState)
         );
         assert_eq!(world.chunks.len(), 1, "reads must not load chunks");
+    }
+
+    #[test]
+    fn block_state_props_name_block_entities_and_fluids() {
+        let facts = br#"{"defaults":{"minecraft:air":0,"minecraft:stone":1,"minecraft:chest":2,
+            "minecraft:water":3,"test:heater":5},"states":[
+            ["air",true,false,"",{"id":"minecraft:air"}],
+            ["stone",false,false,"",{"id":"minecraft:stone"}],
+            ["chest",false,false,"",{"id":"minecraft:chest","properties":{"type":"single"}}],
+            ["water",false,false,"",{"id":"minecraft:water","properties":{"level":"0"}}],
+            ["water",false,false,"",{"id":"minecraft:water","properties":{"level":"3"}}],
+            ["heater",false,false,"",{"id":"test:heater"}]
+        ]}"#;
+        let registry = BlockRegistry::from_facts_json(&facts[..]).unwrap();
+        let root =
+            std::env::temp_dir().join(format!("horizon-block-state-props-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let gameplay = serde_json::json!({"states": [
+            {"id": 0, "replaceable": true},
+            {"id": 1},
+            {"id": 2, "block_entity": true},
+            {"id": 3},
+            {"id": 4},
+            {"id": 5, "block_entity": true},
+        ]});
+        std::fs::write(root.join("gameplay-facts.json"), gameplay.to_string()).unwrap();
+        let behaviours = serde_json::json!({
+            "states": [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+            "blocks": ["air", "stone", "chest", "water", "heater"]
+                .map(|name| serde_json::json!({"name": if name == "heater" { "test:heater".to_owned() } else { format!("minecraft:{name}") }, "class": ["Block"]})),
+        });
+        let block_facts =
+            BlockFacts::load_with_behaviour_json(&root, &registry, &behaviours).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        let props = |state: u32| block_state_props(&block_facts, &registry, BlockStateId(state));
+        let chest = props(2).unwrap();
+        assert!(chest.has_block_entity);
+        assert_eq!(chest.block_entity_type.as_deref(), Some("minecraft:chest"));
+        assert_eq!(chest.fluid, None);
+        assert!(!chest.is_air);
+        let stone = props(1).unwrap();
+        assert!(!stone.has_block_entity);
+        assert_eq!(stone.block_entity_type, None);
+        assert_eq!(stone.fluid, None);
+        assert!(!stone.replaceable);
+        let air = props(0).unwrap();
+        assert!(air.is_air && air.replaceable);
+        assert_eq!(
+            props(3).unwrap().fluid,
+            Some(("minecraft:water".to_owned(), 8, true)),
+            "level 0 is the source"
+        );
+        assert_eq!(
+            props(4).unwrap().fluid,
+            Some(("minecraft:flowing_water".to_owned(), 5, false)),
+            "level 3 is flowing with 8 - 3 blocks"
+        );
+        assert_eq!(
+            props(5).unwrap().block_entity_type.as_deref(),
+            Some("test:heater"),
+            "a mod block entity is typed by its block"
+        );
+        assert_eq!(props(6), None, "a state the registry lacks");
     }
 }
