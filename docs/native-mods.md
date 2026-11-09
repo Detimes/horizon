@@ -2729,7 +2729,9 @@ server only.
   chunk of a level that is open (in place or with nobody in it), None for a chunk not loaded (nothing is loaded for
   it). It shares the chunk's sections until the level changes them, so it is cheap to take on the server thread and
   can be read later on another one. It reads `block_state(x, y, z)` (a `BlockStateId`, for `native_state_block` and the
-  state helpers), `surface(x, z)` (`WORLD_SURFACE`), `noise_biome(qx, qy, qz)` and `biome_cell(x, y, z)` (the quart
+  state helpers), `section(section_y)` (a `NativeSection`: the section's 4,096 block states in vanilla index order and its
+  64 biomes, one read instead of 4,096 `block_state` calls; None outside the chunk), `surface(x, z)` (`WORLD_SURFACE`),
+  `noise_biome(qx, qy, qz)` and `biome_cell(x, y, z)` (the quart
   cell vanilla's fuzzy biome zoom reads for a block, which can lie in a neighbouring chunk), `height()` and
   `has_ceiling()`, in the level's block coordinates; outside the chunk it answers None. To draw it:
   `native_block_map_color(state)` is `(MapColor id, MapColor.col)`, `native_biome_name(biome)` the biome's name and

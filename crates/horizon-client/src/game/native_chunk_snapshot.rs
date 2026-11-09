@@ -72,6 +72,33 @@ impl NativeChunkSnapshot {
     pub fn biome_cell(&self, x: i32, y: i32, z: i32) -> [i32; 3] {
         self.zoom.quart_at_block(BlockPos::new(x, y, z))
     }
+    /// The section at section `y` (`SectionPos` y: block `y >> 4`, so -4 is
+    /// block `y` -64 to -49 in the overworld) with all its block states and
+    /// biomes in one read: the values `block_state` and `noise_biome` give
+    /// position by position. None for a section outside this chunk's height.
+    pub fn section(&self, section_y: i32) -> Option<NativeSection> {
+        let index = self.chunk.section_index(section_y.checked_mul(16)?)?;
+        let section = &self.chunk.sections[index];
+        let mut blocks = [0u32; 4096];
+        section.unpack(&mut blocks);
+        let biomes = (0..64).map(|i| section.biomes.get(i) as u16).collect();
+        Some(NativeSection {
+            blocks: blocks.to_vec(),
+            biomes,
+        })
+    }
+}
+
+/// One section of a snapshot's chunk, as `NativeChunkSnapshot::section` gives
+/// it: plain arrays in vanilla's index order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeSection {
+    /// The 4,096 block state ids, index `y << 8 | z << 4 | x` with each
+    /// coordinate 0..16 inside the section (`block_state`'s states).
+    pub blocks: Vec<u32>,
+    /// The 64 biome ids of the section's 4x4x4 quart cells, index
+    /// `y << 4 | z << 2 | x` with each coordinate 0..4 (`noise_biome`'s ids).
+    pub biomes: Vec<u16>,
 }
 
 // Native mods use these; nothing in Horizon does.
@@ -144,5 +171,101 @@ impl Game<'_> {
             dry_foliage: b.dry_foliage,
             water: b.water,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot(chunk: Chunk) -> NativeChunkSnapshot {
+        NativeChunkSnapshot {
+            chunk: Arc::new(chunk),
+            pos: [3, -2],
+            min_y: -64,
+            top_y: 320,
+            ceiling: false,
+            zoom: BiomeZoom::new(7),
+            air: [None; 3],
+        }
+    }
+
+    /// Chunk (3, -2) with random block states in the bottom, a middle and the
+    /// top section, random biomes in every quart cell, and air elsewhere.
+    fn filled() -> Chunk {
+        let mut chunk = Chunk::empty(3, -2);
+        let mut seed = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for section_y in [-4, 0, 19] {
+            for y in section_y * 16..section_y * 16 + 16 {
+                for z in -32..-16 {
+                    for x in 48..64 {
+                        chunk.set(x, y, z, (next() % 40_000) as u32);
+                    }
+                }
+            }
+        }
+        // Quart x 12..16, z -8..-4; the y index counts from the column's bottom.
+        for qy in 0..96 {
+            for qz in -8..-4 {
+                for qx in 12..16 {
+                    chunk.set_biome_cell(qx, qy, qz, (next() % 67) as u16);
+                }
+            }
+        }
+        chunk
+    }
+
+    #[test]
+    fn section_matches_the_per_position_reads() {
+        let snap = snapshot(filled());
+        for section_y in -4..20 {
+            let section = snap.section(section_y).expect("inside the chunk");
+            assert_eq!(section.blocks.len(), 4096);
+            assert_eq!(section.biomes.len(), 64);
+            for y in 0..16 {
+                for z in 0..16 {
+                    for x in 0..16 {
+                        let (bx, by, bz) = (48 + x, section_y * 16 + y, -32 + z);
+                        let want = snap.block_state(bx, by, bz).unwrap().0;
+                        let got = section.blocks[(y << 8 | z << 4 | x) as usize];
+                        assert_eq!(got, want, "block {bx} {by} {bz}");
+                    }
+                }
+            }
+            for qy in 0..4 {
+                for qz in 0..4 {
+                    for qx in 0..4 {
+                        let want = snap
+                            .noise_biome(12 + qx, section_y * 4 + qy, -8 + qz)
+                            .unwrap();
+                        let got = section.biomes[(qy << 4 | qz << 2 | qx) as usize];
+                        assert_eq!(got, want, "biome {qx} {qy} {qz} of section {section_y}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn section_is_not_a_uniform_copy_and_empty_sections_read_as_air() {
+        let snap = snapshot(filled());
+        let bottom = snap.section(-4).unwrap();
+        let distinct: std::collections::HashSet<u32> = bottom.blocks.iter().copied().collect();
+        assert!(distinct.len() > 1000);
+        assert!(snap.section(10).unwrap().blocks.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn section_is_none_outside_the_chunk() {
+        let snap = snapshot(filled());
+        for section_y in [-5, 20, i32::MIN, i32::MAX, 1 << 28] {
+            assert!(snap.section(section_y).is_none(), "section {section_y}");
+        }
     }
 }
