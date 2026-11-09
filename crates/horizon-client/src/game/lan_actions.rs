@@ -592,7 +592,7 @@ impl Game<'_> {
         motion.fall_flying = g.fall_flying;
         // A player frozen for a hand-over takes no damage (`Abilities.invulnerable`, which the
         // void and `/kill` still pass), so its record stays true until the release.
-        motion.invulnerable = mode_flies || g.handover.is_some();
+        motion.invulnerable = mode_flies || g.invulnerable || g.handover.is_some();
         // `ServerPlayer.isInvulnerableTo`'s connection term, as of now.
         motion.client_loaded = g.client_loaded();
         let _ = motion.set_health(g.health, false);

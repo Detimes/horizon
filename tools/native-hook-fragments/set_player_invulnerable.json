@@ -1,0 +1,9 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "set_player_invulnerable", "target": "horizon_client::game::native_travel::Game<'_>::native_set_player_invulnerable"}
+  ],
+  "rust_summary": "a server player made invulnerable or not (`native_set_player_invulnerable`), as Bukkit's `Player.setInvulnerable` (`Abilities.invulnerable`).",
+  "doc_summary": "`native_set_player_invulnerable(uuid, on)` makes a server player invulnerable or not, as Bukkit's `Player.setInvulnerable`: damage is ignored except what bypasses invulnerability (`/kill`, the void), and their client is sent its abilities. Kept until their game mode changes or they leave; creative and spectator players stay invulnerable. Bundles need \"hooks\": @API:set_player_invulnerable@.",
+  "comments": ["crates/horizon-client/src/game/native_travel.rs"]
+}

@@ -406,6 +406,9 @@ pub struct Guest {
     /// player fly (`native_set_flight`), until their game mode changes or they
     /// respawn. Not saved.
     pub allow_flight: bool,
+    /// `Abilities.invulnerable` in a mode that does not give it: a server mod made the player
+    /// invulnerable (`native_set_player_invulnerable`), until their game mode changes. Not saved.
+    pub invulnerable: bool,
     /// The level the player is in (`ServerPlayer.level().dimension()`): the
     /// hub's level passes only reach the players in theirs.
     pub dimension: String,
@@ -595,6 +598,7 @@ impl Guest {
             granted_commands: Vec::new(),
             flying_speed: 0.05,
             allow_flight: false,
+            invulnerable: false,
             dimension: "minecraft:overworld".into(),
             menu: None,
             next_window: 0,
@@ -738,8 +742,9 @@ impl Guest {
         if mode != self.game_mode {
             self.previous_game_mode = Some(self.game_mode);
             self.game_mode = mode;
-            // GameType.updatePlayerAbilities sets mayfly for the new mode.
+            // GameType.updatePlayerAbilities sets mayfly and invulnerable for the new mode.
             self.allow_flight = false;
+            self.invulnerable = false;
         }
     }
     pub fn spectator(&self) -> bool {
@@ -749,10 +754,14 @@ impl Guest {
     pub fn may_build(&self) -> bool {
         matches!(self.game_mode, SURVIVAL | CREATIVE)
     }
+    /// `Abilities.invulnerable`: creative and spectator, or a server mod's setting.
+    pub fn invulnerable_ability(&self) -> bool {
+        self.creative() || self.spectator() || self.invulnerable
+    }
     /// PlayerAbilities flags (invulnerable, flying, may fly, instabuild).
     pub fn ability_flags(&self) -> i8 {
         let mut f = 0;
-        if self.creative() || self.spectator() {
+        if self.invulnerable_ability() {
             f |= 1;
         }
         if self.flying || self.spectator() {

@@ -3050,6 +3050,13 @@ console (which waits for the next tick and does nothing inside a player's hook).
   tick (the same tick from a packet's hook or the tick's start, else the next). True when queued; false for a player
   seen not on the server or alive (inside another player's hook nobody else can be seen: it is queued and does nothing
   for a living player), and on a client. Server-side. Bundles need `"hooks": @API:respawn_player@`.
+- Helper **`native_set_player_invulnerable(uuid, on)`** (`host.set_player_invulnerable`): makes a server player
+  invulnerable or not, as Bukkit's `Player.setInvulnerable` (`Abilities.invulnerable`): damage is ignored except what
+  bypasses invulnerability (`/kill`, the void), and their client is sent its abilities. Kept until their game mode
+  changes or they leave; not saved; creative and spectator players stay invulnerable whatever `on` is. Done at once
+  where nobody's state is swapped in, else after the players' packets of the server tick. True when done or queued;
+  false for a player not on the server (where that can be seen) and on a client. Server-side. Bundles need
+  `"hooks": @API:set_player_invulnerable@`.
 
 #### Server hooks for plugin ports: Reading players
 

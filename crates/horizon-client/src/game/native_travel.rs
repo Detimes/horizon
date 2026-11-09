@@ -17,6 +17,9 @@ pub(super) enum NativeMove {
         flying: bool,
     },
     Respawn,
+    Invulnerable {
+        on: bool,
+    },
 }
 
 /// The level a mod names, of the three a server keeps.
@@ -295,6 +298,47 @@ impl Game<'_> {
         true
     }
 
+    /// Makes the server player `uuid` invulnerable (`on`) or not, as Bukkit's
+    /// `Player.setInvulnerable` (`Abilities.invulnerable`): damage is ignored, except what
+    /// bypasses invulnerability (`/kill`, the void), and their client is told. Creative and
+    /// spectator players stay invulnerable whatever `on` is. Kept until their game mode
+    /// changes or they leave; not saved. Done at once where nobody's state is swapped in, else
+    /// after the players' packets of the server tick. True when done or queued; false for a
+    /// player not on the server (where that can be seen) and on a client. API
+    /// @API:set_player_invulnerable@.
+    pub(super) fn native_set_player_invulnerable(&mut self, uuid: u128, on: bool) -> bool {
+        if !self.native_serves() {
+            return false;
+        }
+        if self.lan_acting.is_some() || self.lan.is_none() {
+            self.native_moves
+                .push((uuid, NativeMove::Invulnerable { on }));
+            return true;
+        }
+        self.native_invulnerable_now(uuid, on)
+    }
+
+    fn native_invulnerable_now(&mut self, uuid: u128, on: bool) -> bool {
+        let Some(host) = self.lan.as_mut() else {
+            return false;
+        };
+        let Some(g) = host
+            .hub
+            .guests
+            .iter_mut()
+            .find(|g| g.placed && g.uuid == uuid)
+        else {
+            return false;
+        };
+        g.invulnerable = on;
+        // The server's copy of the body, which the movement replay reads.
+        if let Some(motion) = g.motion.as_mut() {
+            motion.invulnerable = g.invulnerable_ability() || g.handover.is_some();
+        }
+        g.send(&g.abilities());
+        true
+    }
+
     /// Respawns the dead server player `uuid` as their client's Respawn click does (Spigot's
     /// `player.spigot().respawn()`, `ClientCommand` `PERFORM_RESPAWN`): at their bed, anchor or
     /// the world spawn, with `native_player_respawned` and the respawn hooks, without waiting
@@ -372,6 +416,9 @@ impl Game<'_> {
                 NativeMove::Flight { allow, flying } => {
                     self.native_flight_now(uuid, allow, flying);
                 }
+                NativeMove::Invulnerable { on } => {
+                    self.native_invulnerable_now(uuid, on);
+                }
                 NativeMove::Respawn => {
                     let Some(mut host) = self.lan.take() else {
                         continue;
@@ -389,5 +436,60 @@ impl Game<'_> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::fake_player_tick_tests::game;
+    use horizon_client::lan::Out;
+
+    /// The player `uuid`'s health, as the server mods read it.
+    fn health(game: &super::Game<'_>, uuid: u128) -> f32 {
+        game.native_server_players()
+            .into_iter()
+            .find(|p| p.uuid == uuid)
+            .expect("the guest is on")
+            .health
+    }
+
+    /// Hurts the guest `conn` by 4 as the server hurts a player (`hurtServer`), true when it hurt.
+    fn hurt(game: &mut super::Game<'_>, conn: u32) -> bool {
+        let mut host = game.lan.take().expect("a host");
+        let hurt = game
+            .as_guest(&mut host, conn, |g| {
+                g.hurt_player_from(4.0, None, "minecraft:generic", None)
+            })
+            .expect("the guest is placed");
+        game.lan = Some(host);
+        hurt
+    }
+
+    /// A mod's invulnerable player takes no damage while on, and takes it again once off. The
+    /// guest's client is sent its abilities each time. Needs the prepared data in
+    /// `HORIZON_TEST_RESOURCES`; skipped without it.
+    #[test]
+    fn an_invulnerable_player_takes_no_damage_until_switched_off() {
+        if std::env::var_os("HORIZON_TEST_RESOURCES").is_none() {
+            return;
+        }
+        let (uuid, conn) = (0x1000_u128, 2_u32);
+        let (mut game, rx) = game(1, false);
+        assert_eq!(health(&game, uuid), 20.0);
+
+        while rx.try_recv().is_ok() {}
+        assert!(game.native_invulnerable_now(uuid, true));
+        assert!(
+            matches!(rx.try_recv(), Ok(Out::Packet(_))),
+            "the abilities are resent"
+        );
+        assert!(game.native_server_players()[0].invulnerable);
+        assert!(!hurt(&mut game, conn));
+        assert_eq!(health(&game, uuid), 20.0);
+
+        assert!(game.native_invulnerable_now(uuid, false));
+        assert!(!game.native_server_players()[0].invulnerable);
+        assert!(hurt(&mut game, conn));
+        assert_eq!(health(&game, uuid), 16.0);
     }
 }

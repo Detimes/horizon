@@ -22,7 +22,10 @@ fn env(name: &str, default: usize) -> usize {
 
 /// A host on a 4x4-chunk stone floor with `players` placed guests on it,
 /// fake players when `fake`.
-fn game(players: usize, fake: bool) -> (Game<'static>, mpsc::Receiver<horizon_client::lan::Out>) {
+pub(super) fn game(
+    players: usize,
+    fake: bool,
+) -> (Game<'static>, mpsc::Receiver<horizon_client::lan::Out>) {
     let root = std::path::PathBuf::from(
         std::env::var_os("HORIZON_TEST_RESOURCES")
             .expect("set HORIZON_TEST_RESOURCES to prepared resources"),
