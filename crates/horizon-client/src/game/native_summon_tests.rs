@@ -146,3 +146,21 @@ fn a_merge_changes_a_field_and_a_player_is_refused() {
             .is_err()
     );
 }
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_glowing_flag_is_set_and_read_back_on_a_mob() {
+    let mut game = game();
+    let dim = game.dim.id();
+    let id = game
+        .native_summon(dim, "minecraft:cow", AT, Compound::new())
+        .unwrap();
+    assert_eq!(game.native_glowing(id), Some(false));
+    assert!(game.native_set_glowing(id, true));
+    assert_eq!(game.native_glowing(id), Some(true));
+    assert!(game.native_set_glowing(id, false));
+    assert_eq!(game.native_glowing(id), Some(false));
+    // An id with no entity behind it is refused and reads as None.
+    assert!(!game.native_set_glowing(u32::MAX, true));
+    assert_eq!(game.native_glowing(u32::MAX), None);
+}
