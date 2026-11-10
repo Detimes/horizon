@@ -13,4 +13,14 @@ impl Hub {
         }
         .name(registry, id)
     }
+
+    /// The network id of a name in a built-in or synchronized registry, the
+    /// reverse of `synced_name`.
+    pub fn synced_id(&self, registry: &str, name: &str) -> Option<i32> {
+        SyncedNames {
+            builtin: &self.sync.builtin,
+            dynamic: &self.sync.dynamic,
+        }
+        .id(registry, name)
+    }
 }

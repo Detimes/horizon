@@ -62,6 +62,27 @@ impl crate::item::Names for SyncedNames<'_> {
     }
 }
 
+impl SyncedNames<'_> {
+    /// The id of `name` in `registry`, the reverse of `Names::name`: the
+    /// built-in registries first, then the synced ones, then the custom data
+    /// component types. None for an empty or unknown name.
+    pub fn id(&self, registry: &str, name: &str) -> Option<i32> {
+        // A gap in a built-in report is an empty name; it names no entry.
+        if name.is_empty() {
+            return None;
+        }
+        self.builtin
+            .get(registry)
+            .and_then(|ids| ids.id(name))
+            .or_else(|| self.dynamic.id(registry, name))
+            .or_else(|| {
+                (self.dynamic.custom_components && registry == "minecraft:data_component_type")
+                    .then(|| crate::item::custom::id(name))
+                    .flatten()
+            })
+    }
+}
+
 impl Builtin {
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
@@ -314,6 +335,52 @@ mod tests {
         assert_eq!(names.name("minecraft:item", 2), None);
         assert_eq!(names.name("minecraft:item", -1), None);
         assert_eq!(names.name("minecraft:unknown", 0), None);
+    }
+
+    #[test]
+    fn synced_ids_are_the_reverse_of_synced_names() {
+        use crate::item::Names;
+        // Ids 0, 1, 2 and 4 are gaps: their empty names must not answer an id.
+        let report = r#"{"minecraft:particle_type":{"entries":{"minecraft:flame":{"protocol_id":3},"minecraft:heart":{"protocol_id":5}}}}"#;
+        let builtin = Builtin::parse(report).unwrap();
+        let dynamic = Dynamic::default();
+        let names = SyncedNames {
+            builtin: &builtin,
+            dynamic: &dynamic,
+        };
+        assert_eq!(names.id("minecraft:particle_type", "minecraft:flame"), Some(3));
+        assert_eq!(names.id("minecraft:particle_type", "minecraft:heart"), Some(5));
+        assert_eq!(names.id("minecraft:particle_type", "minecraft:unknown"), None);
+        assert_eq!(names.id("minecraft:particle_type", ""), None);
+        assert_eq!(names.id("minecraft:unknown", "minecraft:flame"), None);
+        assert_eq!(
+            names.name("minecraft:particle_type", 5).as_deref(),
+            Some("minecraft:heart")
+        );
+    }
+
+    /// Every vanilla particle and entity type maps to its id and back.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn vanilla_particle_and_entity_ids_round_trip() {
+        use crate::item::Names;
+        let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+        let path = Builtin::find(&root).expect("registries.json in HORIZON_TEST_RESOURCES");
+        let builtin = Builtin::load(&path).unwrap();
+        let dynamic = Dynamic::default();
+        let names = SyncedNames {
+            builtin: &builtin,
+            dynamic: &dynamic,
+        };
+        for registry in ["minecraft:particle_type", "minecraft:entity_type"] {
+            let ids = builtin.get(registry).unwrap();
+            for (id, name) in ids.names.iter().enumerate().filter(|(_, n)| !n.is_empty()) {
+                let id = id as i32;
+                assert_eq!(names.id(registry, name), Some(id), "{name}");
+                assert_eq!(names.name(registry, id).as_deref(), Some(name.as_str()));
+            }
+        }
+        assert_eq!(names.id("minecraft:particle_type", "minecraft:not_a_particle"), None);
     }
 
     #[test]
