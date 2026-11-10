@@ -3,6 +3,7 @@
 //! messages checked link by link, the acknowledged window, and messages
 //! relayed with each connection's numbering and signature cache.
 use super::{HostEvent, Hub};
+use crate::chat_recipient::native_chat_recipient;
 use horizon_client_core::text::Text;
 use horizon_protocol::{
     packets::play::{self, Clientbound as C},
@@ -305,7 +306,7 @@ impl Hub {
             target: None,
         };
         let line = format!("<{name}> {}", message.content);
-        self.broadcast_chat(&message, &bound, line, events);
+        self.broadcast_chat(&message, &name, &bound, line, events);
         events.push(HostEvent::PlayerChat {
             sender: uuid,
             text: message.content,
@@ -371,10 +372,12 @@ impl Hub {
     }
 
     /// PlayerList.broadcastChatMessage: logged (`[Not Secure]` unless signed
-    /// and fresh), then sent to every player.
+    /// and fresh), then sent to every player a mod does not keep it from
+    /// (`native_chat_recipient`, asked once per receiver).
     pub fn broadcast_chat(
         &mut self,
         message: &ChatMessage,
+        name: &str,
         bound: &play::ChatTypeBound,
         line: String,
         events: &mut Vec<HostEvent>,
@@ -382,7 +385,20 @@ impl Hub {
         let secure = message.trusted(now_millis());
         events.push(HostEvent::Chat { line, secure });
         for k in 0..self.guests.len() {
-            if self.guests[k].placed {
+            if !self.guests[k].placed {
+                continue;
+            }
+            let mut hidden = false;
+            if self.mods_loaded {
+                native_chat_recipient(
+                    message.sender,
+                    name,
+                    &message.content,
+                    self.guests[k].uuid,
+                    &mut hidden,
+                );
+            }
+            if !hidden {
                 self.send_chat(k, message, bound);
             }
         }
@@ -574,7 +590,7 @@ impl Hub {
             _ => format!("* {name} {text}"),
         };
         match message {
-            Some(message) => self.broadcast_chat(&message, &bound, line, events),
+            Some(message) => self.broadcast_chat(&message, &name, &bound, line, events),
             // An unsigned command packet (no signing context):
             // PlayerChatMessage.system, a disguised chat.
             None => {

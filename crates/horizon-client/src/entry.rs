@@ -143,6 +143,16 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     {
         log::warn!("Native generation hooks already installed; keeping the first callbacks");
     }
+    crate::chat_recipient::install(|sender, name, message, recipient, hidden| {
+        crate::mod_api::dispatch_chat_recipient(
+            crate::mod_api::mods(),
+            sender,
+            name,
+            message,
+            recipient,
+            hidden,
+        );
+    });
     if crate::native_client_hooks::install(crate::native_client_hooks::NativeClientHooks {
         menu_slot_rules: |menu, slot, stack, may_place, max_stack| {
             crate::mod_api::dispatch_menu_slot_rules(
