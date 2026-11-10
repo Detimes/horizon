@@ -742,8 +742,10 @@ impl Game<'_> {
             // `setSharedFlagOnFire(remainingFireTicks > 0)`, which a client's
             // isOnFire reads to draw the flames (a Flame bow's arrow).
             let fire = p.arrow.as_ref().map_or(p.synced_fire, |a| a.on_fire());
-            if fire {
-                e.meta.push((0, serializer::BYTE, Value::Byte(1)));
+            // And glowing 0x40 (the Glowing tag, `native_set_glowing`).
+            let shared = i8::from(fire) | i8::from(self.entity_glowing(p.id)) << 6;
+            if shared != 0 {
+                e.meta.push((0, serializer::BYTE, Value::Byte(shared)));
             }
             if p.air_supply != 300 {
                 e.meta.push((1, serializer::INT, Value::Int(p.air_supply)));

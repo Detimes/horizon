@@ -114,4 +114,110 @@ impl Game<'_> {
         }
         Some(self.target_name(t).plain())
     }
+    /// Sets the `Glowing` flag of the entity `entity` (`Entity.setGlowingTag`)
+    /// on a server: a mob, a dropped item, a projectile or another player (a
+    /// guest). The bit reaches every client with the next entity data update,
+    /// and the flag is saved with the entity. False for a handle that names
+    /// none of these, the host's own player, and on a client. API
+    /// @API:set_glowing@.
+    pub(super) fn native_set_glowing(&mut self, entity: u32, glowing: bool) -> bool {
+        if self.remote.is_some() {
+            return false;
+        }
+        let Some(t) = self
+            .native_entity(entity)
+            .and_then(|e| self.native_entity_target(e))
+        else {
+            return false;
+        };
+        match t {
+            Target::Mob(id) => {
+                let Some(m) = self.mobs.iter_mut().find(|m| m.id == id && !m.removed) else {
+                    return false;
+                };
+                m.glowing = glowing;
+            }
+            Target::Item(id) => {
+                let Some(d) = self.dropped.iter_mut().find(|d| d.id == id) else {
+                    return false;
+                };
+                d.needs_sync = true;
+                set_saved_glowing(self.persist.raw.entry(id).or_insert_with(empty_tag), glowing);
+            }
+            Target::Projectile(id) => {
+                let Some(p) = self.creatures.projectiles.iter_mut().find(|p| p.id == id) else {
+                    return false;
+                };
+                p.needs_sync = true;
+                set_saved_glowing(self.persist.raw.entry(id).or_insert_with(empty_tag), glowing);
+            }
+            Target::Guest(conn) => {
+                let Some(g) = self
+                    .lan
+                    .as_mut()
+                    .and_then(|h| h.hub.guests.iter_mut().find(|g| g.conn == conn))
+                else {
+                    return false;
+                };
+                set_saved_glowing(g.saved.get_or_insert_with(empty_tag), glowing);
+            }
+            _ => return false,
+        }
+        true
+    }
+    /// The `Glowing` flag the server holds for the entity `entity`: a mob's,
+    /// a dropped item's, a projectile's or another player's (their saved
+    /// data). None for a handle that names none of these, the host's own
+    /// player, and on a client. API @API:set_glowing@.
+    pub(super) fn native_glowing(&self, entity: u32) -> Option<bool> {
+        if self.remote.is_some() {
+            return None;
+        }
+        match self
+            .native_entity(entity)
+            .and_then(|e| self.native_entity_target(e))?
+        {
+            Target::Mob(id) => self
+                .mobs
+                .iter()
+                .find(|m| m.id == id && !m.removed)
+                .map(|m| m.glowing),
+            Target::Item(id) | Target::Projectile(id) => {
+                Some(glowing_tag(self.persist.raw.get(&id)))
+            }
+            Target::Guest(conn) => {
+                let g = self
+                    .lan
+                    .as_ref()?
+                    .hub
+                    .guests
+                    .iter()
+                    .find(|g| g.conn == conn)?;
+                Some(glowing_tag(g.saved.as_ref()))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// An empty saved compound, the one a flag is written into.
+fn empty_tag() -> Tag {
+    Tag::Compound(Compound::new())
+}
+
+/// Whether a saved compound carries a set `Glowing` flag (`Entity.hasGlowingTag`).
+fn glowing_tag(tag: Option<&Tag>) -> bool {
+    horizon_client::save::number(tag.and_then(|t| t.get("Glowing"))).is_some_and(|b| b != 0)
+}
+
+/// Writes or clears `Glowing` in a saved compound: Entity.saveWithoutId writes
+/// the key only while the flag is set.
+fn set_saved_glowing(tag: &mut Tag, glowing: bool) {
+    if let Tag::Compound(c) = tag {
+        if glowing {
+            c.insert("Glowing".into(), Tag::Byte(1));
+        } else {
+            c.remove(&"Glowing".into());
+        }
+    }
 }
