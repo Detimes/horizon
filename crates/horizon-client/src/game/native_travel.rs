@@ -332,8 +332,9 @@ impl Game<'_> {
         };
         g.invulnerable = on;
         // The server's copy of the body, which the movement replay reads.
+        let invulnerable = g.invulnerable_ability() || g.handover.is_some();
         if let Some(motion) = g.motion.as_mut() {
-            motion.invulnerable = g.invulnerable_ability() || g.handover.is_some();
+            motion.invulnerable = invulnerable;
         }
         g.send(&g.abilities());
         true
