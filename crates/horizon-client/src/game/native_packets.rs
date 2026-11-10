@@ -209,7 +209,7 @@ mod tests {
     use super::super::{
         Audio, Game, Options, Progress, Settings, execution_role::ExecutionRole, load_resources,
     };
-    use super::{ClientboundPlayPacket, C};
+    use super::{C, ClientboundPlayPacket};
     use horizon_protocol::packets::play::RemoveEntities;
 
     /// A mod's packet is false on a client, where no hub reaches a player: the same answer
@@ -247,9 +247,8 @@ mod tests {
             None,
         )
         .unwrap();
-        let packet = || -> ClientboundPlayPacket {
-            C::RemoveEntities(RemoveEntities { ids: vec![1] })
-        };
+        let packet =
+            || -> ClientboundPlayPacket { C::RemoveEntities(RemoveEntities { ids: vec![1] }) };
 
         assert!(!game.native_send_play_packet(7, packet()));
     }
