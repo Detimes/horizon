@@ -473,6 +473,22 @@ fn read_value(kind: i32, r: &mut Reader) -> Result<Option<Value>> {
         _ => return Ok(None),
     }))
 }
+/// How many bytes one entity data value takes at the start of `bytes`.
+///
+/// `kind` is a serializer id from [`serializer`], as [`EntityData::read`] yields it (after the
+/// version's id mapping). The value is decoded by the same reader `EntityData::read` uses, so the
+/// length is exactly what that reader would consume, including the version quirks active on this
+/// thread. Trailing bytes after the value are ignored.
+///
+/// Returns `None` when `kind` is not a serializer Horizon can decode, and when `bytes` ends before
+/// the value does. The two cases are not told apart.
+pub fn value_len(kind: i32, bytes: &[u8]) -> Option<usize> {
+    let mut r = Reader::new(bytes);
+    match read_value(kind, &mut r) {
+        Ok(Some(_)) => Some(r.position()),
+        _ => None,
+    }
+}
 fn write_value(kind: i32, v: &Value, w: &mut Writer) {
     match v {
         Value::Byte(b) => w.i8(*b),
