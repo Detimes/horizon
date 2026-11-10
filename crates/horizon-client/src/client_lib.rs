@@ -128,6 +128,7 @@ pub mod controller_notice;
 pub mod server_packs;
 pub mod shadows;
 pub mod spear;
+pub mod spectate;
 pub mod spectator_menu;
 pub mod sprint;
 pub mod stand_up;

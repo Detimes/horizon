@@ -200,10 +200,33 @@ impl Game<'_> {
         if let Some(c) = self.cmds.guest_cameras.get_mut(&conn) {
             c.teleports = teleports;
         }
+        if let Some(entity_id) = camera {
+            let kind = self.camera_kind(host, entity_id);
+            crate::spectate::native_player_start_spectating_entity(uuid, &name, entity_id, &kind);
+        }
         if camera.is_none()
             && let Some(entity_id) = previous
         {
             self.native_player_stop_spectating_entity(uuid, &name, entity_id);
+        }
+    }
+
+    /// The entity type of camera target `id` (`minecraft:player` for a guest), for the start hook.
+    fn camera_kind(&self, host: &LanHost, id: i32) -> String {
+        if host.hub.guests.iter().any(|g| g.entity_id == id) {
+            return "minecraft:player".into();
+        }
+        if let Some(target) = self.level_entity(id) {
+            return self.target_type(target);
+        }
+        // Only what `camera_extra` answers is left: primed TNT, falling blocks and dragon parts
+        // (an `EnderDragonPart` has the dragon's type).
+        match u32::try_from(id) {
+            Ok(uid) if self.tnts.iter().any(|t| t.id == uid) => "minecraft:tnt".into(),
+            Ok(uid) if self.falling.iter().any(|f| f.id == uid) => {
+                "minecraft:falling_block".into()
+            }
+            _ => "minecraft:ender_dragon".into(),
         }
     }
 

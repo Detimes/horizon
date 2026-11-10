@@ -143,6 +143,15 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     {
         log::warn!("Native generation hooks already installed; keeping the first callbacks");
     }
+    crate::spectate::install(|player, name, entity_id, kind| {
+        crate::mod_api::dispatch_player_start_spectating_entity(
+            crate::mod_api::mods(),
+            player,
+            name,
+            entity_id,
+            kind,
+        );
+    });
     if crate::native_client_hooks::install(crate::native_client_hooks::NativeClientHooks {
         menu_slot_rules: |menu, slot, stack, may_place, max_stack| {
             crate::mod_api::dispatch_menu_slot_rules(

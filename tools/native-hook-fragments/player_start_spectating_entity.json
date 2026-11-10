@@ -1,0 +1,18 @@
+{
+  "hooks": [
+    {
+      "name": "player_start_spectating_entity",
+      "target": "horizon_client_lib::spectate::native_player_start_spectating_entity",
+      "neoforge": "none (NeoForge has no such event)",
+      "side": "server",
+      "mod_api": {
+        "contract": "listen"
+      }
+    }
+  ],
+  "rust_summary": "a player started spectating an entity, heard once the camera is set (`native_player_start_spectating_entity`); the start of what `native_player_stop_spectating_entity` ends.",
+  "doc_summary": "`native_player_start_spectating_entity(player, name, entity_id, kind)` tells a mod that a server player started spectating `entity_id`, whose entity type is `kind` (`minecraft:player` for another player), after their camera was set to it. It is the start of `native_player_stop_spectating_entity`, which still gives the same id when the player stops. Heard on a server, once per camera change. Bundles need \"hooks\": @API:player_start_spectating_entity@.",
+  "comments": [
+    "crates/horizon-client/src/spectate.rs"
+  ]
+}
