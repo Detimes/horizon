@@ -610,6 +610,35 @@ mod tests {
     }
 
     #[test]
+    fn a_limited_player_ticks_at_its_own_simulation_distance() {
+        // Server simulation 8. The player at (0, 0) is limited to 2 chunks, so
+        // its entities stop at chunk 2; the player at (40, 0) keeps the server's.
+        let sources = |limit: Option<i32>| {
+            Some(Sources {
+                players: vec![((0, 0), limit), ((40, 0), None)],
+                forced: Vec::new(),
+                portal: Vec::new(),
+                dragon: None,
+                view_distance: 8,
+                simulation_distance: 8,
+            })
+        };
+        let mut t = ChunkTickets::default();
+        t.update(sources(Some(2)));
+        let l = t.levels();
+        assert!(l.entity_ticking(2, 0) && !l.entity_ticking(3, 0));
+        assert!(l.random_ticking(2, 0) && !l.random_ticking(3, 0));
+        assert!(l.entity_ticking(32, 0) && !l.entity_ticking(31, 0));
+        // None gives the server's distance back.
+        t.update(sources(None));
+        assert!(t.levels().entity_ticking(3, 0));
+        // A limit above the server's simulation distance is clamped to it.
+        t.update(sources(Some(32)));
+        let l = t.levels();
+        assert!(l.entity_ticking(8, 0) && !l.entity_ticking(9, 0));
+    }
+
+    #[test]
     fn view_distance_inside_the_simulation() {
         // view 4, simulation 10: what isn't loaded at entity ticking (beyond
         // the view distance) runs no entities, and block ticks stop where the
