@@ -143,6 +143,27 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     {
         log::warn!("Native generation hooks already installed; keeping the first callbacks");
     }
+    crate::player_chunks::install(crate::player_chunks::Listeners {
+        sent: |player, dimension, chunk| {
+            crate::mod_api::dispatch_player_chunk_sent(
+                crate::mod_api::mods(),
+                player,
+                dimension,
+                chunk,
+            );
+        },
+        forgotten: |player, dimension, chunk| {
+            crate::mod_api::dispatch_player_chunk_forgotten(
+                crate::mod_api::mods(),
+                player,
+                dimension,
+                chunk,
+            );
+        },
+        listened: |listened| {
+            crate::mod_api::dispatch_player_chunk_listened(crate::mod_api::mods(), listened);
+        },
+    });
     if crate::native_client_hooks::install(crate::native_client_hooks::NativeClientHooks {
         menu_slot_rules: |menu, slot, stack, may_place, max_stack| {
             crate::mod_api::dispatch_menu_slot_rules(

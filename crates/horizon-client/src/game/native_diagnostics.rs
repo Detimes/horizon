@@ -122,47 +122,26 @@ impl Game<'_> {
         }
     }
 
-    /// Whether a mod hears the chunk columns the hub sends a player and forgets
-    /// (`native_player_chunk_sent`, `native_player_chunk_forgotten`). Asked once at the end of
-    /// each server tick, and the hub records those chunks only while a mod says yes; a mod that
-    /// hooks either sets `listened`. API @API:player_chunk_events@.
-    pub(super) fn native_player_chunk_listened(&self, listened: &mut bool) {
-        mod_api::dispatch_player_chunk_listened(self, mod_api::mods(), listened);
-    }
-    /// A chunk column the hub sent a server player (`ClientboundLevelChunkWithLightPacket`),
-    /// once per column in the batch that carried it, after the batch was sent. The player's
-    /// name is their uuid. Listen only. API @API:player_chunk_events@.
-    pub(super) fn native_player_chunk_sent(
-        &mut self,
-        player: u128,
-        dimension: &str,
-        chunk: [i32; 2],
-    ) {
-        mod_api::dispatch_player_chunk_sent(self, mod_api::mods(), player, dimension, chunk);
-    }
-    /// A chunk column a server player's client was told to forget
-    /// (`ClientboundForgetLevelChunkPacket`), when the view moved past it, before the packet is
-    /// sent. Listen only. API @API:player_chunk_events@.
-    pub(super) fn native_player_chunk_forgotten(
-        &mut self,
-        player: u128,
-        dimension: &str,
-        chunk: [i32; 2],
-    ) {
-        mod_api::dispatch_player_chunk_forgotten(self, mod_api::mods(), player, dimension, chunk);
-    }
     /// The end of a server tick: asks whether a mod hears the chunks for the next tick
     /// (`native_player_chunk_listened`), then hands the chunks the hub recorded this tick to
     /// `native_player_chunk_sent` and `native_player_chunk_forgotten`, in order.
     pub(super) fn diagnostics_chunks_tick(&mut self) {
         let mut listened = false;
-        self.native_player_chunk_listened(&mut listened);
+        horizon_client::player_chunks::native_player_chunk_listened(&mut listened);
         horizon_client::lan::chunk_events::set_listening(listened);
         for event in horizon_client::lan::chunk_events::take() {
             if event.sent {
-                self.native_player_chunk_sent(event.player, &event.dimension, event.chunk);
+                horizon_client::player_chunks::native_player_chunk_sent(
+                    event.player,
+                    &event.dimension,
+                    event.chunk,
+                );
             } else {
-                self.native_player_chunk_forgotten(event.player, &event.dimension, event.chunk);
+                horizon_client::player_chunks::native_player_chunk_forgotten(
+                    event.player,
+                    &event.dimension,
+                    event.chunk,
+                );
             }
         }
     }
