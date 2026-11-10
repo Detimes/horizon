@@ -2,7 +2,7 @@
   "hooks": [
     {
       "name": "player_logged_out_v2",
-      "target": "horizon_client::game::native_player_state::Game<'_>::native_player_logged_out_v2",
+      "target": "horizon_client_lib::player_quit::native_player_logged_out_v2",
       "neoforge": "PlayerEvent.PlayerLoggedOutEvent (no reason there; Bukkit's PlayerQuitEvent with its kick and timeout causes)",
       "side": "server",
       "cancellable": false,
@@ -14,6 +14,6 @@
   "rust_summary": "why a player left (`native_player_logged_out_v2`): a `NativeQuitReason` after `native_player_logged_out`.",
   "doc_summary": "`native_player_logged_out_v2(player, name, reason)` is `native_player_logged_out` (NeoForge's `PlayerLoggedOutEvent`) with why the player left: `reason` is `Disconnected` (a clean disconnect, a connection reset, a move to another server), `Kicked(text)` (a server kick, `native_kick`, `/kick`, a ban, the packet-rate limit, with the text as the client shows it), `TimedOut` (the keep-alive timeout), `ServerStopping` (the server stops with them still listed) or `Error(text)` (a malformed packet or a read error). The first cause that ends the connection is kept, so a timeout after a kick stays `Kicked`. v1 keeps its signature and firing point and fires first; v2 fires right after it, for the same players, and only hears. Bundles need `\"hooks\": @API:player_logged_out_v2@`.",
   "comments": [
-    "crates/horizon-client/src/game/native_player_state.rs"
+    "crates/horizon-client/src/player_quit.rs"
   ]
 }

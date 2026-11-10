@@ -538,21 +538,11 @@ impl Game<'_> {
         reason: NativeQuitReason,
     ) {
         self.native_player_logged_out(player, name);
-        self.native_player_logged_out_v2(player, name, reason);
+        horizon_client::player_quit::native_player_logged_out_v2(player, name, reason);
     }
     /// `player` (`name`) was still on when the server stopped: the logout, with the reason `ServerStopping`.
     pub(super) fn native_player_stopped(&mut self, player: u128, name: &str) {
         self.native_player_left(player, name, NativeQuitReason::ServerStopping);
-    }
-    /// `player` (`name`) left the server for `reason` (NeoForge's `PlayerLoggedOutEvent` has none). Heard right
-    /// after `native_player_logged_out`, for every player that one hears of. Server-side. API @API:player_logged_out_v2@.
-    pub(super) fn native_player_logged_out_v2(
-        &mut self,
-        player: u128,
-        name: &str,
-        reason: NativeQuitReason,
-    ) {
-        let _ = (player, name, reason);
     }
 }
 

@@ -143,6 +143,9 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     {
         log::warn!("Native generation hooks already installed; keeping the first callbacks");
     }
+    crate::player_quit::install(|player, name, reason| {
+        crate::mod_api::dispatch_player_logged_out_v2(crate::mod_api::mods(), player, name, reason);
+    });
     if crate::native_client_hooks::install(crate::native_client_hooks::NativeClientHooks {
         menu_slot_rules: |menu, slot, stack, may_place, max_stack| {
             crate::mod_api::dispatch_menu_slot_rules(
