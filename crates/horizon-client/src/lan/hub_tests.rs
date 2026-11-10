@@ -1376,3 +1376,75 @@ fn memory_connection_first_view_sends_every_ready_column() {
         "an empty queue sends nothing"
     );
 }
+
+/// A mod keeps Bob's public line from Cy only: Bob and Ada get it with the same signature, Cy gets nothing and
+/// is not counted as sent it (no chat index, no pending acknowledgement).
+#[test]
+fn a_chat_line_hidden_from_one_receiver_is_not_sent_to_that_receiver() {
+    fn hide_bob_from_cy(sender: u128, _: &str, _: &str, recipient: u128, hidden: &mut bool) {
+        *hidden = sender == 1 && recipient == 3;
+    }
+    fn signatures(rx: &std::sync::mpsc::Receiver<crate::lan::Out>) -> Vec<Option<Vec<u8>>> {
+        let mut signatures = Vec::new();
+        while let Ok(crate::lan::Out::Packet(body)) = rx.try_recv() {
+            let mut r = horizon_protocol::buf::Reader::new(&body);
+            let id = r.varint().unwrap();
+            if let Ok(C::PlayerChat(packet)) = C::decode(id, r.rest()) {
+                signatures.push(packet.signature);
+            }
+        }
+        signatures
+    }
+    let (mut hub, bob) = hub_with_a_guest();
+    let mut receivers = vec![bob];
+    for (conn, uuid, entity, name) in [(2, 2, 2, "Ada"), (3, 3, 3, "Cy")] {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut guest = Guest::new(
+            crate::lan::Joined {
+                conn,
+                uuid,
+                name: name.into(),
+                properties: Vec::new(),
+                info: horizon_protocol::packets::configuration::ClientInformation::new(8),
+                brand: "vanilla".into(),
+                sender: crate::lan::PlayerSender::new(tx, Arc::default()),
+                latency: Arc::new(std::sync::atomic::AtomicI32::new(0)),
+                address: "127.0.0.1:25566".parse().unwrap(),
+                expected: false,
+                configured: Default::default(),
+            },
+            entity,
+            [0.5, 64.0, 0.5],
+            8,
+        );
+        guest.placed = true;
+        guest.dimension = "minecraft:overworld".into();
+        hub.guests.push(guest);
+        receivers.push(rx);
+    }
+    crate::chat_recipient::install(hide_bob_from_cy);
+    hub.mods_loaded = true;
+    let signature = [9u8; horizon_protocol::secure_chat::SIGNATURE_BYTES];
+    let message = super::chat::ChatMessage {
+        sender: 1,
+        index: 1,
+        signature: Some(signature),
+        content: "hello".into(),
+        timestamp: super::chat::now_millis(),
+        salt: 7,
+        last_seen: Vec::new(),
+        unsigned_content: None,
+    };
+    let bound = horizon_protocol::packets::play::ChatTypeBound {
+        chat_type: 0,
+        name: horizon_protocol::text::literal("Bob"),
+        target: None,
+    };
+    hub.broadcast_chat(&message, "Bob", &bound, "<Bob> hello".into(), &mut Vec::new());
+    let shown = Some(signature.to_vec());
+    assert_eq!(signatures(&receivers[0]), [shown.clone()], "the sender sees it");
+    assert_eq!(signatures(&receivers[1]), [shown], "Ada sees it, signed as sent");
+    assert!(signatures(&receivers[2]).is_empty(), "Cy is not sent it at all");
+    assert_eq!(hub.guests[2].chat_index, 0, "Cy's numbering does not move");
+    assert_eq!(hub.guests[1].chat_index, 1);
+}
