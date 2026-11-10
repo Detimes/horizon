@@ -1680,11 +1680,25 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         state: BlockStateId,
         update: i32,
     ) -> Option<BlockStateId> {
+        self.write_placed_with(pos, state, update, true)
+    }
+    /// `write_placed`, with `Block.setPlacedBy`'s own sound left out when
+    /// `placed_by_sound` is off: a dried ghast's hook does nothing but play
+    /// its place sound, which a silent write must not make.
+    fn write_placed_with(
+        &mut self,
+        pos: BlockPos,
+        state: BlockStateId,
+        update: i32,
+        placed_by_sound: bool,
+    ) -> Option<BlockStateId> {
         if !self.set_block(pos, state, update) {
             return None;
         }
         let placed = self.state(pos);
-        if self.b.block(placed) == self.b.block(state) {
+        if self.b.block(placed) == self.b.block(state)
+            && (placed_by_sound || !self.b.data(placed).is(Class::DriedGhast))
+        {
             self.set_placed_by(pos, placed);
         }
         Some(self.state(pos))
@@ -1760,7 +1774,8 @@ impl Behaviours {
     /// placement's flags, so the neighbours hear of it and, unless
     /// `update_neighbour_shapes` is off, their shapes update (fences, walls and
     /// stairs connect), then `Block.setPlacedBy` (a bed's head, a door's upper
-    /// half). No place sound, no game event and no item stack. The state there
+    /// half). No place sound (not a dried ghast's own from that hook either), no
+    /// game event and no item stack. The state there
     /// afterwards, or None when nothing was written.
     pub fn place_block_state<L: LevelAccess + ?Sized>(
         &self,
@@ -1774,7 +1789,8 @@ impl Behaviours {
         if !update_neighbour_shapes {
             update |= flags::UPDATE_KNOWN_SHAPE;
         }
-        self.sim(level, ticks).write_placed(pos, state, update)
+        self.sim(level, ticks)
+            .write_placed_with(pos, state, update, false)
     }
     /// `BlockItem.place` for the item in `ctx`: resolves the replaced
     /// position, computes `getStateForPlacement`, checks survival and entity

@@ -124,3 +124,32 @@ fn nothing_is_written_outside_the_world() {
         None
     );
 }
+
+/// `DriedGhastBlock.setPlacedBy` only plays the place sound; a block written
+/// for a mod is silent, so no sound comes from it.
+#[test]
+fn a_dried_ghast_written_as_placed_makes_no_place_sound() {
+    let mut w = world!();
+    w.floor(0, 6, "grass_block");
+    let ghast = w.id(
+        "dried_ghast",
+        &[
+            ("facing", "north"),
+            ("hydration", "0"),
+            ("waterlogged", "false"),
+        ],
+    );
+    let pos = BlockPos::new(0, 1, 0);
+    assert!(place_state(&mut w, pos, ghast, true).is_some());
+    assert_eq!(w.get(pos), ghast);
+    let place_sounds = w
+        .level
+        .events
+        .iter()
+        .filter(|e| {
+            matches!(e, LevelEvent::Sound { sound, .. }
+                if sound.starts_with("minecraft:block.dried_ghast.place"))
+        })
+        .count();
+    assert_eq!(place_sounds, 0);
+}
