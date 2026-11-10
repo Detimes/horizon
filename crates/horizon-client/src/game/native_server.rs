@@ -16,11 +16,24 @@ use horizon_client::{
     lan::data::component_nbt,
     mod_api::{NativeCommandInfo, NativeCommandResult},
     server::user_lists::{NameAndId, WhiteEntry},
-    text::Text,
+    text::{COLORS, Text},
 };
 use horizon_protocol::packets::play::{self, Clientbound as C};
 use serde_json::{Map, Value, json};
 use std::{collections::HashMap, path::PathBuf};
+
+/// A team's colour name for an RGB value (`native_team_set`): one of the
+/// sixteen chat colours (`text::COLORS`), None for no colour. The outer
+/// None is a value that is none of them.
+fn team_colour(colour: Option<u32>) -> Option<Option<String>> {
+    match colour {
+        None => Some(None),
+        Some(rgb) => COLORS
+            .iter()
+            .find(|(_, _, c)| *c == rgb)
+            .map(|(_, n, _)| Some((*n).to_owned())),
+    }
+}
 
 /// A sidebar a server mod shows one player (`native_sidebar`): its title and
 /// up to 15 lines, top first, each a text on the left and, where the score's
@@ -691,6 +704,68 @@ impl Game<'_> {
             return false;
         }
         host.hub.set_name_tag(uuid, tag.map(str::to_owned));
+        true
+    }
+    /// `Scoreboard.addPlayerTeam` and `PlayerTeam.setColor`: the team `name`
+    /// is made when it is missing, and its colour becomes `colour`, the RGB
+    /// value of one of the sixteen chat colours (`0xFF5555` is red; None: no
+    /// colour). Every client that sees the team gets the change with the
+    /// next tick's sync, and its members' name colours follow. The team's
+    /// other settings stay as they are. Teams are kept with the world's
+    /// scoreboard, which the server saves. Only on a server; false there, for
+    /// an empty name or one with a space, and for a colour that is none of
+    /// the sixteen. API @API:scoreboard_teams@.
+    pub(super) fn native_team_set(&mut self, name: &str, colour: Option<u32>) -> bool {
+        if self.remote.is_some() || name.is_empty() || name.contains(char::is_whitespace) {
+            return false;
+        }
+        let Some(color) = team_colour(colour) else {
+            return false;
+        };
+        self.load_scoreboard();
+        self.score.board.add_team(name).color = color;
+        true
+    }
+    /// `Scoreboard.addPlayerToTeam`: `holder` (a player's name, or an
+    /// entity's name as the scoreboard keeps it) joins the team `name` and
+    /// leaves the team it was on. Its clients get the change with the next
+    /// tick's sync. Only on a server; false there, for an empty holder and
+    /// for a team that doesn't exist (no change is made then). API
+    /// @API:scoreboard_teams@.
+    pub(super) fn native_team_join(&mut self, name: &str, holder: &str) -> bool {
+        if self.remote.is_some() || holder.is_empty() {
+            return false;
+        }
+        self.load_scoreboard();
+        if self.score.board.team(name).is_none() {
+            return false;
+        }
+        self.score.board.add_to_team(holder, name);
+        true
+    }
+    /// `Scoreboard.removePlayerFromTeam`: `holder` leaves the team it is on
+    /// and, with the next tick's sync, the others' clients drop its colour.
+    /// True when it was on a team. Only on a server; false there. API
+    /// @API:scoreboard_teams@.
+    pub(super) fn native_team_leave(&mut self, holder: &str) -> bool {
+        if self.remote.is_some() {
+            return false;
+        }
+        self.load_scoreboard();
+        self.score.board.remove_from_team(holder)
+    }
+    /// `Scoreboard.removePlayerTeam`: the team `name` is gone and its
+    /// members have no team. True when it existed. Only on a server; false
+    /// there. API @API:scoreboard_teams@.
+    pub(super) fn native_team_remove(&mut self, name: &str) -> bool {
+        if self.remote.is_some() {
+            return false;
+        }
+        self.load_scoreboard();
+        if self.score.board.team(name).is_none() {
+            return false;
+        }
+        self.score.board.remove_team(name);
         true
     }
     /// Whether the server's chat filter (`server.toml` `[chat_filter]`)
@@ -2135,5 +2210,13 @@ mod tests {
         assert_eq!(dimension_of_world("frontier"), None);
         assert_eq!(world_of_dimension("minecraft:overworld"), Some("world"));
         assert_eq!(world_of_dimension("world"), None);
+    }
+
+    #[test]
+    fn team_colours_are_the_sixteen_chat_colours_by_rgb() {
+        assert_eq!(team_colour(None), Some(None));
+        assert_eq!(team_colour(Some(0xFF5555)), Some(Some("red".to_owned())));
+        assert_eq!(team_colour(Some(0x000000)), Some(Some("black".to_owned())));
+        assert_eq!(team_colour(Some(0x123456)), None, "not a chat colour");
     }
 }

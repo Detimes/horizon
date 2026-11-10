@@ -1,0 +1,12 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "team_set", "target": "horizon_client::game::native_server::Game<'_>::native_team_set"},
+    {"name": "team_join", "target": "horizon_client::game::native_server::Game<'_>::native_team_join"},
+    {"name": "team_leave", "target": "horizon_client::game::native_server::Game<'_>::native_team_leave"},
+    {"name": "team_remove", "target": "horizon_client::game::native_server::Game<'_>::native_team_remove"}
+  ],
+  "rust_summary": "scoreboard teams a server mod makes, colours, fills and empties (`native_team_set`, `native_team_join`, `native_team_leave`, `native_team_remove`).",
+  "doc_summary": "`native_team_set(name, colour)` makes the team `name` when it is missing and sets its colour to one of the sixteen chat colours by RGB value (None: no colour); `native_team_join(name, holder)` puts `holder` in the team, out of the one it was in; `native_team_leave(holder)` takes it out of its team; `native_team_remove(name)` removes the team and its members' teams. Clients get the changes with the next tick's sync. Bundles need \"hooks\": @API:scoreboard_teams@.",
+  "comments": ["crates/horizon-client/src/game/native_server.rs"]
+}

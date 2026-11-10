@@ -3261,6 +3261,18 @@ injections before.
   nickname covers it; their own client reads it from their next join. Chat, commands, selectors, the log and the
   server's events keep the real name. Kept by UUID until a mod sets it again or the server stops. Outside a player's
   hook; false there, when they aren't on and for a tag that isn't one. Bundles need `"hooks": @API:set_name_tag@`.
+- Helper **`native_team_set(name, colour)`** (`host.team_set`): makes the scoreboard team `name` when it is missing and
+  sets its colour, an RGB value of one of the sixteen chat colours (`0xFF5555` is red; None: no colour), as
+  `PlayerTeam.setColor` does. Every client that sees the team gets the change with the next tick's sync, and its
+  members' name colours follow. The team's other settings stay. False on a remote client, for an empty name or one
+  with a space, and for a colour that is none of the sixteen.
+- Helpers **`native_team_join(name, holder)`** (`host.team_join`) and **`native_team_leave(holder)`** (`host.team_leave`):
+  `holder` (a player's name, or an entity's name as the scoreboard keeps it) joins the team, leaving the one it was
+  on, or leaves its team. `team_join` is false for a team that doesn't exist and changes nothing then; `team_leave`
+  is true when the holder was on a team. Clients get the change with the next tick's sync.
+- Helper **`native_team_remove(name)`** (`host.team_remove`): removes the team; its members have no team any more. True
+  when it existed. Teams are kept with the world's scoreboard, which the server saves. Bundles need
+  `"hooks": @API:scoreboard_teams@` for these four.
 
 #### Server hooks for plugin ports: NPCs
 
