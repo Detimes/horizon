@@ -6,7 +6,7 @@
 //! does.
 use super::{Dim, Game, commands::Target, native_entities::target_id, tick_profile};
 use horizon_client::{
-    mod_api::{self, NativeLevelStats, NativeMobCost},
+    mod_api::{NativeLevelStats, NativeMobCost},
     world::World,
 };
 use std::collections::BTreeMap;
