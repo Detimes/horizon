@@ -134,6 +134,7 @@ mod tests {
         reason = "stubs shaped like the game's, only some of them read"
     )]
     mod generated {
+        pub struct NativeQuitReason;
         mod horizon_mods {
             pub mod content {
                 pub struct Block;
