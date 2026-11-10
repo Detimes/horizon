@@ -2711,6 +2711,12 @@ server only.
   `native_player_view_distance(uuid)` is the distance the player has now. Both answer false/None for a player not online
   and inside a guest's packet hook, where the hub is taken out: call them from a tick or console hook. API
   @API:player_view_distance@.
+- **`native_set_player_simulation_distance(uuid, distance)`** (`native_view_distance.rs`): limits the chunks whose
+  entities and blocks tick for one player to `distance` chunks (2 to 32), below the server's simulation distance; None
+  gives it the server's again, and a higher value is clamped to the server's. A chunk ticks where any player's
+  simulation reaches it, so a chunk only the limited player holds stops ticking beyond its limit and the other players
+  keep theirs. It lasts until the player leaves and applies from the next tick. False off a server, for a player not
+  online, and inside a guest's packet hook: call it from a tick or console hook. API @API:player_simulation_distance@.
 - **`native_set_player_fake(uuid, fake)`** (`native_view_distance.rs`): marks the player as a fake player, a mod's bot
   with no client, or not. A fake player keeps only a small area loaded and ticking around it (its view distance plus
   one, at most the server's plus one), its packets are cut to the few a bot needs (position, entity motion, the chunk

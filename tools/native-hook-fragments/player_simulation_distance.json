@@ -1,0 +1,11 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "set_player_simulation_distance", "target": "horizon_client::game::native_view_distance::Game<'_>::native_set_player_simulation_distance"}
+  ],
+  "rust_summary": "one player's simulation distance (`native_set_player_simulation_distance`).",
+  "doc_summary": "`native_set_player_simulation_distance(uuid, distance)` limits the chunks whose entities and blocks tick for one player, below the server's simulation distance (2 to 32; None gives the server's back). Bundles need \"hooks\": @API:player_simulation_distance@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_view_distance.rs"
+  ]
+}
