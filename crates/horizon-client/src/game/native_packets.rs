@@ -3,7 +3,7 @@
 //! injections before. The packet hooks themselves run where the hub sends
 //! (`horizon_client::lan::conn`), with no `Game`; the helpers here switch them on.
 use super::{Game, lan::LanHost};
-use horizon_client::{lan::data::component_nbt, text::Text};
+use horizon_client::{lan::data::component_nbt, mod_api::ClientboundPlayPacket, text::Text};
 use horizon_protocol::packets::{
     configuration::{ResourcePackPop, ResourcePackPush},
     play::Clientbound as C,
@@ -169,6 +169,20 @@ impl Game<'_> {
     pub(super) fn native_pop_resource_pack(&mut self, player: u128, id: Option<u128>) -> bool {
         self.native_send(player, C::ResourcePackPop(ResourcePackPop { id }))
     }
+    /// Sends `packet` to that player's connection as it is, as vanilla's
+    /// `ServerPlayer.connection.send` does for any play packet: a boss bar, scoreboard or team
+    /// data, entity data, a mod's own HUD packet. Only that player gets it. It leaves as
+    /// `native_send` does (at once, or after the hook for the acting player). True when it is
+    /// queued for their connection; false on a client, and for a player who isn't in play yet.
+    /// Nothing checks the packet's contents: a packet the client can't read is the mod's to get
+    /// right. @API:send_play_packet@.
+    pub(super) fn native_send_play_packet(
+        &mut self,
+        player: u128,
+        packet: ClientboundPlayPacket,
+    ) -> bool {
+        self.native_send(player, packet)
+    }
     /// Disconnects `player` with `reason` (Adventure's `Player.kick(Component)`), whole, in its
     /// colours and translations, as `/kick` does: their client shows it, the log's "lost
     /// connection" line names it and `native_player_kicked` hears it. It happens at the tick's
@@ -187,5 +201,56 @@ impl Game<'_> {
         }
         self.native_packets.kicks.push((player, reason.clone()));
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{
+        Audio, Game, Options, Progress, Settings, execution_role::ExecutionRole, load_resources,
+    };
+    use super::{ClientboundPlayPacket, C};
+    use horizon_protocol::packets::play::RemoveEntities;
+
+    /// A mod's packet is false on a client, where no hub reaches a player: the same answer
+    /// `native_send` gives. The packet is the boss bar's removal, any play packet would do.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_play_packet_is_refused_on_a_client() {
+        let root = std::path::PathBuf::from(
+            std::env::var_os("HORIZON_TEST_RESOURCES")
+                .expect("set HORIZON_TEST_RESOURCES to prepared resources"),
+        );
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!("no menu handoff"),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.execution_role = ExecutionRole::Client;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        let packet = || -> ClientboundPlayPacket {
+            C::RemoveEntities(RemoveEntities { ids: vec![1] })
+        };
+
+        assert!(!game.native_send_play_packet(7, packet()));
     }
 }

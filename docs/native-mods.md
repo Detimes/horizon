@@ -3201,6 +3201,12 @@ What packet-level plugins (ProtocolLib, PacketEvents, TAB), plugin channel liste
   the tick's end, with the mod messages, so it works from any server hook, the kicked player's own included. True when
   it is queued; false on a client, in a world nobody else can join, and for a player who isn't on when the hub can tell
   (a player gone by the tick's end isn't kicked either). Bundles need `"hooks": @API:kick@`.
+- Helper **`native_send_play_packet(player, packet)`** (`host.send_play_packet`): any `ClientboundPlayPacket` to one
+  player's connection as it is, as `ServerPlayer.connection.send` does, for packets the fixed helpers don't cover (a
+  boss bar, scoreboard or team data, entity data, a mod's own HUD packet). Only that player gets it. It is sent as
+  `native_send` does: at once, or after the hook for the acting player. True when queued for their connection; false
+  on a client, and for a player who isn't in play yet. Nothing checks the packet's contents. Bundles need
+  `"hooks": @API:send_play_packet@`.
 
 #### Server hooks for plugin ports: vanish and per-viewer visuals
 

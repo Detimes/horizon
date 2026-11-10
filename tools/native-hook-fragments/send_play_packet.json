@@ -1,0 +1,12 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "send_play_packet",
+      "target": "horizon_client::game::native_packets::Game<'_>::native_send_play_packet"
+    }
+  ],
+  "rust_summary": "any typed play packet to one player's connection (`native_send_play_packet`), as `ServerPlayer.connection.send`.",
+  "doc_summary": "`native_send_play_packet(player, packet)` sends any `ClientboundPlayPacket` to one player's connection, as `ServerPlayer.connection.send` does: a boss bar, scoreboard or team data, entity data or a mod's own HUD packet. The packet goes as it is, to that player alone; the fixed helpers (action bar, title, sound) keep their own. True when it is queued for their connection, false when they aren't in play yet and on a client. Bundles need \"hooks\": @API:send_play_packet@.",
+  "comments": ["crates/horizon-client/src/game/native_packets.rs"]
+}
