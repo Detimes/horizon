@@ -167,9 +167,15 @@ fn usage_for_line<'h>(usages: &'h [NativeCommand], line: &str) -> Option<&'h Nat
             continue;
         };
         let literal = literal_words(&usage.usage);
-        let required = nodes.iter().filter(|n| !n.2).count();
+        // A position is three words on the line (`<pos:vec3>` takes `1 2 3`).
+        let words = |n: &(String, Value, bool)| match n.1["parser"].as_str() {
+            Some("minecraft:block_pos" | "minecraft:vec3") => 3,
+            _ => 1,
+        };
+        let required: usize = nodes.iter().filter(|n| !n.2).map(words).sum();
+        let most: usize = nodes.iter().map(words).sum();
         let greedy = nodes.iter().any(|n| n.1["properties"]["type"] == "greedy");
-        let fits = typed.len() >= required && (typed.len() <= nodes.len() || greedy);
+        let fits = typed.len() >= required && (typed.len() <= most || greedy);
         let starts =
             literal.len() <= typed.len() && literal.iter().zip(&typed).all(|(a, b)| a == b);
         if fits && starts && best.is_none_or(|(n, _)| literal.len() > n) {
@@ -2156,6 +2162,35 @@ mod tests {
         let tp = &t["children"]["tp"]["children"]["pos"];
         assert_eq!(tp["parser"], "minecraft:vec3");
         assert!(tp.get("properties").is_none());
+    }
+
+    /// A position argument takes three words, so a line with coordinates
+    /// finds its own usage and that usage's level and permission, not the
+    /// root's most permissive one.
+    #[test]
+    fn a_position_argument_takes_three_words_of_the_line() {
+        let commands = [
+            NativeCommand::new("edit help"),
+            NativeCommand::op("edit move <pos:vec3>", 2),
+            NativeCommand::op("edit set <pos:block_pos> [block:word]", 3),
+        ];
+        let usage = |line: &str| usage_for_line(&commands, line).map(|u| u.usage.clone());
+        assert_eq!(usage("edit help").as_deref(), Some("edit help"));
+        assert_eq!(
+            usage("edit move 1 2 3").as_deref(),
+            Some("edit move <pos:vec3>")
+        );
+        assert_eq!(usage("edit move 1 2"), None, "a coordinate is missing");
+        assert_eq!(usage("edit move 1 2 3 4"), None, "a word too many");
+        assert_eq!(
+            usage("edit set ~ ~1 ~").as_deref(),
+            Some("edit set <pos:block_pos> [block:word]")
+        );
+        assert_eq!(
+            usage("edit set ~ ~1 ~ stone").as_deref(),
+            Some("edit set <pos:block_pos> [block:word]")
+        );
+        assert_eq!(usage("edit set ~ ~1 ~ stone extra"), None);
     }
 
     #[test]
