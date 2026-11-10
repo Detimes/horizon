@@ -30,6 +30,32 @@ impl Game<'_> {
             .is_some_and(|host| host.hub.set_guest_view_limit(uuid, distance))
     }
 
+    /// Limit the simulation distance of the player `uuid` to `distance` chunks (2 to 32), or with
+    /// None give it the server's again. The chunks around the player whose entities and blocks tick
+    /// for it reach only that far, so chunks only this player holds stop ticking beyond it; the
+    /// other players keep theirs (a chunk ticks where any player's tickets reach it). The server's
+    /// simulation distance still caps the limit. It lasts until the player leaves and applies from
+    /// the next tick. False off a server, for a player not online, and inside a guest's packet
+    /// hook, where the hub is taken out (call it from a tick hook). API
+    /// @API:player_simulation_distance@.
+    pub(super) fn native_set_player_simulation_distance(
+        &mut self,
+        uuid: u128,
+        distance: Option<i32>,
+    ) -> bool {
+        if !self.native_authoritative() {
+            return false;
+        }
+        let Some(host) = self.lan.as_mut() else {
+            return false;
+        };
+        let Some(guest) = host.hub.guests.iter_mut().find(|g| g.uuid == uuid) else {
+            return false;
+        };
+        guest.sim_limit = distance.map(|d| d.clamp(2, 32));
+        true
+    }
+
     /// Mark the player `uuid` as a fake player (a mod's bot with no client), or not: it then keeps
     /// only a small area loaded and ticking around it (its view distance plus one, at most the
     /// server's plus one), its packets are cut to the few a bot needs, and it does not count for

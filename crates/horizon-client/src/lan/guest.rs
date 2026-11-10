@@ -124,6 +124,9 @@ pub struct Guest {
     /// A native mod's limit on `view_distance` for this player alone
     /// (`native_set_player_view_distance`); None: the server's.
     pub view_limit: Option<i32>,
+    /// A native mod's limit on the simulation distance this player's chunks tick at
+    /// (`native_set_player_simulation_distance`); None: the server's.
+    pub sim_limit: Option<i32>,
     /// A fake player (a mod's bot with no client; `native_set_player_fake`): it keeps only a small
     /// area loaded and ticking around it and does not count for natural spawning, so hundreds of
     /// bots do not each hold a whole view distance.
@@ -464,6 +467,7 @@ impl Guest {
             latency: j.latency,
             view_distance: i32::from(j.info.view_distance).max(2).min(view_distance),
             view_limit: None,
+            sim_limit: None,
             fake: false,
             info: j.info,
             brand: j.brand,
