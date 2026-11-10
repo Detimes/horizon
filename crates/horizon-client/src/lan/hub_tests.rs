@@ -1446,3 +1446,18 @@ fn shown_blocks_reach_only_their_player() {
     assert!(packets(&other).is_empty(), "nobody else is sent the blocks");
     assert_eq!(world.block(5, 63, 5).0, 1, "the world keeps its block");
 }
+
+/// A shown block's position has to fit `BlockPos.asLong` (26 bits for x and z, 12 for y): y 4096 would
+/// arrive as y 0 and change another block on the client.
+#[test]
+fn a_shown_block_position_has_to_fit_the_packet() {
+    use crate::lan::containers::show_block_pos_fits as fits;
+    assert!(fits([0, 64, 0]));
+    assert!(fits([-33_554_432, -2048, 33_554_431]));
+    assert!(fits([33_554_431, 2047, -33_554_432]));
+    assert!(!fits([0, 4096, 0]));
+    assert!(!fits([0, 2048, 0]));
+    assert!(!fits([0, -2049, 0]));
+    assert!(!fits([33_554_432, 64, 0]));
+    assert!(!fits([0, 64, -33_554_433]));
+}

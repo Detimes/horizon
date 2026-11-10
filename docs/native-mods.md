@@ -3145,8 +3145,9 @@ per-player helpers for these (a NeoForge mod sends `ServerPlayer.connection.send
   one `ClientboundSectionBlocksUpdatePacket` per section, in section order (a later entry for a position wins). The
   world is not changed, and nobody else gets the packet. The real block comes back when its chunk or block next
   updates, as in vanilla, so a mod that keeps a block shown sends it again then. Queued as `native_play_sound_to`, with
-  the same answers; false for an empty list, a state id that isn't a block state, on a client, and for a player who
-  isn't on. Bundles need `"hooks": @API:show_block@`.
+  the same answers; false for an empty list, a state id that isn't a block state, a position the block update packet
+  can't carry (y outside -2048..=2047, x or z outside ±33554432; nothing is sent then), on a client, and for a player
+  who isn't on. Bundles need `"hooks": @API:show_block@`.
 
 #### Server hooks for plugin ports: packets
 
