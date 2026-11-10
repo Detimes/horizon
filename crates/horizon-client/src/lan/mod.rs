@@ -39,7 +39,7 @@ mod sound_order;
 pub mod tracking;
 pub mod waypoints;
 
-use crate::mod_api::NativeQuitReason;
+use crate::player_quit::NativeQuitReason;
 pub use conn::{Holding, PlayerSender, flush_all};
 use horizon_protocol::packets::play;
 use horizon_protocol::{

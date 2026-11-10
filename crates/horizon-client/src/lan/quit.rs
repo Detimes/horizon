@@ -9,7 +9,7 @@ impl Hub {
     pub fn time_out(&mut self, conn: u32) {
         if let Some(g) = self.guest_mut(conn) {
             g.quit
-                .get_or_insert(crate::mod_api::NativeQuitReason::TimedOut);
+                .get_or_insert(crate::player_quit::NativeQuitReason::TimedOut);
         }
         self.kick(conn, translatable("disconnect.timeout", &[]));
     }
@@ -22,7 +22,7 @@ mod tests {
         Joined, Lan, NetConfig, PlayerSender, chunks::ChunkEncoder, conn::quit_cause, data,
         guest::Guest, hub::HubConfig,
     };
-    use crate::mod_api::NativeQuitReason;
+    use crate::player_quit::NativeQuitReason;
     use horizon_protocol::text::literal;
     use std::sync::{Arc, atomic::AtomicI32, mpsc::channel};
 

@@ -2,7 +2,7 @@
 //! player state (inventory, health, game mode) that the host's gameplay code
 //! operates on when it acts for them.
 use super::{Joined, PlayerSender, entity::Tracker};
-use crate::mod_api::NativeQuitReason;
+use crate::player_quit::NativeQuitReason;
 use crate::{
     items::ItemStack,
     motion::PlayerMotion,

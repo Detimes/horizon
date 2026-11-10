@@ -12,7 +12,7 @@ use super::{
     forwarding,
     io_pool::{self, Session as _},
 };
-use crate::mod_api::NativeQuitReason;
+use crate::player_quit::NativeQuitReason;
 use horizon_client_core::text::Text;
 use horizon_protocol::{
     PROTOCOL_VERSION,
