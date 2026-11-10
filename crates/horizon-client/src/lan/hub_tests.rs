@@ -1450,7 +1450,7 @@ fn a_chat_line_hidden_from_one_receiver_is_not_sent_to_that_receiver() {
     let shown = Some(signature.to_vec());
     assert_eq!(
         signatures(&receivers[0]),
-        [shown.clone()],
+        std::slice::from_ref(&shown),
         "the sender sees it"
     );
     assert_eq!(
