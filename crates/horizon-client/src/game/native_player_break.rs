@@ -128,13 +128,18 @@ impl Game<'_> {
         }
         self.ensure_stateful_entity_table();
         let at = BlockPos::new(pos[0], pos[1], pos[2]);
+        let previous = self.world.block(pos[0], pos[1], pos[2]);
         let placed = self.with_level(|b, level, ticks| {
             b.place_block_state(level, ticks, at, state, update_neighbour_shapes)
         })?;
         // As `native_set_block` and the player's placement: the block entity
-        // a new block brings.
+        // a new block brings. The same block in another state (a chest turned
+        // to face elsewhere) keeps the one it has, and so its contents.
         let key = (pos[0], pos[1], pos[2]);
-        if !self.world.block_entities.stateful_entity(placed.0)
+        let facts = self.res.facts();
+        let same_block = facts.get(previous).name == facts.get(placed).name;
+        if !same_block
+            && !self.world.block_entities.stateful_entity(placed.0)
             && let Some(entity) = self.new_block_entity_for_state(placed)
         {
             self.world.block_entities.insert(key, entity);
@@ -233,5 +238,37 @@ mod tests {
         assert!(!game.native_player_break_block(uuid, stone, false));
         assert_eq!(block(&game, stone), "minecraft:stone");
         assert_eq!(game.held().unwrap().damage, 0, "nothing wore the pickaxe");
+    }
+
+    /// A chest written again in another facing is the same block: it keeps
+    /// its block entity, and so what is in it. A different block there gets
+    /// the new block's own entity.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn the_same_block_in_another_state_keeps_its_block_entity() {
+        use super::super::BlockEntity;
+        use super::super::native_world_edit::with_property;
+        let mut game = server_game();
+        let uuid = with_player(&mut game, ItemStack::new("minecraft:stick", 1));
+        let dimension = game.dim.id().to_string();
+        let pos = [6, 64, 4];
+        let registry = &game.pack.assets.registry;
+        let chest = registry.default_state("minecraft:chest").unwrap();
+        let north = with_property(registry, chest, "facing", "north").unwrap();
+        let east = with_property(registry, chest, "facing", "east").unwrap();
+        assert!(game.native_place_block_as(uuid, &dimension, pos, north, true));
+        let key = (pos[0], pos[1], pos[2]);
+        let Some(BlockEntity::Chest(items)) = game.world.block_entities.get_mut(&key) else {
+            panic!("the placed chest has no block entity");
+        };
+        items[0] = Some(ItemStack::new("minecraft:diamond", 3));
+
+        assert!(game.native_place_block_as(uuid, &dimension, pos, east, true));
+        assert_eq!(game.world.block(pos[0], pos[1], pos[2]), east);
+        let Some(BlockEntity::Chest(items)) = game.world.block_entities.get(&key) else {
+            panic!("the turned chest lost its block entity");
+        };
+        let kept = items[0].as_ref().map(|s| (s.item.to_string(), s.count));
+        assert_eq!(kept, Some(("minecraft:diamond".to_string(), 3)));
     }
 }
