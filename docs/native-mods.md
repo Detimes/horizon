@@ -2684,6 +2684,11 @@ before (#10461).
 - **`native_creative_slot_v2(player, name, slot, stack, cancel)`**: an additive version of `native_creative_slot` with
   the whole `ItemStack` put in the slot (none for an emptied one), heard just before v1, which keeps its signature and
   firing point and hears nothing of a packet canceled here. The player's state is swapped in, as for v1.
+- **`native_chat_recipient(sender, sender_name, message, recipient, hidden)`**: asked once for each player who would
+  receive a public chat line: a player's chat after `native_player_chat` let it through (one it dropped is not heard
+  here), or a signed `/say` or `/me`. Set `hidden` to keep the line from that receiver only: the others still get it,
+  the signed content is not changed, so its signature still verifies for them, and a hidden line is not sent to that
+  receiver at all. Whispers (`/msg`) are not public and not heard here.
 
 #### Server hooks for plugin ports: world
 

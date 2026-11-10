@@ -1,0 +1,20 @@
+{
+  "hooks": [
+    {
+      "name": "chat_recipient",
+      "target": "horizon_client_lib::chat_recipient::native_chat_recipient",
+      "neoforge": "none (NeoForge sends a chat line to every player; it has no per-recipient event)",
+      "side": "server",
+      "cancellable": true,
+      "mod_api": {
+        "contract": "cancel",
+        "out": "hidden"
+      }
+    }
+  ],
+  "rust_summary": "a public chat line hidden from one receiver (`native_chat_recipient`), asked once per receiver.",
+  "doc_summary": "`native_chat_recipient(sender, sender_name, message, recipient, hidden)` is asked once for each player who would receive a public chat line: a player's chat message after `native_player_chat` let it through (a message it dropped is not heard here), or a signed `/say` or `/me`. Set `hidden` to keep the line from that receiver only: the others still get it, the signed content is not changed, so its signature still verifies for them, and a hidden line is not sent to that receiver at all. Bundles need \"hooks\": @API:chat_recipient@.",
+  "comments": [
+    "crates/horizon-client/src/chat_recipient.rs"
+  ]
+}
