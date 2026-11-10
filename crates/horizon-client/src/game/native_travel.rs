@@ -476,6 +476,18 @@ mod tests {
         }
         let (uuid, conn) = (0x1000_u128, 2_u32);
         let (mut game, rx) = game(1, false);
+        // A guest whose client has not loaded is invulnerable already (`isInvulnerableTo`).
+        for g in game
+            .lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .guests
+            .iter_mut()
+            .filter(|g| g.uuid == uuid)
+        {
+            g.load_timeout = 0;
+        }
         assert_eq!(health(&game, uuid), 20.0);
 
         while rx.try_recv().is_ok() {}
