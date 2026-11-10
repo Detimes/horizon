@@ -1440,11 +1440,28 @@ fn a_chat_line_hidden_from_one_receiver_is_not_sent_to_that_receiver() {
         name: horizon_protocol::text::literal("Bob"),
         target: None,
     };
-    hub.broadcast_chat(&message, "Bob", &bound, "<Bob> hello".into(), &mut Vec::new());
+    hub.broadcast_chat(
+        &message,
+        "Bob",
+        &bound,
+        "<Bob> hello".into(),
+        &mut Vec::new(),
+    );
     let shown = Some(signature.to_vec());
-    assert_eq!(signatures(&receivers[0]), [shown.clone()], "the sender sees it");
-    assert_eq!(signatures(&receivers[1]), [shown], "Ada sees it, signed as sent");
-    assert!(signatures(&receivers[2]).is_empty(), "Cy is not sent it at all");
+    assert_eq!(
+        signatures(&receivers[0]),
+        [shown.clone()],
+        "the sender sees it"
+    );
+    assert_eq!(
+        signatures(&receivers[1]),
+        [shown],
+        "Ada sees it, signed as sent"
+    );
+    assert!(
+        signatures(&receivers[2]).is_empty(),
+        "Cy is not sent it at all"
+    );
     assert_eq!(hub.guests[2].chat_index, 0, "Cy's numbering does not move");
     assert_eq!(hub.guests[1].chat_index, 1);
 }
