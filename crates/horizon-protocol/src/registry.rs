@@ -348,9 +348,18 @@ mod tests {
             builtin: &builtin,
             dynamic: &dynamic,
         };
-        assert_eq!(names.id("minecraft:particle_type", "minecraft:flame"), Some(3));
-        assert_eq!(names.id("minecraft:particle_type", "minecraft:heart"), Some(5));
-        assert_eq!(names.id("minecraft:particle_type", "minecraft:unknown"), None);
+        assert_eq!(
+            names.id("minecraft:particle_type", "minecraft:flame"),
+            Some(3)
+        );
+        assert_eq!(
+            names.id("minecraft:particle_type", "minecraft:heart"),
+            Some(5)
+        );
+        assert_eq!(
+            names.id("minecraft:particle_type", "minecraft:unknown"),
+            None
+        );
         assert_eq!(names.id("minecraft:particle_type", ""), None);
         assert_eq!(names.id("minecraft:unknown", "minecraft:flame"), None);
         assert_eq!(
@@ -380,7 +389,10 @@ mod tests {
                 assert_eq!(names.name(registry, id).as_deref(), Some(name.as_str()));
             }
         }
-        assert_eq!(names.id("minecraft:particle_type", "minecraft:not_a_particle"), None);
+        assert_eq!(
+            names.id("minecraft:particle_type", "minecraft:not_a_particle"),
+            None
+        );
     }
 
     #[test]
