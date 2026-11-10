@@ -180,18 +180,21 @@ impl Game<'_> {
     /// `native_show_block` for several blocks at once: `blocks` is a list of (position, block state id).
     /// They go as one `BlockUpdate` for a section with a single block and one `SectionBlocksUpdate` for
     /// each section with more, sections in order; within a section a later entry for a position wins.
-    /// Same answers as `native_show_block`; false too for an empty list. Bundles need "hooks":
+    /// Same answers as `native_show_block`; false too for an empty list, and for a position the packet
+    /// cannot carry (y outside -2048..=2047, x or z outside +-33554432): nothing is sent then. Bundles need "hooks":
     /// @API:show_block@.
     pub(super) fn native_show_blocks(&mut self, player: u128, blocks: &[([i32; 3], u32)]) -> bool {
         if blocks.is_empty() || !self.player_fx_reaches(player) {
             return false;
         }
-        if blocks.iter().any(|&(_, state)| {
-            self.pack
-                .assets
-                .registry
-                .state(BlockStateId(state))
-                .is_none()
+        if blocks.iter().any(|&(pos, state)| {
+            !horizon_client::lan::containers::show_block_pos_fits(pos)
+                || self
+                    .pack
+                    .assets
+                    .registry
+                    .state(BlockStateId(state))
+                    .is_none()
         }) {
             return false;
         }

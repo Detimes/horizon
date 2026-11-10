@@ -18,6 +18,15 @@ use horizon_protocol::{
 use horizon_world::nbt::Tag;
 use std::collections::HashMap;
 
+/// Whether a block position survives the trip in a `BlockUpdate`: `BlockPos.asLong` packs x and z into
+/// 26 signed bits each and y into 12, and a value outside wraps to another block. The section packet has
+/// room for more, but one rule for both keeps the answer from depending on how a batch is split.
+pub fn show_block_pos_fits([x, y, z]: [i32; 3]) -> bool {
+    const HORIZONTAL: std::ops::Range<i32> = -(1 << 25)..(1 << 25);
+    const VERTICAL: std::ops::Range<i32> = -(1 << 11)..(1 << 11);
+    HORIZONTAL.contains(&x) && VERTICAL.contains(&y) && HORIZONTAL.contains(&z)
+}
+
 /// The packets that show `blocks` to one client: a `BlockUpdate` for a section with a single change, else one
 /// `SectionBlocksUpdate` per section, sections in order. A section's changes apply in order, so a later entry
 /// for a position wins.
