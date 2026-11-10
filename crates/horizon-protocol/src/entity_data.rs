@@ -1021,7 +1021,11 @@ mod tests {
             assert_eq!(value_len(*kind, &w.data), Some(len), "kind {kind}");
             let mut padded = w.data.clone();
             padded.extend_from_slice(&[0xAA, 0xBB]);
-            assert_eq!(value_len(*kind, &padded), Some(len), "kind {kind} + trailer");
+            assert_eq!(
+                value_len(*kind, &padded),
+                Some(len),
+                "kind {kind} + trailer"
+            );
         }
         // Fixed widths, and a VarInt of 300 (two bytes) and a length-prefixed string.
         assert_eq!(value_len(serializer::BYTE, &[0x7F]), Some(1));
