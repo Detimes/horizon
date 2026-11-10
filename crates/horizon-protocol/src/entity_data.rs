@@ -986,4 +986,64 @@ mod tests {
             ]
         );
     }
+
+    /// `value_len` reports exactly the bytes the encoder wrote for each value, and ignores what follows.
+    #[test]
+    fn value_len_matches_the_encoder_for_each_kind() {
+        let samples = vec![
+            (serializer::BYTE, Value::Byte(-2)),
+            (serializer::INT, Value::Int(300)),
+            (serializer::LONG, Value::Long(1 << 40)),
+            (serializer::FLOAT, Value::Float(1.5)),
+            (serializer::STRING, Value::String("abc".into())),
+            (serializer::BOOLEAN, Value::Bool(true)),
+            (serializer::ROTATIONS, Value::Floats(vec![1.0, 2.0, 3.0])),
+            (
+                serializer::QUATERNION,
+                Value::Floats(vec![0.0, 0.0, 0.0, 1.0]),
+            ),
+            (serializer::BLOCK_POS, Value::Pos([1, 64, -3])),
+            (serializer::OPTIONAL_BLOCK_POS, Value::OptPos(None)),
+            (
+                serializer::OPTIONAL_BLOCK_POS,
+                Value::OptPos(Some([1, 64, -3])),
+            ),
+            (serializer::POSE, Value::Id(5)),
+            (serializer::VILLAGER_DATA, Value::Ids(vec![1, 2, 3])),
+            (serializer::ITEM_STACK, Value::Item(None)),
+            (serializer::PARTICLES, Value::Particles(vec![])),
+            (serializer::OPTIONAL_COMPONENT, Value::OptText(None)),
+        ];
+        for (kind, value) in &samples {
+            let mut w = Writer::new();
+            write_value(*kind, value, &mut w);
+            let len = w.data.len();
+            assert_eq!(value_len(*kind, &w.data), Some(len), "kind {kind}");
+            let mut padded = w.data.clone();
+            padded.extend_from_slice(&[0xAA, 0xBB]);
+            assert_eq!(value_len(*kind, &padded), Some(len), "kind {kind} + trailer");
+        }
+        // Fixed widths, and a VarInt of 300 (two bytes) and a length-prefixed string.
+        assert_eq!(value_len(serializer::BYTE, &[0x7F]), Some(1));
+        assert_eq!(value_len(serializer::INT, &[0xAC, 0x02]), Some(2));
+        assert_eq!(value_len(serializer::FLOAT, &[0; 4]), Some(4));
+        assert_eq!(value_len(serializer::VECTOR3, &[0; 12]), Some(12));
+        assert_eq!(value_len(serializer::QUATERNION, &[0; 16]), Some(16));
+        assert_eq!(
+            value_len(serializer::STRING, &[3, b'a', b'b', b'c', 9]),
+            Some(4)
+        );
+    }
+
+    /// Truncated values and serializers Horizon cannot decode both give `None`.
+    #[test]
+    fn value_len_is_none_for_truncated_or_unknown_values() {
+        assert_eq!(value_len(serializer::FLOAT, &[]), None);
+        assert_eq!(value_len(serializer::FLOAT, &[0; 3]), None);
+        assert_eq!(value_len(serializer::VECTOR3, &[0; 11]), None);
+        assert_eq!(value_len(serializer::INT, &[0xAC]), None);
+        assert_eq!(value_len(serializer::STRING, &[3, b'a']), None);
+        assert_eq!(value_len(200, &[0; 8]), None);
+        assert_eq!(value_len(-1, &[0; 8]), None);
+    }
 }
