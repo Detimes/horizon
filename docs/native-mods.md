@@ -3037,6 +3037,12 @@ console (which waits for the next tick and does nothing inside a player's hook).
   `eject`). `native_entity_mount` may refuse each. Inside a player's hook only the acting player and mobs are reached.
   True when it rides, got off, or one got off; false otherwise and on a client. Server-side. Bundles need
   `"hooks": @API:mount@`.
+- Helpers **`native_set_glowing(entity, glowing)`** and **`native_glowing(entity)`** (`host.set_glowing`, `host.glowing`),
+  by entity id: set or read the `Glowing` flag (Bukkit's `Entity.setGlowing`, vanilla's `setGlowingTag`) of a server mob,
+  dropped item, projectile or another player (a guest). The bit makes every client draw the outline; it reaches clients
+  with the next entity data update and is saved with the entity. `native_glowing` gives the flag the server holds, None
+  for another entity and on a client. `native_set_glowing` is false for the host's own player. Server-side. Bundles need
+  `"hooks": @API:set_glowing@`.
 - Helper **`native_set_flight(uuid, allow, flying)`** (`host.set_flight`): lets a server player fly in any game mode
   (`allow`) or not, and sets whether they fly now (`flying`), as Bukkit's `Player.setAllowFlight` and `setFlying`
   (`Abilities.mayfly` and `flying`); their client is told, and the server's flying check no longer kicks them. A player

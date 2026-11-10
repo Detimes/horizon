@@ -1,0 +1,10 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "set_glowing", "target": "horizon_client::game::native_entity_data::Game<'_>::native_set_glowing"},
+    {"name": "glowing", "target": "horizon_client::game::native_entity_data::Game<'_>::native_glowing"}
+  ],
+  "rust_summary": "the `Glowing` flag of a server mob, dropped item, projectile or player, set and read (`native_set_glowing`, `native_glowing`), as `Entity.setGlowingTag`.",
+  "doc_summary": "`native_set_glowing(entity, glowing)` and `native_glowing(entity)` set and read the `Glowing` flag (`Entity.setGlowingTag`) of a server mob, dropped item, projectile or another player (a guest), by entity id: the bit makes every client draw the outline, reaches clients with the next entity data update and is saved with the entity. `native_glowing` is None for another entity and on a client; `native_set_glowing` is false for the host's own player. Server-side. Bundles need \"hooks\": @API:set_glowing@.",
+  "comments": ["crates/horizon-client/src/game/native_entity_data.rs"]
+}
