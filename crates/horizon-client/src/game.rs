@@ -4102,7 +4102,7 @@ impl Game<'_> {
     /// everywhere.
     fn update_chunk_tickets(&mut self) {
         let rule = self.ui.rules.bool("spectators_generate_chunks");
-        let mut players: Vec<((i32, i32), bool, Option<i32>)> = self.lan.as_ref().map_or_else(Vec::new, |h| {
+        let mut players = self.lan.as_ref().map_or_else(Vec::new, |h| {
             h.hub
                 .guests
                 .iter()
@@ -4112,11 +4112,7 @@ impl Game<'_> {
                 .collect()
         });
         if let Some(p) = &self.player {
-            players.push((
-                ((p.position.x.floor() as i32) >> 4, (p.position.z.floor() as i32) >> 4),
-                self.spectator(),
-                None,
-            ));
+            players.push((Self::chunk_of(p.position), self.spectator(), None));
         }
         // A spectator the rule skips is still a player: a game that has one
         // must not take the headless fixtures' tick-everywhere case below.
