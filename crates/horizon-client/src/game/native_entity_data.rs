@@ -142,14 +142,20 @@ impl Game<'_> {
                     return false;
                 };
                 d.needs_sync = true;
-                set_saved_glowing(self.persist.raw.entry(id).or_insert_with(empty_tag), glowing);
+                set_saved_glowing(
+                    self.persist.raw.entry(id).or_insert_with(empty_tag),
+                    glowing,
+                );
             }
             Target::Projectile(id) => {
                 let Some(p) = self.creatures.projectiles.iter_mut().find(|p| p.id == id) else {
                     return false;
                 };
                 p.needs_sync = true;
-                set_saved_glowing(self.persist.raw.entry(id).or_insert_with(empty_tag), glowing);
+                set_saved_glowing(
+                    self.persist.raw.entry(id).or_insert_with(empty_tag),
+                    glowing,
+                );
             }
             Target::Guest(conn) => {
                 let Some(g) = self

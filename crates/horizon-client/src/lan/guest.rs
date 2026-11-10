@@ -444,6 +444,13 @@ pub struct Guest {
 }
 
 impl Guest {
+    /// A `Glowing` tag a mod set on the player (`native_set_glowing`), which
+    /// makes it glow as the glowing effect does.
+    pub fn glowing_tag(&self) -> bool {
+        self.saved
+            .as_ref()
+            .is_some_and(|t| horizon_client::save::number(t.get("Glowing")).is_some_and(|b| b != 0))
+    }
     pub fn new(j: Joined, entity_id: i32, position: [f64; 3], view_distance: i32) -> Self {
         Self {
             conn: j.conn,

@@ -5349,11 +5349,7 @@ pub fn guest_body(g: &Guest) -> BodyFlags {
         on_fire: m.is_some_and(|m| m.fire_ticks > 0),
         // ServerPlayer.updateInvisibilityStatus: a spectator is always invisible.
         invisible: g.effects.get("invisibility").is_some() || g.spectator(),
-        // Or a `Glowing` tag a mod set on the player (`native_set_glowing`).
-        glowing: g.effects.get("glowing").is_some()
-            || g.saved.as_ref().is_some_and(|t| {
-                horizon_client::save::number(t.get("Glowing")).is_some_and(|b| b != 0)
-            }),
+        glowing: g.effects.get("glowing").is_some() || g.glowing_tag(),
     }
 }
 
