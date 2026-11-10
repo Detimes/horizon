@@ -223,9 +223,7 @@ impl Game<'_> {
         // (an `EnderDragonPart` has the dragon's type).
         match u32::try_from(id) {
             Ok(uid) if self.tnts.iter().any(|t| t.id == uid) => "minecraft:tnt".into(),
-            Ok(uid) if self.falling.iter().any(|f| f.id == uid) => {
-                "minecraft:falling_block".into()
-            }
+            Ok(uid) if self.falling.iter().any(|f| f.id == uid) => "minecraft:falling_block".into(),
             _ => "minecraft:ender_dragon".into(),
         }
     }
