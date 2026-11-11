@@ -167,13 +167,8 @@ fn usage_for_line<'h>(usages: &'h [NativeCommand], line: &str) -> Option<&'h Nat
             continue;
         };
         let literal = literal_words(&usage.usage);
-        // A position is three words on the line (`<pos:vec3>` takes `1 2 3`).
-        let words = |n: &(String, Value, bool)| match n.1["parser"].as_str() {
-            Some("minecraft:block_pos" | "minecraft:vec3") => 3,
-            _ => 1,
-        };
-        let required: usize = nodes.iter().filter(|n| !n.2).map(words).sum();
-        let most: usize = nodes.iter().map(words).sum();
+        let required: usize = nodes.iter().filter(|n| !n.2).map(line_words).sum();
+        let most: usize = nodes.iter().map(line_words).sum();
         let greedy = nodes.iter().any(|n| n.1["properties"]["type"] == "greedy");
         let fits = typed.len() >= required && (typed.len() <= most || greedy);
         let starts =
@@ -183,6 +178,15 @@ fn usage_for_line<'h>(usages: &'h [NativeCommand], line: &str) -> Option<&'h Nat
         }
     }
     best.map(|(_, usage)| usage)
+}
+
+/// How many words of a typed line a usage node takes: a position is three
+/// (`<pos:vec3>` takes `1 2 3`), anything else one.
+fn line_words(n: &(String, Value, bool)) -> usize {
+    match n.1["parser"].as_str() {
+        Some("minecraft:block_pos" | "minecraft:vec3") => 3,
+        _ => 1,
+    }
 }
 
 /// The roots of the mods' commands that have a permission node on some usage, sorted.
@@ -307,14 +311,19 @@ pub(super) fn completes_player_name(
         .filter_map(|c| usage_nodes(&c.usage).ok())
         .filter(|nodes| nodes[0].0 == label)
         .any(|nodes| {
+            // One slot per typed word: a position's node fills three.
+            let slots: Vec<_> = nodes[1..]
+                .iter()
+                .flat_map(|n| std::iter::repeat_n(n, line_words(n)))
+                .collect();
             let before = arguments[..typed].iter().enumerate().all(|(i, word)| {
-                nodes
-                    .get(i + 1)
+                slots
+                    .get(i)
                     .is_some_and(|(name, node, _)| node["type"] != "literal" || name == word)
             });
             before
-                && nodes
-                    .get(arguments.len())
+                && slots
+                    .get(typed)
                     .is_some_and(|n| n.1["suggestions"] == PLAYER_NAMES)
         })
 }
@@ -2191,6 +2200,22 @@ mod tests {
             Some("edit set <pos:block_pos> [block:word]")
         );
         assert_eq!(usage("edit set ~ ~1 ~ stone extra"), None);
+    }
+
+    /// A player name after a position is completed once all three
+    /// coordinates are typed, not at the position's second word.
+    #[test]
+    fn a_player_name_after_a_position_is_completed_past_its_three_words() {
+        let commands = [
+            NativeCommand::new("nativepos <pos:vec3> <who:player_name>"),
+            NativeCommand::new("nativeblock <pos:block_pos> <who:player_name>"),
+        ];
+        let names = |label, words: &[&str]| completes_player_name(&commands, 0, label, words);
+        assert!(names("nativepos", &["1", "2", "3", "Al"]));
+        assert!(names("nativepos", &["1", "2", "3", ""]));
+        assert!(!names("nativepos", &["1", "Al"]), "still in the position");
+        assert!(!names("nativepos", &["1", "2", "3", "Alice", ""]));
+        assert!(names("nativeblock", &["~", "~1", "~", "Al"]));
     }
 
     #[test]
