@@ -626,3 +626,6 @@ fn stack_drop_requires_ctrl_even_with_sprint_latched() {
 
 #[path = "play_ping_tests.rs"]
 mod play_ping_tests;
+
+#[path = "ack_block_changes_tests.rs"]
+mod ack_block_changes_tests;
