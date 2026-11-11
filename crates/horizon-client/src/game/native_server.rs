@@ -440,7 +440,9 @@ impl Game<'_> {
     /// sequence is kept and sent by the tick, after that tick's block changes. Inside the player's
     /// own hook it is kept with the turn's packets and taken on when the turn returns, so the tick
     /// still sends it after the block changes. False when they aren't on, or `sequence` is negative
-    /// (vanilla throws). API @API:ack_block_changes@.
+    /// (vanilla throws). Vanilla's interaction packets are acked by the engine already; this is for
+    /// edits a mod gets another way, the sequence read from its own payload
+    /// (`native_custom_payload_from_client`). API @API:ack_block_changes@.
     pub(super) fn native_ack_block_changes(&mut self, player: u128, sequence: i32) -> bool {
         if sequence < 0 {
             return false;

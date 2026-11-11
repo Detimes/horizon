@@ -3231,6 +3231,10 @@ injections before.
   tick's block changes, so the client ends its predictions once the changes are on their way. Inside the player's
   own hook the ack is kept with the turn and taken on when it returns, so it still goes out with the tick. False when
   the player isn't on or `sequence` is negative (vanilla throws). Bundles need `"hooks": @API:ack_block_changes@`.
+  The engine already acks every vanilla interaction packet (block digging, use on a block, use item) itself, a
+  hook that cancels it included; this helper is for block edits that reach a mod another way, such as a building
+  tool's client that sends its edits over its own channel (`native_custom_payload_from_client`) with the client's
+  prediction sequence in the payload. The mod reads the sequence from that payload.
 - Helpers **`native_client_entity_spawn(viewer, kind, pos, yaw, nbt)`**, **`native_client_entity_set(viewer, id, nbt)`**,
   **`native_client_entity_move(viewer, id, pos, yaw)`**, **`native_client_entity_remove(viewer, ids)`** and
   **`native_reserve_entity_id()`** (`host.client_entity_spawn`...): an entity shown to one player's client alone, a
