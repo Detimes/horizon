@@ -281,6 +281,9 @@ pub struct PlayerSender {
     wire: Option<Arc<Counters>>,
     /// Registry negotiation belongs to this live connection, never a process-wide UUID cache.
     pub datapack_offer: Option<Arc<[u8]>>,
+    /// The play packets sent and received, by id, while a mod counts them; shared with the
+    /// connection's network thread, which counts what it receives.
+    pub packet_counts: Arc<super::packet_counts::PacketCounts>,
 }
 #[derive(Clone)]
 enum To {
@@ -301,6 +304,7 @@ impl PlayerSender {
             to: To::Channel(tx),
             wire: None,
             datapack_offer: None,
+            packet_counts: Arc::default(),
         }
     }
     /// A connectionless actor has no writer, queue or packet delivery.
@@ -312,6 +316,7 @@ impl PlayerSender {
             to: To::Disabled,
             wire: None,
             datapack_offer: None,
+            packet_counts: Arc::default(),
         }
     }
     /// The bytes received from and sent to the client on the wire so far.
@@ -340,6 +345,7 @@ impl PlayerSender {
         if matches!(self.to, To::Disabled) {
             return;
         }
+        self.packet_counts.add_body(&body);
         self.pending.fetch_add(body.len(), Ordering::Relaxed);
         if HOLDING.get() {
             self.held().push(body);
@@ -364,6 +370,7 @@ impl PlayerSender {
         }
         let mut held = self.held();
         for body in bodies {
+            self.packet_counts.add_body(&body);
             self.pending.fetch_add(body.len(), Ordering::Relaxed);
             held.push(body);
         }
@@ -1514,7 +1521,9 @@ fn play(
         alive: Arc::new(AtomicI64::new(-1)),
     });
     let undrained = Arc::<Undrained>::default();
+    let packet_counts = Arc::<super::packet_counts::PacketCounts>::default();
     let sender = PlayerSender {
+        packet_counts: packet_counts.clone(),
         undrained: undrained.clone(),
         pending,
         held: Arc::default(),
@@ -1540,6 +1549,7 @@ fn play(
         watch,
         counted,
         undrained,
+        packet_counts,
     };
     let joined = Joined {
         conn,
@@ -1585,6 +1595,8 @@ struct PlayConn {
     counted: Option<super::Counted>,
     /// Shared with the player's [`PlayerSender`]: what the hub hasn't taken yet.
     undrained: Arc<Undrained>,
+    /// Shared with the player's [`PlayerSender`]: the packets counted while a mod asks.
+    packet_counts: Arc<super::packet_counts::PacketCounts>,
 }
 impl io_pool::Session for PlayConn {
     /// Forward the player's packet, or say why it ends the connection: a
@@ -1595,6 +1607,11 @@ impl io_pool::Session for PlayConn {
             let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
             Verdict::Kick(text, body)
         };
+        self.packet_counts.add(
+            false,
+            id,
+            horizon_protocol::buf::varint_size(id) + payload.len(),
+        );
         let now = Instant::now();
         if let Some(average) = self.rate.as_mut().and_then(|r| r.received(now)) {
             return kick(rate_exceeded(&self.shared, average));
