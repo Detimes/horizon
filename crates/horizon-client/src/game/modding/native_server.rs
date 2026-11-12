@@ -217,16 +217,45 @@ fn usage_nodes(
     Ok(out)
 }
 
-/// The permission node each native command names (`Command::with_node`), by its first word,
-/// with the level that decides when no permissions mod answers (the lowest of its usages').
-/// A node covers the whole command, so a usage that names another node than the command's
-/// first usage (or none where it has one) is left out, with why. The kept usages that name a
-/// node are open to every level in the tree: the node decides who runs and sees them.
+/// One literal path's permission node (`Command::with_node`): `path` is the usage's literal
+/// words (`home admin`; arguments between them are not part of it), `level` decides when no
+/// permissions mod answers (the lowest of the usages' on that path).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct PathNode {
+    pub(super) path: Vec<String>,
+    pub(super) node: String,
+    pub(super) level: u8,
+}
+
+/// The permission nodes of one native command (its first word): `open` when a usage of it
+/// needs no node.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct CommandNodes {
+    pub(super) open: bool,
+    pub(super) paths: Vec<PathNode>,
+}
+
+/// A usage's literal words.
+fn literal_path(usage: &str) -> Vec<String> {
+    usage
+        .split(' ')
+        .filter(|w| !w.starts_with('<') && !w.starts_with('['))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The permission nodes native commands name (`Command::with_node`), by their first word, as
+/// Brigadier's `requires` on each literal: a usage's own node, else its command's (its first
+/// usage's), gates the usage's literal path, with the lowest level of that path's usages to
+/// decide when no permissions mod answers. A path keeps one node: a usage naming another than
+/// a usage before it on the same path, or naming one for the bare command other than its
+/// first usage's, is left out, with why. The kept usages that have a node are open to every
+/// level in the tree: the nodes decide who runs and sees them.
 pub(super) fn command_nodes(
     commands: Vec<mod_api::Command>,
 ) -> (
     Vec<mod_api::Command>,
-    HashMap<String, (String, u8)>,
+    HashMap<String, CommandNodes>,
     Vec<String>,
 ) {
     let root = |c: &mod_api::Command| c.usage.split(' ').next().unwrap_or_default().to_owned();
@@ -236,24 +265,39 @@ pub(super) fn command_nodes(
             .entry(root(command))
             .or_insert_with(|| command.node.clone());
     }
-    let mut nodes: HashMap<String, (String, u8)> = HashMap::new();
+    let mut nodes: HashMap<String, CommandNodes> = HashMap::new();
     let mut kept = Vec::with_capacity(commands.len());
     let mut problems = Vec::new();
     for mut command in commands {
         let name = root(&command);
         let wanted = first.get(&name).cloned().flatten();
-        if command.node != wanted {
+        let Some(node) = command.node.clone().or(wanted.clone()) else {
+            nodes.entry(name).or_default().open = true;
+            kept.push(command);
+            continue;
+        };
+        let path = literal_path(&command.usage);
+        let entry = nodes.entry(name.clone()).or_default();
+        let at = entry.paths.iter().position(|p| p.path == path);
+        if path.len() == 1 && Some(&node) != wanted.as_ref()
+            || at.is_some_and(|i| entry.paths[i].node != node)
+        {
             problems.push(format!(
-                "`{}`: /{name} needs the same permission node in every usage",
-                command.usage
+                "`{}`: /{} already needs another permission node",
+                command.usage,
+                path.join(" ")
             ));
             continue;
         }
-        if let Some(node) = wanted {
-            let entry = nodes.entry(name).or_insert((node, command.level));
-            entry.1 = entry.1.min(command.level);
-            command.level = 0;
+        match at {
+            Some(i) => entry.paths[i].level = entry.paths[i].level.min(command.level),
+            None => entry.paths.push(PathNode {
+                path,
+                node,
+                level: command.level,
+            }),
         }
+        command.level = 0;
         kept.push(command);
     }
     (kept, nodes, problems)
@@ -1987,8 +2031,8 @@ fn system_chat(line: &Text) -> C {
 /// Native command metadata and the server dispatcher containing their parsed usages.
 pub(super) struct NativeCommands {
     levels: HashMap<String, u8>,
-    /// Each node-gated command's node and fallback level (`command_nodes`).
-    nodes: HashMap<String, (String, u8)>,
+    /// Each native command's permission nodes by literal path (`command_nodes`).
+    nodes: HashMap<String, CommandNodes>,
     tree: Value,
     arguments: CommandArguments,
 }
@@ -2110,7 +2154,7 @@ impl Game<'_> {
             let names = host.hub.command_names(conn);
             let permission = host.hub.guest(conn).map_or(0, |g| g.permission);
             let mut kept = names.clone();
-            kept.retain(|root| self.native_command_node_allows(uuid, &name, permission, root));
+            kept.retain(|root| self.native_command_root_shown(uuid, &name, permission, root));
             let Some(host) = self.lan.as_ref() else {
                 return;
             };
@@ -2125,9 +2169,22 @@ impl Game<'_> {
                     g.native_player_commands_sent(uuid, &name, &mut kept);
                 });
             }
+            // The subcommands a node of their own keeps from the player (`a b`, words).
+            let denied: Vec<String> = kept
+                .iter()
+                .filter_map(|root| self.native_command_nodes(root))
+                .flat_map(|nodes| nodes.paths.iter())
+                .filter(|p| p.path.len() > 1)
+                .filter(|p| !self.native_path_node_allows(uuid, &name, permission, p))
+                .map(|p| p.path.join(" "))
+                .collect();
             if let Some(host) = self.lan.as_mut() {
                 let _ = host.hub.update_guest(conn, |g| {
-                    g.hidden_commands = names.into_iter().filter(|n| !kept.contains(n)).collect();
+                    g.hidden_commands = names
+                        .into_iter()
+                        .filter(|n| !kept.contains(n))
+                        .chain(denied)
+                        .collect();
                 });
             }
         }
@@ -2145,25 +2202,62 @@ impl Game<'_> {
         }
     }
 
-    /// Whether a player (`uuid`, `name`, at `permission`) may run and see the native command
-    /// `root`: true for a command without a node; otherwise the permissions mods' answer for
-    /// its node, else its fallback level.
+    /// The permission nodes of the native command `root` (`command_nodes`).
+    fn native_command_nodes(&self, root: &str) -> Option<&CommandNodes> {
+        self.lan.as_ref()?.native_commands.as_ref()?.nodes.get(root)
+    }
+
+    /// Whether one literal path's node lets a player (`uuid`, `name`, at `permission`) through:
+    /// the permissions mods' answer, else its fallback level.
+    fn native_path_node_allows(
+        &self,
+        uuid: u128,
+        name: &str,
+        permission: u8,
+        path: &PathNode,
+    ) -> bool {
+        self.permission_answer(uuid, name, &path.node)
+            .unwrap_or(permission >= path.level)
+    }
+
+    /// Whether a player may run the native command with these literal words
+    /// (`CommandInvocation.literals`): every node on its path lets them through, as each
+    /// literal's `requires` in Brigadier. True for a command without nodes.
     pub(super) fn native_command_node_allows(
+        &self,
+        uuid: u128,
+        name: &str,
+        permission: u8,
+        literals: &[String],
+    ) -> bool {
+        let Some(nodes) = literals.first().and_then(|root| self.native_command_nodes(root)) else {
+            return true;
+        };
+        nodes
+            .paths
+            .iter()
+            .filter(|p| literals.starts_with(&p.path))
+            .all(|p| self.native_path_node_allows(uuid, name, permission, p))
+    }
+
+    /// Whether a player's command tree keeps the native command `root`: its own node decides
+    /// where the bare command has one; otherwise it shows while one of its usages needs no
+    /// node or one of its nodes lets the player through.
+    pub(super) fn native_command_root_shown(
         &self,
         uuid: u128,
         name: &str,
         permission: u8,
         root: &str,
     ) -> bool {
-        let Some((node, level)) = self
-            .lan
-            .as_ref()
-            .and_then(|host| host.native_commands.as_ref()?.nodes.get(root))
-        else {
+        let Some(nodes) = self.native_command_nodes(root) else {
             return true;
         };
-        self.permission_answer(uuid, name, node)
-            .unwrap_or(permission >= *level)
+        let allows = |p: &PathNode| self.native_path_node_allows(uuid, name, permission, p);
+        match nodes.paths.iter().find(|p| p.path.len() == 1) {
+            Some(bare) => allows(bare),
+            None => nodes.open || nodes.paths.iter().any(allows),
+        }
     }
 
     /// The traversal level of a mod's root (`line`, without its slash), when registered.
@@ -2220,15 +2314,14 @@ impl Game<'_> {
         use super::commands::err;
         let command = self.resolve_native_command(context)?;
         let origin = self.native_command_origin(self.ui.registries.permission)?;
-        // A node-gated command asks for its node of a player who runs it (`Command::with_node`);
-        // the console, functions and command blocks are not asked.
+        // A node-gated command asks for the nodes on its path of a player who runs it
+        // (`Command::with_node`); the console, functions and command blocks are not asked.
         if let mod_api::CommandSource::Player { player, permission } = &origin
-            && let Some(root) = command.literals.first()
             && !self.native_command_node_allows(
                 player.uuid(),
                 &self.player_name(*player).unwrap_or_default(),
                 permission.level(),
-                root,
+                &command.literals,
             )
         {
             return Err(err("command.unknown.command", &[]));

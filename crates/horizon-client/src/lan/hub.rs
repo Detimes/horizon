@@ -2046,6 +2046,9 @@ impl Hub {
             if let Some(root) = packet.nodes.get_mut(root) {
                 root.children.retain(|c| !hidden.contains(c));
             }
+            for path in g.hidden_commands.iter().filter(|n| n.contains(' ')) {
+                remove_literal_path(&mut packet, &path.split(' ').collect::<Vec<_>>());
+            }
         }
         g.send(&C::Commands(packet));
     }
@@ -5696,6 +5699,62 @@ fn listed_properties(
     }
 }
 
+/// Takes a subcommand out of a command tree: `path` is its literal words (`home admin`), any
+/// argument nodes between them passed through. The last word's literal leaves every node it
+/// hangs under on that path; a word not in the tree leaves the tree as it was.
+fn remove_literal_path(packet: &mut play::Commands, path: &[&str]) {
+    let mut at = vec![packet.root as usize];
+    for (depth, word) in path.iter().enumerate() {
+        // The nodes the word's literal can hang under: `at` and the arguments below them.
+        let mut parents = Vec::new();
+        let mut open = at;
+        while let Some(i) = open.pop() {
+            if parents.contains(&i) {
+                continue;
+            }
+            parents.push(i);
+            if let Some(node) = packet.nodes.get(i) {
+                open.extend(
+                    node.children
+                        .iter()
+                        .map(|&c| c as usize)
+                        .filter(|&c| packet.nodes.get(c).is_some_and(|n| n.kind == 2)),
+                );
+            }
+        }
+        let named = |c: i32| {
+            packet
+                .nodes
+                .get(c as usize)
+                .is_some_and(|n| n.kind == 1 && n.name == *word)
+        };
+        if depth + 1 == path.len() {
+            let kept: Vec<(usize, Vec<i32>)> = parents
+                .iter()
+                .map(|&p| {
+                    let children = &packet.nodes[p].children;
+                    (p, children.iter().copied().filter(|&c| !named(c)).collect())
+                })
+                .collect();
+            for (p, children) in kept {
+                packet.nodes[p].children = children;
+            }
+            return;
+        }
+        at = parents
+            .iter()
+            .flat_map(|&p| {
+                packet.nodes[p]
+                    .children
+                    .iter()
+                    .copied()
+                    .filter(|&c| named(c))
+            })
+            .map(|c| c as usize)
+            .collect();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     mod sound_tests;
@@ -8250,5 +8309,41 @@ mod tests {
             hub.next_batch(0, &world, None).is_none(),
             "an empty queue sends nothing"
         );
+    }
+
+    /// A subcommand leaves the tree under its command, through the argument before it too;
+    /// a path the tree lacks changes nothing.
+    #[test]
+    fn a_hidden_subcommand_leaves_its_command_tree() {
+        let node = |kind, name: &str, children: Vec<i32>| play::CommandNode {
+            kind,
+            executable: true,
+            restricted: false,
+            children,
+            redirect: None,
+            name: name.into(),
+            parser: None,
+            suggestions: None,
+        };
+        // home -> admin, home -> list, home -> <name> -> admin
+        let mut packet = play::Commands {
+            nodes: vec![
+                node(0, "", vec![1]),
+                node(1, "home", vec![2, 3, 5]),
+                node(1, "admin", vec![]),
+                node(2, "name", vec![4]),
+                node(1, "admin", vec![]),
+                node(1, "list", vec![]),
+            ],
+            root: 0,
+        };
+        let before = packet.clone();
+        super::remove_literal_path(&mut packet, &["home", "nothing"]);
+        super::remove_literal_path(&mut packet, &["away", "admin"]);
+        assert_eq!(packet, before);
+        super::remove_literal_path(&mut packet, &["home", "admin"]);
+        assert_eq!(packet.nodes[1].children, [3, 5]);
+        assert_eq!(packet.nodes[3].children, Vec::<i32>::new());
+        assert_eq!(packet.nodes[0].children, [1]);
     }
 }
