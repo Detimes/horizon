@@ -10,7 +10,7 @@ use super::{
     chunks::ChunkEncoder,
     data::SyncData,
     entity::{Entities, EntityState},
-    guest::{Guest, SentEffect, stack_to_network},
+    guest::{Guest, LeaveCause, SentEffect, stack_to_network},
 };
 use crate::{
     chunk::Chunk,
@@ -1208,10 +1208,24 @@ impl Hub {
     }
     /// Disconnect a guest with a reason (ServerGamePacketListenerImpl.disconnect).
     pub fn kick(&mut self, conn: u32, reason: Tag) {
+        self.disconnect_for(conn, reason, LeaveCause::Kicked);
+    }
+
+    /// keepConnectionAlive's `disconnect.timeout`: a kick whose cause is the timeout.
+    fn time_out(&mut self, conn: u32) {
+        self.disconnect_for(
+            conn,
+            translatable("disconnect.timeout", &[]),
+            LeaveCause::TimedOut,
+        );
+    }
+
+    fn disconnect_for(&mut self, conn: u32, reason: Tag, cause: LeaveCause) {
         // The log's "lost connection" line gives the reason, as vanilla's.
         let text = self.english(&reason);
         if let Some((player, name)) = self.update_guest(conn, |g| {
             g.left_reason = text.clone();
+            g.left_for(cause);
             g.sender.disconnect(reason);
             (g.uuid, g.name.clone())
         }) {
@@ -1300,7 +1314,7 @@ impl Hub {
                     g.name,
                 )));
             }
-            self.kick(conn, translatable("disconnect.timeout", &[]));
+            self.time_out(conn);
         }
         self.guests.update_all(|g| {
             let Some(h) = &g.handover else {
@@ -2337,9 +2351,10 @@ impl Hub {
                     let conn = self.admit(*j, ctx);
                     events.push(HostEvent::Joined(conn));
                 }
-                NetEvent::Left(conn, reason) => {
+                NetEvent::Left(conn, reason, cause) => {
                     if let Some(i) = self.guests.iter().position(|g| g.conn == conn) {
-                        let g = self.remove_guest(i, &reason);
+                        let mut g = self.remove_guest(i, &reason);
+                        g.left_for(cause);
                         events.push(HostEvent::Left(Box::new(g)));
                     }
                 }
@@ -2403,7 +2418,7 @@ impl Hub {
                 .map(|g| g.conn)
                 .collect();
             for conn in silent {
-                self.kick(conn, translatable("disconnect.timeout", &[]));
+                self.time_out(conn);
             }
         }
         events
@@ -5950,6 +5965,29 @@ mod tests {
             horizon_protocol::registry::Ids::from_names(vec!["minecraft:speed".to_string()]),
         );
         hub_with_sync(sync)
+    }
+
+    /// The keep-alive timeout and a kick each keep their cause; the first one stays.
+    #[test]
+    fn a_guest_keeps_the_first_cause_that_ended_it() {
+        let (mut hub, _rx) = hub_with_a_guest();
+        let conn = hub.guests[0].conn;
+        assert_eq!(
+            hub.guests[0].leave_cause(),
+            LeaveCause::Quit,
+            "nothing ended it"
+        );
+        hub.time_out(conn);
+        hub.kick(conn, literal("Bye"));
+        assert_eq!(hub.guests[0].leave_cause(), LeaveCause::TimedOut);
+        assert_eq!(
+            hub.guests[0].left_reason, "Bye",
+            "the log keeps the last line"
+        );
+        let (mut hub, _rx) = hub_with_a_guest();
+        hub.kick(conn, literal("Bye"));
+        hub.time_out(conn);
+        assert_eq!(hub.guests[0].leave_cause(), LeaveCause::Kicked);
     }
 
     #[test]

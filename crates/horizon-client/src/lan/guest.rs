@@ -159,6 +159,8 @@ pub struct Guest {
     pub center_sent: Option<(i32, i32)>,
     /// Why the connection closed (the console's "lost connection").
     pub left_reason: String,
+    /// What ended the connection, the first cause kept ([`Guest::left_for`]).
+    pub left_cause: Option<LeaveCause>,
     pub uuid: u128,
     pub name: String,
     /// The profile's properties, for the player list (skins).
@@ -487,7 +489,28 @@ pub struct Guest {
     pub recipes_unlocked: Vec<String>,
 }
 
+/// What ended a guest's connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeaveCause {
+    /// The client closed it: it quit, its connection was reset, or it moved to another server.
+    Quit,
+    /// The server kicked the player (a kick, a ban, a duplicate login, a packet limit).
+    Kicked,
+    /// The keep-alive timeout: the client stopped answering.
+    TimedOut,
+    /// The connection failed: a malformed packet or a read error.
+    Error,
+}
+
 impl Guest {
+    /// Keeps `cause` as what ended the connection, unless one came first.
+    pub fn left_for(&mut self, cause: LeaveCause) {
+        self.left_cause.get_or_insert(cause);
+    }
+    /// What ended the connection: the client quitting when nothing else did.
+    pub fn leave_cause(&self) -> LeaveCause {
+        self.left_cause.unwrap_or(LeaveCause::Quit)
+    }
     /// Allocate the next protocol window and a non-reusable menu identity.
     pub fn next_menu_window(&mut self) -> i32 {
         self.next_window = self.next_window % 100 + 1;
@@ -612,6 +635,7 @@ impl Guest {
             placed_at: 0,
             center_sent: None,
             left_reason: String::new(),
+            left_cause: None,
             uuid: j.uuid,
             name: j.name,
             properties: j.properties,
