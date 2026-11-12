@@ -288,6 +288,20 @@ pub trait PlayersBackend {
     /// no known connection has an empty one. None for a stale or unavailable player.
     #[access(WorldOnly)]
     fn player_client_brand(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
+    /// The compound mods keep on a server player (NeoForge's `Entity.getPersistentData`,
+    /// Bukkit's `PersistentDataContainer`), saved in their file as `NeoForgeData` beside
+    /// the keys the game keeps; empty when there is none. None for a stale or unavailable
+    /// player and on a client.
+    #[access(WorldOnly)]
+    fn player_persistent_data(&self, player: PlayerRef) -> Option<Compound>;
+    /// Side: server.
+    /// The player's advancement progress as `PlayerAdvancements.save` writes their
+    /// `advancements/<uuid>.json` now: JSON text, each started advancement's `criteria`
+    /// (criterion to the date it was granted, `yyyy-MM-dd HH:mm:ss Z`) and `done`, and
+    /// `DataVersion`. None for a stale or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_advancements(&self, player: PlayerRef) -> Option<String>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -464,6 +478,31 @@ pub trait PlayersBackendMut {
     /// that is not finite.
     #[access(WorldOnly)]
     fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
+    /// Side: server.
+    /// Replaces the compound mods keep on a server player (`player_persistent_data`) with
+    /// `data`; an empty compound takes it away. It is saved with the player. False for a
+    /// stale, unavailable or dead player and on a client.
+    #[access(WorldOnly)]
+    fn player_set_persistent_data(&mut self, player: PlayerRef, data: Compound) -> bool;
+    /// Side: server.
+    /// Replaces a server player's advancement progress with `json` (the text
+    /// `player_advancements` gives, or another server's file), as `PlayerAdvancements.reload`
+    /// then `applyFrom` load a file: advancements this server lacks are dropped, nothing is
+    /// awarded (no toast, chat line or reward), and the player's client is sent the whole
+    /// tree again with the next update. False, with nothing changed, for text that is not a
+    /// JSON object, a stale, unavailable or dead player, a player with no connection, and on
+    /// a client.
+    #[access(WorldOnly)]
+    fn player_set_advancements(&mut self, player: PlayerRef, json: &str) -> bool;
+    /// Side: server.
+    /// Respawns a dead server player as their client's Respawn click does
+    /// (`ClientCommand` `PERFORM_RESPAWN`, `PlayerList.respawn`; Paper's
+    /// `Player.spigot().respawn()`): at their bed, anchor or the world spawn, with the respawn
+    /// hooks, without waiting for the click. Call it outside a player's turn (from
+    /// `server_tick` or a level tick hook). False for a living, stale or unavailable player,
+    /// inside a player's turn, and on a client.
+    #[access(WorldOnly)]
+    fn player_respawn(&mut self, player: PlayerRef) -> bool;
     /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s
