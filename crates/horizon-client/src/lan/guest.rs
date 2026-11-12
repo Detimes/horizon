@@ -271,6 +271,9 @@ pub struct Guest {
     /// The players a native mod hid from it (`Hub::hidden`) that its player
     /// list no longer has.
     pub tab_hidden: crate::fast_hash::FxHashSet<u128>,
+    /// Where the native mods last heard the player stand (`player_move`): the
+    /// level, position, `[yaw, pitch]` and the teleport counter then.
+    pub move_heard: Option<(String, [f64; 3], [f32; 2], i32)>,
     /// The client finished loading terrain (ServerboundPlayerLoadedPacket).
     pub loaded: bool,
     /// Since it joined or respawned, the client hasn't said it loaded the level
@@ -667,6 +670,7 @@ impl Guest {
             changes: Default::default(),
             moved: false,
             tab_hidden: Default::default(),
+            move_heard: None,
             loaded: false,
             loading: true,
             load_timeout: CLIENT_LOADED_TIMEOUT,
