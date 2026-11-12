@@ -302,6 +302,16 @@ pub trait PlayersBackend {
     /// `DataVersion`. None for a stale or unavailable player and on a client.
     #[access(WorldOnly)]
     fn player_advancements(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
+    /// Whether `viewer`'s client is shown the player `target` by the rules players are tracked
+    /// with (`ServerPlayer.broadcastToPlayer`; Paper's `Player.canSee`): a spectator is seen
+    /// only by spectators, and by them only while it watches through its own camera, and a
+    /// player hidden with `player_hide` is seen only by players of at least that level.
+    /// Distance and chunks are not part of it, so a player out of range is still seen. A player
+    /// sees themselves. None for a stale or unavailable player of the two, a player not in the
+    /// server's list (a fake player), and on a client.
+    #[access(WorldOnly)]
+    fn player_sees(&self, viewer: PlayerRef, target: PlayerRef) -> Option<bool>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -511,6 +521,24 @@ pub trait PlayersBackendMut {
     /// player, one with no connection (a fake player), and on a client.
     #[access(WorldOnly)]
     fn player_take_packet_counts(&mut self, player: PlayerRef) -> Option<Vec<PacketCount>>;
+    /// Side: server.
+    /// Acknowledges the player's block actions up to `sequence`
+    /// (`ServerGamePacketListenerImpl.ackBlockChangesUpTo`), for a mod that handled one itself,
+    /// such as an editor's own message: the client's predicted blocks settle on the server's
+    /// states once it gets `ClientboundBlockChangedAckPacket`, which goes after the next tick's
+    /// block changes, the highest sequence of the tick only. False for a negative sequence, a
+    /// stale or unavailable player, one with no connection, and on a client.
+    #[access(WorldOnly)]
+    fn player_ack_block_changes(&mut self, player: PlayerRef, sequence: i32) -> bool;
+    /// Side: server.
+    /// Shows that player alone `state` at `pos` in their level (`ClientboundBlockUpdatePacket`
+    /// to their client; Paper's `Player.sendBlockChange`), at once. The world is not changed:
+    /// the real block comes back when it or its chunk is next sent, as in vanilla, so a mod
+    /// sends it again while it still wants it shown. False for a position the packet cannot
+    /// carry (y outside -2048..=2047, x or z outside -33554432..33554432), a stale or
+    /// unavailable player, one with no connection, and on a client.
+    #[access(WorldOnly)]
+    fn player_show_block(&mut self, player: PlayerRef, pos: [i32; 3], state: BlockState) -> bool;
     /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s
