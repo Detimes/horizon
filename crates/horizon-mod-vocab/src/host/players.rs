@@ -392,6 +392,12 @@ pub trait PlayersBackend {
     /// `Inventory` list. None for a stale or unavailable player and on a client.
     #[access(WorldOnly)]
     fn player_inventory_slots(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>>;
+    /// Side: server.
+    /// The player's non-empty ender chest slots (`Player.getEnderChestInventory`, 27 slots
+    /// numbered 0 to 26 as the `Slot` of a saved player's `EnderItems`), lowest first. None for
+    /// a stale or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_ender_chest(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -980,6 +986,18 @@ pub trait PlayersBackendMut {
     /// past 42, a stale, unavailable or dead player and on a client.
     #[access(WorldOnly)]
     fn player_set_inventory_slot(
+        &mut self,
+        player: PlayerRef,
+        slot: u32,
+        stack: Option<ItemStack>,
+    ) -> Result<bool, StackWriteError>;
+    /// Side: server.
+    /// `PlayerEnderChestContainer.setItem(slot, stack)`: `stack` (None empties it) in ender
+    /// chest slot `slot` (0 to 26). A player looking into their ender chest is sent the slot
+    /// with the open menu's sync. False for a slot past 26, a stale, unavailable or dead
+    /// player and on a client.
+    #[access(WorldOnly)]
+    fn player_set_ender_chest_slot(
         &mut self,
         player: PlayerRef,
         slot: u32,
