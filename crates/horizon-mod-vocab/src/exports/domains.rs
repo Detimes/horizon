@@ -19,6 +19,23 @@ pub use command::types::*;
 pub use entity::effect_category::EffectCategory;
 pub use entity::types::*;
 pub use item::types::*;
+pub use entity::types::{
+    ActiveEffect, AttributeModifier, AttributeOperation, AttributeRegistrationError, Billboard,
+    ChannelRef, ChatVisibility, ClientInfo, Deflection, DisplayKind, DisplayRef, DragonPhase,
+    DragonRef, EffectApplicable, EffectKey, EffectTickChange, EntityAttributeError, EntityRef,
+    EntityTypeKey, FishingHookRef, GoalSpec, ItemEntityRef, LeashHolder, LivingRef, MainHand,
+    MerchantRef, MinecartKind, MinecartRef, MobFilter, MobGoalEntry, MobRef, ModifierLifetime,
+    PierceLevelError, PlayerAbilities, Sidebar, SidebarLine, PlayerAction, PlayerActionSetup, PlayerExperience,
+    PlayerFood, PlayerRef, ProjectileRef, RemovalReason, ServerPlayer, TextAlignment,
+    Transformation, UnspawnedMobRef,
+};
+pub use item::types::{
+    ArmorHurt, ArrowPickup, ClientMiningPrediction, Dispensed, EnchantmentInfo, EnchantmentKey,
+    EquipmentSlotGroup, InteractionAttempt, InteractionKey, InteractionResult,
+    ItemAttributeModifier, ItemAttributeModifiers, ItemClick, ItemCooldown, ItemDisplayContext,
+    ItemDrop, ItemEnchantments, ItemFished, ItemKey, LootDrops, MenuKey, ModelError, ModelRef,
+    ScopedActionResult, StatType, ToolAbility, ToolUse, UsePhase,
+};
 #[cfg(any(test, feature = "testing"))]
 pub(crate) use runtime::TEST_MODS;
 pub use runtime::{Flow, ModEntry, Mods, subscribed_by};
