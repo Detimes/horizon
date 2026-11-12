@@ -288,6 +288,13 @@ pub trait PlayersBackend {
     /// no known connection has an empty one. None for a stale or unavailable player.
     #[access(WorldOnly)]
     fn player_client_brand(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
+    /// The player's latency in milliseconds, as the Tab list shows it
+    /// (`ServerCommonPacketListenerImpl.latency`): keep-alive round trips averaged as vanilla
+    /// does (`(old * 3 + new) / 4`), 0 until the first answer. 0 for a fake player and an
+    /// acting player with no known connection; None for a stale or unavailable player.
+    #[access(WorldOnly)]
+    fn player_latency(&self, player: PlayerRef) -> Option<i32>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
