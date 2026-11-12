@@ -383,6 +383,15 @@ pub trait PlayersBackend {
     /// have none. The outer None is a stale or offline player, or no server list.
     #[access(WorldOnly)]
     fn player_nickname(&self, player: PlayerRef) -> Option<Option<String>>;
+    /// Side: server.
+    /// The player's non-empty inventory slots by `Inventory`'s numbers, with their
+    /// components: 0 to 35 the main inventory (0 to 8 the hotbar), 36 feet, 37 legs, 38
+    /// chest, 39 head, 40 the off hand, 41 body and 42 saddle
+    /// (`Inventory.EQUIPMENT_SLOT_MAPPING`), lowest first. The numbers
+    /// `player_set_inventory_slot` takes, and for 0 to 35 the `Slot` of a saved player's
+    /// `Inventory` list. None for a stale or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_inventory_slots(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -962,4 +971,18 @@ pub trait PlayersBackendMut {
         player: PlayerRef,
         input: PlayerInput,
     ) -> Option<SimulatedMove>;
+    /// Side: server.
+    /// `Inventory.setItem(slot, stack)` by `player_inventory_slots`' numbers: `stack` (None
+    /// empties it) goes into that slot as `/item replace entity <player> <slot>` puts it,
+    /// without the slot's item check, so a worn slot takes any item; the equip sound and
+    /// equipment changes follow for 36 to 42. The client is sent the slot with the tick's
+    /// inventory sync (`ContainerSetSlot`), as vanilla's `broadcastChanges`. False for a slot
+    /// past 42, a stale, unavailable or dead player and on a client.
+    #[access(WorldOnly)]
+    fn player_set_inventory_slot(
+        &mut self,
+        player: PlayerRef,
+        slot: u32,
+        stack: Option<ItemStack>,
+    ) -> Result<bool, StackWriteError>;
 }
