@@ -2559,9 +2559,12 @@ impl Game<'_> {
                             Some(horizon_client::lan::data::component_nbt(&text.component()));
                         line = format!("<{name}> {}", text.plain());
                     }
+                    let shown = text.plain();
+                    let hidden = self.chat_hidden_from(sender, &name, &shown);
                     let mut chat = Vec::new();
                     let host = self.lan.as_mut()?;
-                    host.hub.broadcast_chat(&message, &bound, line, &mut chat);
+                    host.hub
+                        .broadcast_chat(&message, &bound, line, &hidden, &mut chat);
                     for event in chat {
                         self.lan_log_event(event);
                     }
@@ -5206,6 +5209,163 @@ mod tests {
                 say(game, "hello");
                 assert_eq!(received(&sender), ["system heard hello", "player"]);
                 assert_eq!(received(&other), ["player"]);
+            });
+        });
+    }
+
+    /// `chat_recipient` is asked once per placed receiver, the sender included;
+    /// a receiver it hides is not sent the line, the others still are.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_chat_line_hidden_from_one_receiver_reaches_the_others() {
+        use super::super::native_entity_refs::tests::with_game;
+        use horizon_client::lan::hub::{HostEvent, HubConfig, chat::ChatMessage};
+        use horizon_client::lan::{Joined, NetConfig, Out, PlayerSender, guest::Guest};
+        use horizon_client::text::Text;
+        use horizon_protocol::packets::{configuration::ClientInformation, play};
+        use mod_api::{ChatRecipientEvent, Flow, Hooks, ServerHost};
+        use std::sync::{Arc, Mutex, atomic::AtomicI32, mpsc};
+
+        static ASKED: Mutex<Vec<(u128, String, String, u128)>> = Mutex::new(Vec::new());
+        struct Ignorer;
+        #[mod_api::__subscriptions]
+        impl Hooks for Ignorer {
+            fn chat_recipient(
+                &self,
+                _host: &mut dyn ServerHost,
+                event: &mut ChatRecipientEvent<'_>,
+            ) -> Flow {
+                ASKED.lock().unwrap().push((
+                    event.sender,
+                    event.sender_name.to_owned(),
+                    event.message.to_owned(),
+                    event.recipient,
+                ));
+                if event.message == "secret" && event.recipient == 13 {
+                    Flow::Cancel
+                } else {
+                    Flow::Continue
+                }
+            }
+        }
+        let mods: mod_api::Mods = vec![mod_api::ModEntry::new("ignorer", Box::new(Ignorer))].into();
+        mod_api::testing::with_mods(mods, || {
+            with_game(|game| {
+                let settings = super::LanSettings {
+                    port: 0,
+                    guest_commands: false,
+                    force_game_mode: false,
+                };
+                let net = NetConfig {
+                    listen: false,
+                    announce: false,
+                    lod_distance: 0,
+                    ..NetConfig::lan(0, String::new(), 3)
+                };
+                let config = HubConfig {
+                    default_game_mode: 0,
+                    guest_commands: false,
+                    force_game_mode: false,
+                    hardcore: false,
+                    view_distance: 2,
+                    simulation_distance: 2,
+                    dimension: game.dim.id().to_owned(),
+                    allow_flight: true,
+                    seed: 0,
+                    max_players: 3,
+                    integrated: true,
+                    levels: game.level_shapes,
+                };
+                game.lan_host(settings, net, config).unwrap();
+                let mut join = |conn: u32| {
+                    let (tx, rx) = mpsc::channel();
+                    let mut guest = Guest::new(
+                        Joined {
+                            conn,
+                            uuid: conn as u128,
+                            name: format!("guest{conn}"),
+                            properties: Vec::new(),
+                            info: ClientInformation::new(8),
+                            brand: String::new(),
+                            sender: PlayerSender::new(tx, Arc::default()),
+                            latency: Arc::new(AtomicI32::new(0)),
+                            address: "127.0.0.1:1".parse().unwrap(),
+                            expected: false,
+                        },
+                        conn as i32,
+                        [0.5, 64.0, 0.5],
+                        2,
+                    );
+                    guest.placed = true;
+                    game.lan.as_mut().unwrap().hub.guests.push(guest);
+                    rx
+                };
+                let (sender, other) = (join(12), join(13));
+                // How many player chat lines a guest got.
+                let lines = |rx: &mpsc::Receiver<Out>| {
+                    let mut lines = 0;
+                    while let Ok(out) = rx.try_recv() {
+                        let bodies = match out {
+                            Out::Packet(body) => vec![body],
+                            Out::Packets(bodies) => bodies,
+                            Out::Disconnect(_) => continue,
+                        };
+                        for body in bodies {
+                            let mut reader = horizon_protocol::buf::Reader::new(&body);
+                            let id = reader.varint().unwrap();
+                            if let Ok(play::Clientbound::PlayerChat(_)) =
+                                play::Clientbound::decode(id, reader.rest())
+                            {
+                                lines += 1;
+                            }
+                        }
+                    }
+                    lines
+                };
+                lines(&sender);
+                lines(&other);
+                let say = |game: &mut super::Game<'_>, content: &str| {
+                    let message = ChatMessage {
+                        sender: 12,
+                        index: 0,
+                        signature: None,
+                        content: content.to_owned(),
+                        timestamp: 0,
+                        salt: 0,
+                        last_seen: Vec::new(),
+                        unsigned_content: None,
+                    };
+                    let bound = play::ChatTypeBound {
+                        chat_type: 0,
+                        name: horizon_client::lan::data::component_nbt(
+                            &Text::literal("guest12").component(),
+                        ),
+                        target: None,
+                    };
+                    let event = HostEvent::ChatSubmitted {
+                        message: Box::new(message),
+                        bound: Box::new(bound),
+                        name: "guest12".into(),
+                    };
+                    let host = game.lan.take().unwrap();
+                    game.lan = game.lan_process_events(host, [event], &[], [0.5, 64.0, 0.5]);
+                };
+
+                say(game, "secret");
+                assert_eq!(lines(&sender), 1, "the sender still sees it");
+                assert_eq!(lines(&other), 0, "the hidden receiver is not sent it");
+                assert_eq!(
+                    *ASKED.lock().unwrap(),
+                    [
+                        (12, "guest12".to_owned(), "secret".to_owned(), 12),
+                        (12, "guest12".to_owned(), "secret".to_owned(), 13),
+                    ],
+                    "asked once per receiver, the sender included"
+                );
+
+                say(game, "hello");
+                assert_eq!(lines(&sender), 1);
+                assert_eq!(lines(&other), 1, "a line no mod hides reaches everyone");
             });
         });
     }
