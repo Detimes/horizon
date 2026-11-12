@@ -1113,6 +1113,57 @@ pub struct PlayerAbilities {
     pub walk_speed: f32,
 }
 
+/// A player's game profile (`GameProfile`): their UUID, name and the
+/// properties their client is sent about them (`textures`, the skin).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub struct PlayerProfile {
+    /// The player's UUID.
+    pub uuid: u128,
+    /// The player's name.
+    pub name: String,
+    /// The profile's properties, in order; empty for a profile known only
+    /// by name and UUID (the user cache).
+    pub properties: Vec<ProfileProperty>,
+}
+
+impl PlayerProfile {
+    /// A profile of `uuid` and `name` with `properties`.
+    pub fn new(uuid: u128, name: &str, properties: Vec<ProfileProperty>) -> Self {
+        Self {
+            uuid,
+            name: name.to_owned(),
+            properties,
+        }
+    }
+}
+
+/// One property of a game profile (`com.mojang.authlib.properties.Property`):
+/// `textures` holds the skin and cape, a base64 JSON value signed by Mojang.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub struct ProfileProperty {
+    /// The property's name (`textures`).
+    pub name: String,
+    /// Its value.
+    pub value: String,
+    /// Its signature, if signed.
+    pub signature: Option<String>,
+}
+
+impl ProfileProperty {
+    /// Property `name` with `value` and an optional `signature`.
+    pub fn new(name: &str, value: &str, signature: Option<&str>) -> Self {
+        Self {
+            name: name.to_owned(),
+            value: value.to_owned(),
+            signature: signature.map(str::to_owned),
+        }
+    }
+}
+
 /// What a fake player does in `PlayerRef::perform_action`: a player's own action, run through
 /// the game's path for it, as a client's packet is. Its answer is an [`ActionOutcome`], or an
 /// [`ActionRefused`] when none of it ran.

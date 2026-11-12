@@ -37,6 +37,20 @@ pub trait PlayersServerHost {
     /// `max-players`. False where nobody else can join.
     #[access(WorldOnly)]
     fn server_set_max_players(&mut self, max_players: u32) -> bool;
+    /// Side: server.
+    /// The profile of the player with this UUID, as the server knows it,
+    /// never asked of Mojang: an online player's whole profile, else the user
+    /// cache's name (`usercache.json`, a dedicated server's), without
+    /// properties. None when neither knows them.
+    #[access(WorldOnly)]
+    fn profile_by_uuid(&self, uuid: u128) -> Option<PlayerProfile>;
+    /// Side: server.
+    /// The profile of the player with this name, any case, as
+    /// `profile_by_uuid` knows it: an online player's, else an unexpired
+    /// user cache entry. Never asked of Mojang, and an unknown name is not
+    /// made an offline player.
+    #[access(WorldOnly)]
+    fn profile_by_name(&self, name: &str) -> Option<PlayerProfile>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
@@ -181,6 +195,14 @@ pub trait PlayersBackend {
     /// stale or unavailable player.
     #[access(WorldOnly)]
     fn player_has_permission(&self, player: PlayerRef, node: &str) -> bool;
+    /// Side: server.
+    /// The player's game profile (`ServerPlayer.getGameProfile`): UUID, name
+    /// and the properties their client is sent about them (`textures`), as
+    /// the login gave them or `player_set_profile_property` changed them.
+    /// None for a stale or unavailable player, a fake player, and the
+    /// single-player owner, whose profile is their own client's.
+    #[access(WorldOnly)]
+    fn player_profile(&self, player: PlayerRef) -> Option<PlayerProfile>;
     /// Side: server.
     /// `Player.hasInfiniteMaterials`: the `instabuild` ability, which
     /// creative mode gives.

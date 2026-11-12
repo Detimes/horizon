@@ -36,7 +36,7 @@ pub use entity::types::{
     EntityTypeKey, FishingHookRef, GoalSpec, ItemEntityRef, LeashHolder, LivingRef, MainHand,
     MerchantRef, MinecartKind, MinecartRef, MobFilter, MobGoalEntry, MobRef, ModifierLifetime,
     PierceLevelError, PlayerAbilities, PlayerAction, PlayerActionSetup, PlayerExperience,
-    PlayerFood, PlayerRef, ProjectileRef, RemovalReason, ServerPlayer, TextAlignment,
+    PlayerFood, PlayerProfile, PlayerRef, ProfileProperty, ProjectileRef, RemovalReason, ServerPlayer, TextAlignment,
     Transformation, UnspawnedMobRef,
 };
 pub use item::types::{
