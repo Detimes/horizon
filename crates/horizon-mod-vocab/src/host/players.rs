@@ -295,6 +295,13 @@ pub trait PlayersBackend {
     /// acting player with no known connection; None for a stale or unavailable player.
     #[access(WorldOnly)]
     fn player_latency(&self, player: PlayerRef) -> Option<i32>;
+    /// Side: server.
+    /// The permission level `player_hide` hides the player from (players below it don't see
+    /// them), None when they are not hidden. Kept by UUID, so it reads the same for a player
+    /// who rejoined hidden. The outer None is a stale world epoch, a client, or a world
+    /// nobody else can join.
+    #[access(WorldOnly)]
+    fn player_hidden(&self, player: PlayerRef) -> Option<Option<u8>>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
