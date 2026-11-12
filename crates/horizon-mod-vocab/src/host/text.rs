@@ -11,4 +11,12 @@ pub trait TextHost {
     /// (Paper's `GsonComponentSerializer.deserialize`). None when it isn't one component.
     #[access(Metadata)]
     fn text_from_json(&self, json: &str) -> Result<Option<Text>, TextFormError>;
+    /// Side: both.
+    /// Reads legacy formatting codes (`§a`, `§l`, `§r`...) as the font draws them
+    /// (`Style.applyLegacyFormat`; Bukkit's `ChatColor` strings): a colour code resets the
+    /// decorations, `§r` resets everything, an unknown code is dropped. `&` codes are not
+    /// read; a mod that takes them replaces `&` with `§` first, as
+    /// `ChatColor.translateAlternateColorCodes` does.
+    #[access(Metadata)]
+    fn text_from_legacy(&self, legacy: &str) -> Result<Text, TextFormError>;
 }
