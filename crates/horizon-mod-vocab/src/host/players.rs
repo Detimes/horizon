@@ -540,6 +540,26 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_show_block(&mut self, player: PlayerRef, pos: [i32; 3], state: BlockState) -> bool;
     /// Side: server.
+    /// Writes `state` at `pos` in `level` as the player placed it, the write of vanilla's
+    /// `BlockItem.place` for a state the mod already chose (an editor's or a schematic's):
+    /// `setBlock` with the placement's flags, so the neighbours hear of it and, unless
+    /// `update_neighbour_shapes` is false, their shapes update (fences, walls and stairs
+    /// connect), then `Block.setPlacedBy` with the player as placer (a bed places its head, a
+    /// door its upper half). A new block gets its block entity; the same block in another state
+    /// keeps its own and what is in it. No sound, game event or item use. The state is written
+    /// as given. False, with nothing written, for a stale, unavailable or dead player, a level
+    /// that isn't the player's, an unknown state, a position outside the world or not loaded,
+    /// and on a client.
+    #[access(WorldOnly)]
+    fn player_place_block(
+        &mut self,
+        player: PlayerRef,
+        level: LevelRef,
+        pos: [i32; 3],
+        state: BlockState,
+        update_neighbour_shapes: bool,
+    ) -> bool;
+    /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s
     /// ATTACK, and `ServerPlayerGameMode.destroyBlock`), as its packet would run it: reach,
