@@ -1020,6 +1020,25 @@ pub trait LevelsBackendMut {
     #[access(WorldOnly)]
     fn level_send_block_updated(&mut self, level: LevelRef, pos: [i32; 3]) -> bool;
     /// Side: server.
+    /// Lights the loaded chunks `chunks` (chunk coordinates) of the level in place again, whole,
+    /// from their blocks, and the loaded chunks around them, at once on the calling thread, as
+    /// the light jobs of `edit_blocks` do later on the workers: for a mod that wrote blocks by
+    /// other means and needs the light before the chunks go out (`chunk_resend`). A chunk
+    /// without all eight neighbours loaded is left out. The light that changed goes to the
+    /// players who see that chunk's border, as any relight's does. How many chunks were lit,
+    /// the ring included; None for a level not in place, a stale handle and a client. It lights
+    /// every chunk it is given, so call it for the chunks an edit changed, not every tick.
+    #[access(WorldOnly)]
+    fn level_relight_chunks(&mut self, level: LevelRef, chunks: &[[i32; 2]]) -> Option<u32>;
+    /// Side: server.
+    /// Sends the loaded chunk whole again, with its light, block entities and biomes as they are
+    /// at the end of the tick, to every player watching it (`chunk_watchers`), as a chunk
+    /// `edit_blocks` changed is sent: one packet instead of a block update per changed block.
+    /// False, with nothing queued, for a chunk not loaded, a level not in place, a stale handle
+    /// and a client; true with nothing sent when no player is in the level.
+    #[access(WorldOnly)]
+    fn chunk_resend(&mut self, chunk: ChunkRef) -> bool;
+    /// Side: server.
     /// Plays sound event `sound` at `at` for the players in this level
     /// within range (16 blocks, times the volume above 1), as
     /// `ServerLevel.playSound(null, ...)` does, under `source`'s volume
