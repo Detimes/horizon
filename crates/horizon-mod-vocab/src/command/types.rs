@@ -51,11 +51,14 @@ impl Command {
     /// The same, for players who hold permission `node`
     /// (`PlayerRef::has_permission`, Bukkit's `Command.setPermission`): a
     /// permissions mod's answer (`player_permission_check`) decides, and
-    /// `level` only when no mod answers. A node covers the whole command,
-    /// its first word: every usage of it names the same node, and a usage
-    /// that names another (or none) is left out, with why. Players without
-    /// it neither run nor see the command; the console, functions and
-    /// command blocks are not asked.
+    /// `level` only when no mod answers. The node gates this usage's literal
+    /// path (`home admin`), as Brigadier's `requires` on that literal: a
+    /// usage without a node takes its command's (the node of the command's
+    /// first usage), and a node on the bare command (`home`) gates all of it.
+    /// A path keeps one node; a usage naming another than one before it on
+    /// the same path is left out, with why. Players without it neither run
+    /// nor see that path; the console, functions and command blocks are not
+    /// asked.
     pub fn with_node(mut self, node: &str) -> Self {
         self.node = Some(node.to_owned());
         self

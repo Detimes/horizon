@@ -51,6 +51,12 @@ pub trait ConfigHost {
     /// reads its own data and assets through reload listeners.
     #[access(WorldOnly)]
     fn instance_dir(&self) -> PathBuf;
+    /// Side: both.
+    /// The data version this game writes its saves with
+    /// (`SharedConstants.getCurrentVersion().dataVersion().version()`): the `DataVersion` of
+    /// the chunks, players and `level.dat` it saves, and of a schematic made from its blocks.
+    #[access(Metadata)]
+    fn server_data_version(&self) -> i32;
 }
 /// The server host's methods of the `config` area, implemented by the game and reached through [`ServerHost`].
 #[horizon_mod_api_macros::host_area]
