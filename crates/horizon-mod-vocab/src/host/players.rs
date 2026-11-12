@@ -340,6 +340,30 @@ pub trait PlayersBackend {
     /// no known connection has an empty one. None for a stale or unavailable player.
     #[access(WorldOnly)]
     fn player_client_brand(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
+    /// The compound mods keep on a server player (NeoForge's `Entity.getPersistentData`,
+    /// Bukkit's `PersistentDataContainer`), saved in their file as `NeoForgeData` beside
+    /// the keys the game keeps; empty when there is none. None for a stale or unavailable
+    /// player and on a client.
+    #[access(WorldOnly)]
+    fn player_persistent_data(&self, player: PlayerRef) -> Option<Compound>;
+    /// Side: server.
+    /// The player's advancement progress as `PlayerAdvancements.save` writes their
+    /// `advancements/<uuid>.json` now: JSON text, each started advancement's `criteria`
+    /// (criterion to the date it was granted, `yyyy-MM-dd HH:mm:ss Z`) and `done`, and
+    /// `DataVersion`. None for a stale or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_advancements(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
+    /// Whether `viewer`'s client is shown the player `target` by the rules players are tracked
+    /// with (`ServerPlayer.broadcastToPlayer`; Paper's `Player.canSee`): a spectator is seen
+    /// only by spectators, and by them only while it watches through its own camera, and a
+    /// player hidden with `player_hide` is seen only by players of at least that level.
+    /// Distance and chunks are not part of it, so a player out of range is still seen. A player
+    /// sees themselves. None for a stale or unavailable player of the two, a player not in the
+    /// server's list (a fake player), and on a client.
+    #[access(WorldOnly)]
+    fn player_sees(&self, viewer: PlayerRef, target: PlayerRef) -> Option<bool>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -552,14 +576,77 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_refresh(&mut self, player: PlayerRef) -> bool;
     /// Side: server.
-    /// Respawns a dead player as their client's Respawn button does
-    /// (`ServerGamePacketListenerImpl.handleClientCommand`'s
-    /// `PERFORM_RESPAWN`, Spigot's `Player.spigot().respawn()`): at their
-    /// respawn point, else the world spawn, with `player_respawned` heard.
-    /// False for a player who is alive, a stale or unavailable player, a
-    /// fake player, and inside a player's hook (call it from `server_tick`).
+    /// Replaces the compound mods keep on a server player (`player_persistent_data`) with
+    /// `data`; an empty compound takes it away. It is saved with the player. False for a
+    /// stale, unavailable or dead player and on a client.
+    #[access(WorldOnly)]
+    fn player_set_persistent_data(&mut self, player: PlayerRef, data: Compound) -> bool;
+    /// Side: server.
+    /// Replaces a server player's advancement progress with `json` (the text
+    /// `player_advancements` gives, or another server's file), as `PlayerAdvancements.reload`
+    /// then `applyFrom` load a file: advancements this server lacks are dropped, nothing is
+    /// awarded (no toast, chat line or reward), and the player's client is sent the whole
+    /// tree again with the next update. False, with nothing changed, for text that is not a
+    /// JSON object, a stale, unavailable or dead player, a player with no connection, and on
+    /// a client.
+    #[access(WorldOnly)]
+    fn player_set_advancements(&mut self, player: PlayerRef, json: &str) -> bool;
+    /// Side: server.
+    /// Respawns a dead server player as their client's Respawn click does
+    /// (`ServerGamePacketListenerImpl.handleClientCommand`'s `PERFORM_RESPAWN`,
+    /// `PlayerList.respawn`; Spigot's `Player.spigot().respawn()`): at their bed, anchor or
+    /// the world spawn, with the respawn hooks (`player_respawned` heard), without waiting
+    /// for the click. True once the player is alive again. Call it outside a player's hook
+    /// (from `server_tick` or a level tick hook). False for a living, stale or unavailable
+    /// player, a fake player, inside a player's hook, and on a client.
     #[access(WorldOnly)]
     fn player_respawn(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
+    /// The play packets the player's connection sent and received since the last call while
+    /// packets were counted (`count_packets`), by direction (sent first) then id; clears them.
+    /// Keep-alives and the disconnect are counted; packets of the login and configuration
+    /// phases are not. Empty while nothing was counted. None for a stale or unavailable
+    /// player, one with no connection (a fake player), and on a client.
+    #[access(WorldOnly)]
+    fn player_take_packet_counts(&mut self, player: PlayerRef) -> Option<Vec<PacketCount>>;
+    /// Side: server.
+    /// Acknowledges the player's block actions up to `sequence`
+    /// (`ServerGamePacketListenerImpl.ackBlockChangesUpTo`), for a mod that handled one itself,
+    /// such as an editor's own message: the client's predicted blocks settle on the server's
+    /// states once it gets `ClientboundBlockChangedAckPacket`, which goes after the next tick's
+    /// block changes, the highest sequence of the tick only. False for a negative sequence, a
+    /// stale or unavailable player, one with no connection, and on a client.
+    #[access(WorldOnly)]
+    fn player_ack_block_changes(&mut self, player: PlayerRef, sequence: i32) -> bool;
+    /// Side: server.
+    /// Shows that player alone `state` at `pos` in their level (`ClientboundBlockUpdatePacket`
+    /// to their client; Paper's `Player.sendBlockChange`), at once. The world is not changed:
+    /// the real block comes back when it or its chunk is next sent, as in vanilla, so a mod
+    /// sends it again while it still wants it shown. False for a position the packet cannot
+    /// carry (y outside -2048..=2047, x or z outside -33554432..33554432), a stale or
+    /// unavailable player, one with no connection, and on a client.
+    #[access(WorldOnly)]
+    fn player_show_block(&mut self, player: PlayerRef, pos: [i32; 3], state: BlockState) -> bool;
+    /// Side: server.
+    /// Writes `state` at `pos` in `level` as the player placed it, the write of vanilla's
+    /// `BlockItem.place` for a state the mod already chose (an editor's or a schematic's):
+    /// `setBlock` with the placement's flags, so the neighbours hear of it and, unless
+    /// `update_neighbour_shapes` is false, their shapes update (fences, walls and stairs
+    /// connect), then `Block.setPlacedBy` with the player as placer (a bed places its head, a
+    /// door its upper half). A new block gets its block entity; the same block in another state
+    /// keeps its own and what is in it. No sound, game event or item use. The state is written
+    /// as given. False, with nothing written, for a stale, unavailable or dead player, a level
+    /// that isn't the player's, an unknown state, a position outside the world or not loaded,
+    /// and on a client.
+    #[access(WorldOnly)]
+    fn player_place_block(
+        &mut self,
+        player: PlayerRef,
+        level: LevelRef,
+        pos: [i32; 3],
+        state: BlockState,
+        update_neighbour_shapes: bool,
+    ) -> bool;
     /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s

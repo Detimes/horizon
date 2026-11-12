@@ -55,7 +55,7 @@ pub(crate) struct NativeSidebar {
 const SIDEBAR_OBJECTIVE: &str = "horizon:native_sidebar";
 
 /// The argument kinds a native usage may name, each with a [`parser`].
-const KINDS: [&str; 11] = [
+const KINDS: [&str; 12] = [
     "word",
     "text",
     "integer",
@@ -67,6 +67,7 @@ const KINDS: [&str; 11] = [
     "players",
     "item",
     "block_pos",
+    "vec3",
 ];
 
 /// The custom argument types the mods registered, by namespaced id, for the command tree being
@@ -121,6 +122,12 @@ fn parser(kind: &str) -> Option<(&'static str, Value, ArgType)> {
         }
         "item" => ("minecraft:item_stack", Value::Null, ArgType::Item),
         "block_pos" => ("minecraft:block_pos", Value::Null, ArgType::BlockPos),
+        // `Vec3Argument.vec3()`: whole x and z numbers are block centres.
+        "vec3" => (
+            "minecraft:vec3",
+            Value::Null,
+            ArgType::Vec3 { center: true },
+        ),
         _ => return None,
     })
 }
@@ -2336,7 +2343,22 @@ impl Game<'_> {
                     }
                 }
                 Arg::Coords(coordinates) => {
-                    Value::BlockPos(self.resolve_coords(&coordinates).map(|v| v.floor() as i32))
+                    let vec3 = context.nodes.iter().any(|(node, range)| {
+                        *range == argument.range
+                            && matches!(
+                                &self.ui.dispatcher.0.nodes[*node].kind,
+                                horizon_client::command::NodeKind::Argument {
+                                    ty: ArgType::Vec3 { .. },
+                                    ..
+                                }
+                            )
+                    });
+                    let at = self.resolve_coords(&coordinates);
+                    if vec3 {
+                        Value::Vec3(at)
+                    } else {
+                        Value::BlockPos(at.map(|v| v.floor() as i32))
+                    }
                 }
                 Arg::Item(input) => Value::Item(
                     self.command_item_stack(&input, 1)?
@@ -3393,6 +3415,7 @@ mod tests {
                     mod_api::Command::new("typed data <word:word> <number:number> <enabled:boolean> <item:item> <pos:block_pos>"),
                     mod_api::Command::new("typed opt [value:integer]"),
                     mod_api::Command::new("typed repeat <value:player> <value:integer>"),
+                    mod_api::Command::new("typed at <pos:vec3>"),
                     mod_api::Command::op("protected <who:player>", 4),
                 ]);
             }
@@ -3481,13 +3504,14 @@ mod tests {
                         "typed data console 3 true dirt ^0.5 ^0.5 ^0.5"
                     ));
                     assert!(game.perform_native_console_command("typed repeat guest13 3"));
+                    assert!(game.perform_native_console_command("typed at 1 64.25 ~1"));
                     assert!(game.command_source.is_none(), "console source restored");
                     game.as_guest(12, |game| {
                         assert!(game.native_run_command("execute as guest13 run typed opt 13"))
                     })
                     .unwrap();
                     let heard = heard.lock().unwrap();
-                    assert_eq!(heard.len(), 11);
+                    assert_eq!(heard.len(), 12);
                     let first = &heard[0].1;
                     assert_eq!(first.literals, ["typed", "give"]);
                     assert_eq!(first.argument("who"), Some(&Value::Player(other)));
@@ -3534,6 +3558,10 @@ mod tests {
                     );
                     assert_eq!(heard[9].1.arguments[0].value, Value::Player(other));
                     assert_eq!(heard[9].1.argument("value"), Some(&Value::Integer(3)));
+                    assert_eq!(
+                        heard[10].1.argument("pos"),
+                        Some(&Value::Vec3([1.5, 64.25, -2.0]))
+                    );
                 });
             },
         );

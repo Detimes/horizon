@@ -32,6 +32,7 @@ pub mod hub;
 pub mod import;
 mod io_pool;
 pub mod menu;
+pub mod packet_counts;
 #[cfg(test)]
 mod payload_bounds_tests;
 pub mod playerdata;

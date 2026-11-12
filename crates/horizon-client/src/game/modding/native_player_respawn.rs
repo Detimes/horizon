@@ -6,7 +6,7 @@ use mod_api::PlayerRef;
 impl Game<'_> {
     /// The Respawn button for a dead player, outside every player's hook.
     pub(super) fn player_respawn(&mut self, player: PlayerRef) -> bool {
-        if self.lan_acting.is_some() {
+        if self.remote.is_some() || self.lan_acting.is_some() {
             return false;
         }
         let Some(i) = self.connected_guest_index(player) else {
