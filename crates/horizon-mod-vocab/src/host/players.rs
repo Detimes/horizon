@@ -398,6 +398,13 @@ pub trait PlayersBackend {
     /// a stale or unavailable player and on a client.
     #[access(WorldOnly)]
     fn player_ender_chest(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>>;
+    /// Side: server.
+    /// All of the player's statistics as `ServerStatsCounter.toJson` writes their
+    /// `stats/<uuid>.json`: `{"stats":{"minecraft:mined":{"minecraft:stone":3},...},
+    /// "DataVersion":n}`, types and keys namespaced, empty types left out. None for a stale
+    /// or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_statistics(&self, player: PlayerRef) -> Option<String>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -1003,4 +1010,14 @@ pub trait PlayersBackendMut {
         slot: u32,
         stack: Option<ItemStack>,
     ) -> Result<bool, StackWriteError>;
+    /// Side: server.
+    /// Replaces all of the player's statistics with `json` (the text `player_statistics`
+    /// gives, or another server's `stats/<uuid>.json`), as `StatsCounter.setValue` for each
+    /// (Paper's `Player.setStatistic`): a statistic `json` lacks goes back to 0, scoreboard
+    /// objectives on a statistic's criterion follow, and the client gets the changed values
+    /// the next time it asks (its statistics screen). `player_stat_award` is not heard.
+    /// False, with nothing changed, for text that is not a JSON object, a stale, unavailable
+    /// or dead player and on a client.
+    #[access(WorldOnly)]
+    fn player_set_statistics(&mut self, player: PlayerRef, json: &str) -> bool;
 }
