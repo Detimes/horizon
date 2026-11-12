@@ -955,6 +955,25 @@ pub enum MainHand {
     Right,
 }
 
+/// Why a player left the server (`player_disconnected`): Paper's
+/// `PlayerQuitEvent.QuitReason`, with the server stopping apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub enum QuitReason {
+    /// The client closed the connection: it quit, its connection was reset,
+    /// or it moved to another server.
+    Quit,
+    /// The server kicked them: a kick, a ban, a duplicate login, a packet limit.
+    Kicked,
+    /// The keep-alive timeout: the client stopped answering.
+    TimedOut,
+    /// The connection failed: a malformed packet or a read error.
+    Error,
+    /// The server stopped with them still on.
+    ServerStopping,
+}
+
 /// A player's client options, as `ServerboundClientInformationPacket` carries them
 /// (vanilla's `ClientInformation`). Raw ids map as vanilla's `ByIdMap` does: chat
 /// visibility and particle status wrap (`floorMod(id, 3)`), the main hand reads an

@@ -2768,6 +2768,13 @@ impl Game<'_> {
                             .is_some_and(|host| !host.players_told_left)
                     {
                         self.native_player_logged_out(guest.uuid, &guest.name);
+                        let reason = quit_reason(guest.leave_cause());
+                        self.native_player_disconnected(
+                            guest.uuid,
+                            &guest.name,
+                            reason,
+                            &guest.left_reason,
+                        );
                     }
                 }
                 HostEvent::Flight { conn, flying } => {
@@ -4116,6 +4123,17 @@ fn describe_event(
     }
 }
 
+/// What ended a guest's connection, as `player_disconnected` names it.
+fn quit_reason(cause: horizon_client::lan::guest::LeaveCause) -> mod_api::QuitReason {
+    use horizon_client::lan::guest::LeaveCause;
+    match cause {
+        LeaveCause::Quit => mod_api::QuitReason::Quit,
+        LeaveCause::Kicked => mod_api::QuitReason::Kicked,
+        LeaveCause::TimedOut => mod_api::QuitReason::TimedOut,
+        LeaveCause::Error => mod_api::QuitReason::Error,
+    }
+}
+
 /// A client's settings as the mod API names them.
 fn client_info(
     i: &horizon_protocol::packets::configuration::ClientInformation,
@@ -5209,6 +5227,82 @@ mod tests {
                 say(game, "hello");
                 assert_eq!(received(&sender), ["system heard hello", "player"]);
                 assert_eq!(received(&other), ["player"]);
+            });
+        });
+    }
+
+    /// `player_disconnected` follows `player_logged_out` with what ended the
+    /// connection: the cause the hub kept for a guest that left, and the
+    /// server stopping for the players still on.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_player_who_left_is_heard_with_why() {
+        use super::super::native_guest_turn_tests::with_guests;
+        use horizon_client::lan::{guest::LeaveCause, hub::HostEvent};
+        use mod_api::{Hooks, PlayerDisconnectedEvent, PlayerLoggedOutEvent, QuitReason, ServerHost};
+        use std::sync::Mutex;
+
+        static HEARD: Mutex<Vec<(String, u128, Option<QuitReason>, String)>> =
+            Mutex::new(Vec::new());
+        struct Listener;
+        #[mod_api::__subscriptions]
+        impl Hooks for Listener {
+            fn player_logged_out(&self, _: &mut dyn ServerHost, event: &mut PlayerLoggedOutEvent<'_>) {
+                HEARD
+                    .lock()
+                    .unwrap()
+                    .push(("out".into(), event.player, None, String::new()));
+            }
+            fn player_disconnected(
+                &self,
+                _: &mut dyn ServerHost,
+                event: &mut PlayerDisconnectedEvent<'_>,
+            ) {
+                HEARD.lock().unwrap().push((
+                    "why".into(),
+                    event.player,
+                    Some(event.reason),
+                    event.message.to_owned(),
+                ));
+            }
+        }
+        let mods: mod_api::Mods =
+            vec![mod_api::ModEntry::new("listener", Box::new(Listener))].into();
+        mod_api::testing::with_mods(mods, || {
+            with_guests(|game| {
+                let host = game.lan.as_mut().unwrap();
+                let mut gone = host.hub.guests.remove(0);
+                gone.left_reason = "Timed out".into();
+                gone.left_for(LeaveCause::TimedOut);
+                gone.left_for(LeaveCause::Quit);
+                let host = game.lan.take().unwrap();
+                game.lan = game.lan_process_events(
+                    host,
+                    [HostEvent::Left(Box::new(gone))],
+                    &[],
+                    [0.5, 64.0, 0.5],
+                );
+                game.native_players_leaving();
+                assert_eq!(
+                    *HEARD.lock().unwrap(),
+                    [
+                        ("out".into(), 12, None, String::new()),
+                        (
+                            "why".into(),
+                            12,
+                            Some(QuitReason::TimedOut),
+                            "Timed out".into()
+                        ),
+                        ("out".into(), 13, None, String::new()),
+                        (
+                            "why".into(),
+                            13,
+                            Some(QuitReason::ServerStopping),
+                            "Server closed".into()
+                        ),
+                    ],
+                    "after the logout, the first cause kept; then the server stopping"
+                );
             });
         });
     }

@@ -2747,6 +2747,12 @@ impl Game<'_> {
             .collect();
         for (player, name) in players {
             self.native_player_logged_out(player, &name);
+            self.native_player_disconnected(
+                player,
+                &name,
+                mod_api::QuitReason::ServerStopping,
+                "Server closed",
+            );
         }
         // No tick follows to send what they said.
         self.flush_native_net();

@@ -10,6 +10,7 @@ use super::{
     Joined, NetEvent, Out, Shared,
     data::{CORE_PACK, SyncData},
     forwarding,
+    guest::LeaveCause,
     io_pool::{self, Session as _},
 };
 use horizon_protocol::{
@@ -1550,6 +1551,7 @@ fn play(
         counted,
         undrained,
         packet_counts,
+        kicked: false,
     };
     let joined = Joined {
         conn,
@@ -1597,16 +1599,32 @@ struct PlayConn {
     undrained: Arc<Undrained>,
     /// Shared with the player's [`PlayerSender`]: the packets counted while a mod asks.
     packet_counts: Arc<super::packet_counts::PacketCounts>,
+    /// This connection kicked the player itself (a packet limit, a declined pack).
+    kicked: bool,
+}
+impl PlayConn {
+    /// A kick of this connection's own: the disconnect goes after what is queued.
+    fn kick(&mut self, (reason, text): (horizon_core::nbt::Tag, String)) -> io_pool::Verdict {
+        self.kicked = true;
+        let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
+        io_pool::Verdict::Kick(text, body)
+    }
+}
+/// What ended a connection the server did not kick, from the reason the network gives.
+fn leave_cause(reason: &str) -> LeaveCause {
+    if reason == "Disconnected" || reason == "server closed" {
+        LeaveCause::Quit
+    } else if reason == horizon_protocol::Error::timed_out().to_string() {
+        LeaveCause::TimedOut
+    } else {
+        LeaveCause::Error
+    }
 }
 impl io_pool::Session for PlayConn {
     /// Forward the player's packet, or say why it ends the connection: a
     /// required resource pack declined, a rate-limit excess, a malformed packet.
     fn packet(&mut self, id: i32, payload: Vec<u8>) -> io_pool::Verdict {
         use io_pool::Verdict;
-        let kick = |(reason, text): (horizon_core::nbt::Tag, String)| {
-            let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
-            Verdict::Kick(text, body)
-        };
         self.packet_counts.add(
             false,
             id,
@@ -1614,7 +1632,7 @@ impl io_pool::Session for PlayConn {
         );
         let now = Instant::now();
         if let Some(average) = self.rate.as_mut().and_then(|r| r.received(now)) {
-            return kick(rate_exceeded(&self.shared, average));
+            return self.kick(rate_exceeded(&self.shared, average));
         }
         match play::Serverbound::decode(id, &payload).and_then(checked_play) {
             Ok(play::Serverbound::KeepAlive(k)) => {
@@ -1632,12 +1650,12 @@ impl io_pool::Session for PlayConn {
             Ok(play::Serverbound::ResourcePack(r))
                 if r.action == PACK_DECLINED && self.required_pack =>
             {
-                kick(pack_rejected(&self.shared, &self.name, r.id))
+                self.kick(pack_rejected(&self.shared, &self.name, r.id))
             }
             Ok(p) => {
                 // Bounded here, where packets are made, not only where the hub drains them.
                 if !self.undrained.handed(payload.len()) {
-                    return kick(undrained_exceeded(&self.shared, &self.name));
+                    return self.kick(undrained_exceeded(&self.shared, &self.name));
                 }
                 let event = NetEvent::Packet(self.conn, Box::new(p), payload.len());
                 match self.shared.events.send(event) {
@@ -1662,7 +1680,15 @@ impl io_pool::Session for PlayConn {
         Some(play::Clientbound::KeepAlive(cfg::KeepAlive { id }).encode())
     }
     fn left(&mut self, reason: String) {
-        let _ = self.shared.events.send(NetEvent::Left(self.conn, reason));
+        let cause = if self.kicked {
+            LeaveCause::Kicked
+        } else {
+            leave_cause(&reason)
+        };
+        let _ = self
+            .shared
+            .events
+            .send(NetEvent::Left(self.conn, reason, cause));
         self.shared.closing.fetch_add(1, Ordering::AcqRel);
     }
     fn closed(&mut self) {
@@ -1872,6 +1898,18 @@ impl KeepAliveWatch {
 #[cfg(test)]
 mod tests {
     include!("profession_join_tests.rs");
+
+    #[test]
+    fn a_connection_the_server_did_not_kick_ends_for_its_network_reason() {
+        assert_eq!(leave_cause("Disconnected"), LeaveCause::Quit);
+        assert_eq!(leave_cause("server closed"), LeaveCause::Quit);
+        let timed_out = horizon_protocol::Error::timed_out().to_string();
+        assert_eq!(leave_cause(&timed_out), LeaveCause::TimedOut);
+        assert_eq!(
+            leave_cause("Invalid packet 3: unexpected end of data"),
+            LeaveCause::Error
+        );
+    }
 
     #[test]
     fn undrained_packets_stop_at_twice_the_inbox() {
