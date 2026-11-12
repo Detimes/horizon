@@ -482,6 +482,15 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
     /// Side: server.
+    /// Disconnects the player with `reason` on their screen
+    /// (`ServerGamePacketListenerImpl.disconnect`, Paper's `Player.kick`):
+    /// the log's "lost connection" line names it and `player_kicked` hears
+    /// it. Works inside the player's own hook; the connection closes after
+    /// it. False for a stale or unavailable player and a fake player.
+    #[access(WorldOnly)]
+    /// Refuses text deeper than 512 component nodes before applying any changes.
+    fn player_kick(&mut self, player: PlayerRef, reason: Text) -> Result<bool, TextFormError>;
+    /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s
     /// ATTACK, and `ServerPlayerGameMode.destroyBlock`), as its packet would run it: reach,
