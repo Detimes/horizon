@@ -302,6 +302,11 @@ pub trait PlayersBackend {
     /// nobody else can join.
     #[access(WorldOnly)]
     fn player_hidden(&self, player: PlayerRef) -> Option<Option<u8>>;
+    /// Side: server.
+    /// The nickname `player_set_nickname` shows in place of the player's name, None when they
+    /// have none. The outer None is a stale or offline player, or no server list.
+    #[access(WorldOnly)]
+    fn player_nickname(&self, player: PlayerRef) -> Option<Option<String>>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
