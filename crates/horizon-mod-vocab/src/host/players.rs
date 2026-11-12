@@ -152,6 +152,23 @@ pub trait PlayersBackend {
     #[access(WorldOnly)]
     fn player_permission_level(&self, player: PlayerRef) -> Option<u8>;
     /// Side: server.
+    /// The permissions mods' answer for permission `node`
+    /// (`player_permission_check`): `Some(true)` granted, `Some(false)`
+    /// denied, None when no mod set it (Bukkit's `isPermissionSet` false),
+    /// for a stale or unavailable player, and on a client.
+    #[access(WorldOnly)]
+    fn player_permission_value(&self, player: PlayerRef, node: &str) -> Option<bool>;
+    /// Side: server.
+    /// Whether the player holds permission `node` (Bukkit's
+    /// `Permissible.hasPermission`): the permissions mods' answer
+    /// (`player_permission_value`), else vanilla's operator check, a
+    /// permission level of 2 or more (`Commands.LEVEL_GAMEMASTERS`). A node
+    /// every player should have without a permissions mod is read as
+    /// `player.permission_value(host, node).unwrap_or(true)`. False for a
+    /// stale or unavailable player.
+    #[access(WorldOnly)]
+    fn player_has_permission(&self, player: PlayerRef, node: &str) -> bool;
+    /// Side: server.
     /// `Player.hasInfiniteMaterials`: the `instabuild` ability, which
     /// creative mode gives.
     #[access(WorldOnly)]
