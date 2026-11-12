@@ -1,4 +1,5 @@
-//! The console for native mods: logged lines reach `console_line`.
+//! The console for native mods: logged lines reach `console_line`, and a command's feedback
+//! comes back from `server_run_command_captured`.
 use super::native_guest_turn_tests::with_guests;
 use horizon_client::logging;
 use mod_api::{ConsoleLineEvent, Hooks, ServerHost};
@@ -42,5 +43,20 @@ fn logged_lines_reach_a_listener_but_not_its_own() {
                 ]
             );
         });
+    });
+}
+
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_captured_command_returns_its_feedback() {
+    with_guests(|game| {
+        let (ok, lines) = game.server_run_command_captured("/time query gametime");
+        assert!(ok);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("The game time is"), "{lines:?}");
+        let (ok, lines) = game.server_run_command_captured("gamerule nosuchrule");
+        assert!(!ok);
+        assert!(!lines.is_empty());
+        assert!(game.chat_capture.is_none(), "the outer capture is put back");
     });
 }
