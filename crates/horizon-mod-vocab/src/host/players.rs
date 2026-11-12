@@ -552,6 +552,15 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_refresh(&mut self, player: PlayerRef) -> bool;
     /// Side: server.
+    /// Respawns a dead player as their client's Respawn button does
+    /// (`ServerGamePacketListenerImpl.handleClientCommand`'s
+    /// `PERFORM_RESPAWN`, Spigot's `Player.spigot().respawn()`): at their
+    /// respawn point, else the world spawn, with `player_respawned` heard.
+    /// False for a player who is alive, a stale or unavailable player, a
+    /// fake player, and inside a player's hook (call it from `server_tick`).
+    #[access(WorldOnly)]
+    fn player_respawn(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s
     /// ATTACK, and `ServerPlayerGameMode.destroyBlock`), as its packet would run it: reach,
