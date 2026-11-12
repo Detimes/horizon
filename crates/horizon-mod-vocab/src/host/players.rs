@@ -24,6 +24,19 @@ pub trait PlayersServerHost {
     /// Create or retrieve a connectionless player for the level currently in place.
     #[access(WorldOnly)]
     fn fake_player(&mut self, level: LevelRef, uuid: u128, name: &str) -> Option<PlayerRef>;
+    /// Side: server.
+    /// The most players who may be on at once (`PlayerList.getMaxPlayers`,
+    /// `max-players`), as the server list shows it and logins are refused
+    /// beyond. None where nobody else can join.
+    #[access(WorldOnly)]
+    fn server_max_players(&self) -> Option<u32>;
+    /// Side: server.
+    /// Sets the player limit from the next login and server list ping on
+    /// (Paper's `Server.setMaxPlayers`); players already on stay.
+    /// `server.properties` is not changed, so a restart goes back to its
+    /// `max-players`. False where nobody else can join.
+    #[access(WorldOnly)]
+    fn server_set_max_players(&mut self, max_players: u32) -> bool;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
