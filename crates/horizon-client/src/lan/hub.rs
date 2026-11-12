@@ -389,6 +389,9 @@ pub struct Hub {
     /// (`native_set_nickname`), by UUID. Their real name stays everywhere
     /// else: the log, commands, the hover of the shown name.
     pub nicknames: std::collections::HashMap<u128, String>,
+    /// Names a server mod shows for players in the Tab list only (`player_set_list_name`),
+    /// by UUID, over their nickname.
+    pub list_names: std::collections::HashMap<u128, crate::text::Text>,
     /// The name the server's user cache knew a joining player by, by UUID, looked up before the
     /// cache learns the new one (PlayerList.placeNewPlayer's `oldName`); taken by the join line.
     pub former_names: std::collections::HashMap<u128, String>,
@@ -833,6 +836,7 @@ impl Hub {
             hidden: Default::default(),
             teams: Vec::new(),
             nicknames: std::collections::HashMap::new(),
+            list_names: std::collections::HashMap::new(),
             former_names: std::collections::HashMap::new(),
         }
     }
@@ -1410,10 +1414,14 @@ impl Hub {
             show_hat: Some(guest.is_none_or(|g| g.info.model_customisation & 0x40 != 0)),
         }
     }
-    /// ServerPlayer.getTabListDisplayName: the nickname, if any, as mods
-    /// format it.
+    /// ServerPlayer.getTabListDisplayName: a mod's list name, else the nickname, if any, as
+    /// mods format it.
     fn tab_list_name(&self, uuid: u128, name: &str) -> Option<Tag> {
-        let mut display_name = self.nicknames.get(&uuid).map(crate::text::Text::literal);
+        let mut display_name = self
+            .list_names
+            .get(&uuid)
+            .cloned()
+            .or_else(|| self.nicknames.get(&uuid).map(crate::text::Text::literal));
         native_player_tab_list_name_format(&self.loop_context, uuid, name, &mut display_name);
         display_name.map(|text| crate::scoreboard::component_tag(&text.component()))
     }
@@ -5150,6 +5158,32 @@ impl Hub {
         }));
     }
 
+    /// Paper's `Player.setPlayerListName`: `name` in place of the player's name in the Tab
+    /// list (None: the nickname or real name again), sent to everyone at once
+    /// (`ClientboundPlayerInfoUpdatePacket` `UPDATE_DISPLAY_NAME`) and kept for a rejoin.
+    pub fn set_list_name(&mut self, uuid: u128, name: Option<crate::text::Text>) {
+        match name {
+            Some(name) => self.list_names.insert(uuid, name),
+            None => self.list_names.remove(&uuid),
+        };
+        let Some(guest) = self
+            .guests
+            .iter()
+            .find(|g| g.uuid == uuid && g.participates_online())
+        else {
+            return;
+        };
+        let display_name = self.tab_list_name(uuid, &guest.name);
+        self.broadcast(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+            actions: 0x20,
+            entries: vec![play::PlayerInfo {
+                uuid,
+                display_name: Some(display_name),
+                ..Default::default()
+            }],
+        }));
+    }
+
     pub fn disconnect_all(&mut self) {
         let reason = translatable("multiplayer.disconnect.server_shutdown", &[]);
         for g in &self.guests {
@@ -6131,6 +6165,55 @@ mod tests {
         let registry = hub.rule_registry.clone();
         hub.reload_resources(hub.sync.clone(), &mut Default::default());
         assert!(Arc::ptr_eq(&registry, &hub.rule_registry));
+    }
+
+    /// Every packet the guest was sent, decoded.
+    fn sent(rx: &std::sync::mpsc::Receiver<crate::lan::Out>) -> Vec<play::Clientbound> {
+        rx.try_iter()
+            .filter_map(|out| match out {
+                crate::lan::Out::Packet(body) => {
+                    let mut reader = horizon_protocol::buf::Reader::new(&body);
+                    let id = reader.varint().ok()?;
+                    play::Clientbound::decode(id, &body[reader.position()..]).ok()
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A mod's list name goes to every client at once, over the nickname, and None gives
+    /// the nickname back; it is kept for the next Tab list entry too.
+    #[test]
+    fn a_list_name_replaces_the_tab_list_name_and_goes_back() {
+        let (mut hub, rx) = hub_with_a_guest();
+        hub.nicknames.insert(1, "Bobby".into());
+        let shown = |packets: Vec<play::Clientbound>| {
+            packets.into_iter().find_map(|p| match p {
+                play::Clientbound::PlayerInfoUpdate(update) if update.actions == 0x20 => {
+                    update.entries[0].display_name.clone()
+                }
+                _ => None,
+            })
+        };
+        let red = crate::text::Text::legacy("\u{a7}cBob");
+        hub.set_list_name(1, Some(red.clone()));
+        let name = shown(sent(&rx)).expect("an update to everyone");
+        assert_eq!(
+            name,
+            Some(crate::scoreboard::component_tag(&red.component()))
+        );
+        assert_eq!(hub.tab_list_name(1, "Bob"), name);
+        hub.set_list_name(1, None);
+        assert_eq!(
+            shown(sent(&rx)).expect("an update to everyone"),
+            Some(crate::scoreboard::component_tag(
+                &crate::text::Text::literal("Bobby").component()
+            ))
+        );
+        // A player who is not on keeps the name for their return, and nothing is sent.
+        hub.set_list_name(7, Some(red));
+        assert!(sent(&rx).is_empty());
+        assert!(hub.list_names.contains_key(&7));
     }
 
     /// [`hub_with_a_guest`] over a sync the test built.
