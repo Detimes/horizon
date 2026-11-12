@@ -497,26 +497,6 @@ impl GameLevel<'_> {
         self.fire_perform_bonemeal(ticks, dimension, pos, state);
     }
 
-    /// On an authoritative server, how fire treats the block `state`
-    /// (`FireBlock.setFlammable(block, igniteOdds, burnOdds)`): put
-    /// `(ignite, burn)` in `odds` for your own blocks, and vanilla's table
-    /// isn't read. Ignite odds above zero let fire stand beside the block and
-    /// spread into the air around it (planks 5, wool 30, leaves 30); burn odds
-    /// are how fast fire destroys it (planks 20, wool 60, leaves 60). `(0, 0)`
-    /// never burns; keep both within vanilla's 0 to 100. A waterlogged state
-    /// never burns and isn't asked. Answer only for your own blocks and leave
-    /// `odds` empty otherwise; the level is read-only. Asked hundreds of times
-    /// per fire tick: keep it short.
-    #[inline(always)]
-    pub(in crate::game) fn native_fire_odds(
-        &self,
-        dimension: LevelDimension,
-        state: BlockStateId,
-        odds: &mut Option<(i32, i32)>,
-    ) {
-        self.fire_fire_odds(dimension, state, odds);
-    }
-
     /// On an authoritative server, `CampfireBlock.isSmokeSource` for the
     /// block `state` under a campfire, as the campfire is placed or the block
     /// under it changes: `Some(true)` for your own blocks makes the campfire a
@@ -615,20 +595,13 @@ impl Game<'_> {
     ) {
         self.fire_world_lifecycle(context, phase, error_text);
     }
-    /// The server is about to send its data to the players (NeoForge's
-    /// `OnDatapackSyncEvent`, its `sendRecipes`): push the recipe types
-    /// (`minecraft:smelting`, `mymod:crusher`) whose recipes your client half
-    /// needs. Horizon sends their final recipes — the world's data packs
-    /// merged, load conditions held — to every Horizon client when it joins
-    /// and again after each `/reload`; a vanilla client is sent nothing new.
-    /// Asked once per load, when the server's data tables are built, and the
-    /// same types go to every player: unlike NeoForge, which asks again for
-    /// each joining player, it can't differ between players. Push nothing and
-    /// nothing is sent; push nothing after a load that pushed some and the
-    /// clients go back to their own recipes. Server-side (the single
-    /// player's integrated server included).
-    pub(in crate::game) fn native_datapack_sync(&mut self, recipe_types: &mut Vec<String>) {
-        self.fire_datapack_sync(recipe_types);
+    /// After admission, collect once before building and sending this player's recipes.
+    /// Reload asks once per online player before their recipes are re-sent; none when empty.
+    pub(in crate::game) fn native_datapack_sync(
+        &mut self,
+        call: mod_api::__private::DatapackSyncCall<'_>,
+    ) {
+        self.fire_datapack_sync(call);
     }
     /// The server's recipes of `recipe_types` arrived (NeoForge's
     /// `RecipesReceivedEvent`): from now on the recipe helpers
@@ -1002,9 +975,8 @@ impl Game<'_> {
     /// push a `mod_api::Block` per block, the same declaration
     /// a content mod's `data/<id>/horizon/block/<path>.json` holds (a
     /// vanilla `template`, `properties`, `state_properties`, `shapes`...),
-    /// with its id in your mod's namespace. `item: true` gives it a block
-    /// item, as a file does unless told not to (`..Default::default()`
-    /// leaves it false). They join the content mods' blocks: the one whose
+    /// with its id in your mod's namespace. It has a block item, as a file's
+    /// does, unless `item` is false (`Block::with_item(false)`). They join the content mods' blocks: the one whose
     /// id is that namespace when it is on (your models, textures, loot and
     /// recipes are its files), else one of their own, with the template's
     /// look. Ids, saves and the check that a joining client has the same
@@ -3740,23 +3712,6 @@ impl Game<'_> {
     ) {
         self.fire_attack_entity(entity, kind, pos, canceled);
     }
-    /// A message from `player`'s client on `channel` (`mod_id:name`), within
-    /// the caps (`native_net.rs`): check `channel`, and treat `data` as the
-    /// player's own bytes, checked by nothing. Runs in the tick after it
-    /// arrives, with no player's state swapped in. Server-side.
-    pub(in crate::game) fn native_net_from_client(
-        &mut self,
-        player: u128,
-        channel: &str,
-        data: &[u8],
-    ) {
-        self.fire_net_from_client(player, channel, data);
-    }
-    /// A message from the server on `channel` (`mod_id:name`), whose `data`
-    /// is the sender's own bytes. The window's game only.
-    pub(in crate::game) fn native_net_from_server(&mut self, channel: &str, data: &[u8]) {
-        self.fire_net_from_server(channel, data);
-    }
     /// `dimension`'s level opened on the server (NeoForge's `LevelEvent.Load`,
     /// posted in `MinecraftServer.createLevels`): before any of its chunks
     /// (`native_chunk_load`), so a mod sets up what it keeps for the level
@@ -3817,7 +3772,7 @@ impl Game<'_> {
     }
     /// `player` (`name`) joined the game (NeoForge's
     /// `PlayerLoggedInEvent`): placed in the world and listed in
-    /// `native_server_players`, so `net_send_to_player` reaches them.
+    /// `host.players().server_players()`, so `PlayerRef::send_payload` can reach them.
     /// Once a join, with no player's state swapped in. Server-side.
     pub(in crate::game) fn native_player_logged_in(&mut self, player: u128, name: &str) {
         self.fire_player_logged_in(player, name);
@@ -3886,17 +3841,17 @@ impl Game<'_> {
     /// A player's data was copied to their new player (NeoForge's
     /// `PlayerEvent.Clone`, from `ServerPlayer.restoreFrom`): `was_death` is
     /// true after a death, false when they left the End after the credits
-    /// (`respawn` with `keepAllPlayerData`). The uuid stays the same, so the
-    /// old and the new player share `player`. Heard before the new player is
-    /// placed, on a server, with no player's state swapped in. Not
-    /// cancellable.
+    /// (`respawn` with `keepAllPlayerData`). `original` reads the old player's
+    /// complete data until this hook returns; `player` names the replacement.
+    /// Heard before the new player is placed, on a server. Not cancellable.
     pub(in crate::game) fn native_player_clone(
         &mut self,
         player: u128,
         name: &str,
         was_death: bool,
+        original: mod_api::OriginalPlayerRef,
     ) {
-        self.fire_player_clone(player, name, was_death);
+        self.fire_player_clone(player, name, was_death, original);
     }
     /// The number of players with the mod container at `pos` of `dimension`
     /// open went from `previous` to `viewers` (vanilla's
@@ -3983,7 +3938,7 @@ impl Game<'_> {
     /// changes. It comes into range, its client's chunks reach it, or it is
     /// put in the level; another player is an entity too, and a player never
     /// tracks their own. A mod sends the player what they need to show it
-    /// (`net_send_to_player`). The entity is as it was last tick: it
+    /// (`PlayerRef::send_payload`). The entity is as it was last tick: it
     /// may be gone by now. Heard after the tick's players and entities have
     /// moved, in order, with no player's state swapped in. Server-side.
     pub(in crate::game) fn native_player_start_tracking(
@@ -4015,25 +3970,23 @@ impl Game<'_> {
     ) {
         self.fire_player_stop_tracking(player, name, entity, uuid, kind);
     }
-    /// Whether a mod listens to the mobs' `native_living_equipment_change`: a
-    /// mod that hooks it hooks this one too and sets `listened` (HEAD,
-    /// `*listened = true`). Without it the game does not read every mob's
-    /// equipment each tick, and mobs are not told (armor stands still are). A
-    /// mob that ticks once it is set counts from empty. Asked once a tick, after
-    /// the mobs' tick. Server-side.
+    /// Whether a mod listens to `native_living_equipment_change` for mobs and
+    /// connected players: a mod that hooks it hooks this one too and sets
+    /// `listened` (HEAD, `*listened = true`). Without it the game does not read
+    /// their equipment each tick and only armor stands are told. A mob or player
+    /// counts from empty once it is set. Asked once a tick. Server-side.
     pub(in crate::game) fn native_living_equipment_listened(&mut self, listened: &mut bool) {
         self.fire_living_equipment_listened(listened);
     }
-    /// A mob's or an armor stand's equipment slot took a different stack
-    /// (NeoForge's `LivingEquipmentChangeEvent`, posted in
-    /// `LivingEntity.collectEquipmentChanges`): `entity` is its ID and `kind`
-    /// its type (`minecraft:zombie`), `slot` the `EquipmentSlot` (`mainhand`,
-    /// `offhand`, `feet`, `legs`, `chest`, `head`, `body`, `saddle`), `from`
-    /// what the slot held when this was last heard (none for empty) and `to`
-    /// what it holds now. Once for each slot that changed, in that order,
-    /// after the mobs' tick, so a mob that joins the level wearing something
-    /// counts from empty on its first tick. It only hears: change the mob with
-    /// its own helpers. Players are heard by `native_on_equip`. Server-side.
+    /// A mob's, an armor stand's or a connected player's equipment slot took a
+    /// different stack (NeoForge's `LivingEquipmentChangeEvent`,
+    /// `LivingEntity.collectEquipmentChanges`): `entity` its ID, `kind` its type
+    /// (`minecraft:player` for a player), `slot` the `EquipmentSlot`, `from` what
+    /// the slot held when last heard and `to` what it holds now. Once per changed
+    /// slot, after the mobs' tick; one new to the level counts from empty. A
+    /// player's `mainhand` is the selected hotbar slot; their `body` and `saddle`
+    /// are never told. The world host's own player is heard by `native_on_equip`.
+    /// It only hears. Server-side.
     pub(in crate::game) fn native_living_equipment_change(
         &mut self,
         entity: u32,
@@ -4262,18 +4215,6 @@ impl Game<'_> {
     ) {
         self.fire_loot_drops(context, drops);
     }
-    /// `player` is about to take `count` of `item` from the ground
-    /// (`ItemEntity.playerTouch`). Set `canceled` to leave it there: the
-    /// stack isn't offered again for 10 ticks. Server-side.
-    pub(in crate::game) fn native_item_picked_up(
-        &mut self,
-        player: u128,
-        item: &str,
-        count: u32,
-        canceled: &mut bool,
-    ) {
-        self.fire_item_picked_up(player, item, count, canceled);
-    }
     /// A dropped item reaches its lifetime on the server (`ItemEntity.tick`,
     /// NeoForge's `ItemExpireEvent`). Every mod may set or add to `extra_life`,
     /// in ticks, which starts at zero; a positive total keeps the item that much
@@ -4337,20 +4278,6 @@ impl Game<'_> {
         canceled: &mut bool,
     ) {
         self.fire_pickup_xp(player, dimension, orb, value, count, canceled);
-    }
-    /// The selected damaged Mending `stack` and the proposed durability repair
-    /// for `experience` points. The amount is clamped to the stack's current damage. Zero leaves the
-    /// experience unspent when it overrides a positive proposal. If the selected
-    /// stack changes, the repair is skipped.
-    /// Server-side, including `PlayerRef::give_experience_points`.
-    pub(in crate::game) fn native_mending_repair(
-        &mut self,
-        player: u128,
-        stack: &ItemStack,
-        experience: u32,
-        repair: &mut u32,
-    ) {
-        self.fire_mending_repair(player, stack, experience, repair);
     }
     /// A player's hit landed on the mob `entity` of type `kind`
     /// (`minecraft:zombie`), holding `stack`: where `Item.hurtEnemy` is called,

@@ -776,7 +776,7 @@ impl Game<'_> {
             light: 0,
             block: [0; 3],
             poses: Vec::new(),
-            lights: diffuse_lights(self.dim == Dim::Nether),
+            lights: diffuse_lights(self.nether_lighting()),
             vertices: std::mem::take(out),
             kept: false,
             spins: Vec::new(),
@@ -2803,7 +2803,7 @@ mod tests {
             [11.0, 1.0, 1.0],
         ];
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("golem_mod", Box::new(Golem))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             crate::game::native_entity_refs::tests::with_client_game(|game| {
                 crate::game::mods::register_layer_definitions(
                     crate::game::execution_role::ExecutionRole::Client,

@@ -19,6 +19,8 @@ impl Game<'_> {
             self.native_level_tick_pre(level);
         }
         let result = body(self);
+        // Each entity's own move this tick (`EntityEvent.EnteringSection`).
+        self.client_entity_sections_stepped();
         // `ClientLevel.tick`'s RETURN, which a failed tick does not reach.
         if result.is_ok()
             && let Some(level) = level
@@ -29,6 +31,7 @@ impl Game<'_> {
     }
 
     fn tick_remote_level_body(&mut self) -> Result<()> {
+        self.fire_pending_block_entity_loads();
         self.ticks += 1;
         self.repro_tick();
         // Hud.tick ends with ChatComponent.tick.

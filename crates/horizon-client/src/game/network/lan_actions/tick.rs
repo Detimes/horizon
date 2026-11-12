@@ -199,16 +199,11 @@ impl Game<'_> {
             // Player.tick: a different main-hand item resets the attack
             // strength, and detectEquipmentUpdates gives the guest its modifiers.
             let g = &host.hub.guests[gi];
-            let held = g
-                .inventory
-                .get(g.selected)
-                .cloned()
-                .flatten()
-                .map(|s| s.item);
+            let held = crate::game::held::held_attack_item(&g.inventory, g.selected);
             let play = host.play.entry(conn).or_default();
-            if play.attack_item != held {
+            if play.attack_item.as_ref() != held {
                 play.attack_ticks = 0;
-                play.attack_item = held;
+                play.attack_item = held.cloned();
             }
             self.guest_delayed_destroy(conn);
             self.guest_server_tick(conn);
@@ -390,6 +385,10 @@ impl Game<'_> {
             return;
         };
         let g = self.lan.as_ref().unwrap().hub.guest(conn).unwrap();
+        // Each move the player sent put it somewhere (`handleMovePlayer`'s `setPos`).
+        let (id, end) = (g.entity_id as u32, g.position);
+        self.entity_section_walked(id, end, moves.iter().map(|m| m.0));
+        let g = self.lan.as_ref().unwrap().hub.guest(conn).unwrap();
         if g.spectator() {
             // ServerPlayer.doTick runs the player's whole tick for a spectator
             // too, unless its box touches an unloaded chunk
@@ -441,6 +440,7 @@ impl Game<'_> {
         let events = self.as_guest(conn, |game| {
             let (rules, motion) = (game.world.health_rules, game.motion);
             let health = &motion.health;
+            let leather_boots = super::super::worn_boots::leather_boots(&game.armor);
             let freeze_immune = game.wears_freeze_immune();
             let burn_immune = game.wears_burn_from_stepping_immunity();
             let boat = game.riding_boat_fluid_box();
@@ -529,6 +529,7 @@ impl Game<'_> {
             // lit campfires and grown sweet berry bushes hurt (#1305).
             w.player.shift_key_down = sneaking;
             let _ = w.player.set_sleeping(sleeping);
+            w.player.leather_boots = leather_boots;
             w.player.freeze_immune = freeze_immune;
             w.player.burn_from_stepping_immune = burn_immune;
             let _ = w.server_block_damage(start);
@@ -547,20 +548,23 @@ impl Game<'_> {
                 w.server_player_pose_tick()
             };
             let mut events = std::mem::take(&mut w.player.events);
-            // LayeredCauldronBlock.handleEntityOnFireInside along those moves.
-            for event in &events {
-                match event {
-                    MotionEvent::CauldronExtinguish { pos } => game.cauldron_extinguish(*pos),
-                    MotionEvent::PowderSnowMelt { pos } => game.powder_snow_melt(*pos),
-                    _ => {}
-                }
-            }
+            // Powder snow and cauldrons put the fire out along those moves.
+            game.block_extinguish_player(&events);
             // Entity.baseTick: rain puts out a burning player.
             game.rain_extinguish_player();
-            // WitherRoseBlock.entityInside along those moves.
+            // WitherRoseBlock.entityInside along those moves, and an
+            // `entity_inside` part's typed effect writes.
             for event in &events {
-                if matches!(event, MotionEvent::InsideWitherRose) {
-                    game.wither_rose_contact();
+                match event {
+                    MotionEvent::InsideWitherRose => game.wither_rose_contact(),
+                    MotionEvent::InsideEffect {
+                        id,
+                        duration,
+                        amplifier,
+                    } if game.remote.is_none() && game.ui.difficulty != 0 => {
+                        game.give_player_effect(id, *duration, i32::from(*amplifier));
+                    }
+                    _ => {}
                 }
             }
             // ServerGamePacketListenerImpl.handleMovePlayer:

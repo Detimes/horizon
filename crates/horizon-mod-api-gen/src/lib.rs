@@ -631,19 +631,45 @@ pub fn generated_on_stdout() {
     GENERATED_ON_STDOUT.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The paths `rerun_if_changed` was given while a test holds the capture.
+    static CAPTURED_RERUNS: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Tracks the stager's stamp, `.horizon-source-staged`, only in a staged copy. Cargo reruns a build
+/// script on every build while a tracked path is missing, so tracking an absent stamp rebuilt
+/// horizon-mod-points, horizon-client and every crate above them on each `cargo` invocation of an
+/// ordinary checkout. A stamp never appears in a tree that was already built: staging writes it
+/// first, into a fresh copy, and refuses a tree that already has one.
+pub(crate) fn rerun_if_staged(root: &std::path::Path) {
+    let stamp = root.join(".horizon-source-staged");
+    if stamp.is_file() {
+        rerun_if_changed(&stamp.display());
+    }
+}
+
 /// Tells the build script's Cargo to rerun it when `path` changes.
 pub(crate) fn rerun_if_changed(path: &impl std::fmt::Display) {
+    #[cfg(test)]
+    CAPTURED_RERUNS.with_borrow_mut(|capture| {
+        if let Some(captured) = capture.as_mut() {
+            captured.push(path.to_string());
+        }
+    });
     if !GENERATED_ON_STDOUT.load(std::sync::atomic::Ordering::Relaxed) {
         println!("cargo:rerun-if-changed={path}");
     }
 }
 pub use wire::generate_host as generate_wire_host;
 pub mod internals;
-pub mod internals_table;
 pub mod internals_view;
+pub mod loops;
 pub mod notes;
+pub mod patch;
 pub mod points;
-pub mod sites;
+pub mod replace;
+pub(crate) mod source;
 pub mod staging;
 pub use build::{generate, generate_points, generate_render, write_if_changed};
 pub use notes::generate as generate_hook_notes;
@@ -820,6 +846,20 @@ mod tests {
             param("&mut dyn LevelRandomHost", "self")
         );
         super::host_param::validate(&hit, "test", true, Some(true), false).unwrap();
+        // On both sides a hit's level reads, and its host says which side it is.
+        let hit_both = Hook {
+            side: Side::Both,
+            ..hit.clone()
+        };
+        super::host_param::validate(&hit_both, "test", true, Some(false), false).unwrap();
+        assert_eq!(
+            host_param(&hit_both, Some(false), false),
+            param("LevelSide", "super::mod_api_host::level_side(self)")
+        );
+        assert_eq!(
+            super::host_param::validate(&hit_both, "test", true, Some(false), true).unwrap_err(),
+            "test: this entry takes no host marker"
+        );
         for (hook, mutable) in [
             (hit.clone(), Some(false)),
             (
@@ -971,9 +1011,9 @@ mod tests {
             without_counterparts
         );
         std::fs::write(&first, original).unwrap();
-        let hooks = root.join("crates/horizon-client/src/game/native_hooks/base.rs");
+        let hooks = root.join("crates/horizon-client/src/game/native_hooks/item_picked_up.rs");
         let shipped = std::fs::read_to_string(&hooks).unwrap();
-        let call = "self.fire_item_picked_up(player, item, count, canceled);";
+        let call = "self.fire_item_picked_up(player, item, count, can_pickup);";
         assert_eq!(shipped.matches(call).count(), 1);
         let unfinished = shipped.replace(call, "let _ = (player, item, count);");
         std::fs::write(&hooks, &unfinished).unwrap();
@@ -983,7 +1023,7 @@ mod tests {
                 .starts_with("missing dispatch_item_picked_up call in native_item_picked_up: ")
         );
         assert_eq!(std::fs::read_to_string(&hooks).unwrap(), unfinished);
-        let placeholder = shipped.replace(call, "let _ = (player, item, count, canceled);");
+        let placeholder = shipped.replace(call, "let _ = (player, item, count, can_pickup);");
         std::fs::write(&hooks, &placeholder).unwrap();
         assert_eq!(
             super::sources(&root, super::FillMode::Require).unwrap_err(),
@@ -1039,7 +1079,6 @@ mod tests {
                 .unwrap()
                 .hooks,
         );
-        super::sources(&root, super::FillMode::Require).unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 

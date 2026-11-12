@@ -27,7 +27,7 @@ impl Hooks for Mirror {
 fn logged_lines_reach_a_listener_but_not_its_own() {
     let heard = Arc::new(Mutex::new(Vec::new()));
     let mods = vec![mod_api::ModEntry::new("mirror", Box::new(Mirror(heard.clone())))].into();
-    mod_api::testing::with_mods(mods, || {
+    mod_platform::testing::with_mods(mods, || {
         with_guests(|game| {
             game.native_console_lines();
             logging::write_as("Server thread", log::Level::Warn, "console probe 1");

@@ -1214,7 +1214,7 @@ mod tests {
         // without this the test passes only after another test in the process installed them.
         crate::game::api_values::install_stack_hooks();
         let mods = vec![mod_api::ModEntry::new("plated", Box::new(Plated))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             with_game(|game| {
                 spawn(game);
                 let chestplate = stack("minecraft:netherite_chestplate");

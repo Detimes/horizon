@@ -26,7 +26,7 @@ impl Hooks for Wall {
 fn a_cancelled_move_teleports_the_player_back() {
     let heard = Arc::new(Mutex::new(Vec::new()));
     let mods = vec![mod_api::ModEntry::new("wall", Box::new(Wall(heard.clone())))].into();
-    mod_api::testing::with_mods(mods, || {
+    mod_platform::testing::with_mods(mods, || {
         with_guests(|game| {
             let i = game.guest_index(13).unwrap();
             let set = |game: &mut super::Game<'_>, position: [f64; 3], yaw: f32| {

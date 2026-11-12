@@ -140,14 +140,18 @@ mod update;
 mod weather;
 
 #[cfg(test)]
+mod fire_tests;
+#[cfg(test)]
 mod growth_tests;
+#[cfg(test)]
+mod piston_carry_tests;
 #[cfg(test)]
 mod survive_tests;
 #[cfg(test)]
 mod tests;
 
 pub use bonemeal::{BonemealCheck, TemplateSettings};
-pub use buckets::{BucketContent, fluid_bucket, fluid_pickup_sound};
+pub use buckets::{BucketContent, fluid_bucket, fluid_empty_sound, fluid_pickup_sound};
 pub use data::{BlockData, ItemBinding, ItemKind, Named, Props, PushReaction, StateFacts, Tags};
 pub use falling::Landing;
 pub use fluids::{
@@ -155,6 +159,21 @@ pub use fluids::{
     fluid_randomly_ticks, fluid_tick_delay,
 };
 
+/// A write a block's part asks for when an entity is inside it (`Block.entityInside`'s
+/// own `setBlockAndUpdate` or `destroyBlock`), at the block the entity touched. The
+/// level applies each once the entity's batch has ticked, in the order asked, if the
+/// block is still the state the entity touched: the same contract as [`LandingWrite`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InsideWrite {
+    /// `Level.setBlockAndUpdate(pos, state)`: a pressure plate a part pressed.
+    SetBlock(BlockStateId),
+    /// `Level.destroyBlock(pos, drop)`: the block gone, with its drops or without.
+    DestroyBlock {
+        /// Whether the block drops its resources.
+        drop: bool,
+    },
+}
 /// A write a block's part asks for when an entity lands on it (`Block.fallOn`'s own
 /// `setBlockAndUpdate` or `destroyBlock`), at the block the entity landed on. The level
 /// applies each once the entity's batch has ticked, in the order asked.
@@ -538,6 +557,18 @@ pub trait LevelAccess: BlockEntityNeighbors {
     fn allow_bell_ring(&self, _pos: BlockPos) -> bool {
         true
     }
+    /// The sound type `state`, just placed at `pos`, plays its place sound from
+    /// (`IBlockExtension.getSoundType`): `sounds`, its own, unless a mod's block part answers
+    /// another (`BlockItem.place`, asked with the placing player, or none when nothing places
+    /// it, such as a dispenser). The default keeps the block's own.
+    fn place_sound_type(
+        &self,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        sounds: Arc<data::Sounds>,
+    ) -> Arc<data::Sounds> {
+        sounds
+    }
     fn allow_cauldron_level_change(
         &self,
         _pos: BlockPos,
@@ -740,12 +771,56 @@ pub trait LevelAccess: BlockEntityNeighbors {
     fn is_client_side(&self) -> bool {
         false
     }
-    /// `FireBlock`'s flammability table for `state`'s block, before the
-    /// table answers it: `(igniteOdds, burnOdds)`, as `FireBlock.setFlammable`
-    /// sets them. Fire spread, burning out and where fire can stand read it;
-    /// a waterlogged state never burns and isn't asked. An answer put in
-    /// `odds` is the result. The default does nothing.
-    fn before_fire_odds(&self, _state: BlockStateId, _odds: &mut Option<(i32, i32)>) {}
+    /// `FireBlock`'s flammability table for `state` at `pos`, asked from its
+    /// side `face` (the one facing the fire, or the air fire may take), before
+    /// the table answers it: `(igniteOdds, burnOdds)`, as
+    /// `FireBlock.setFlammable` sets them. Fire spread, burning out and where
+    /// fire can stand read it; a waterlogged state never burns and isn't
+    /// asked. An answer put in `odds` is the result, clamped to 0 to 100. The
+    /// default does nothing.
+    fn before_fire_odds(
+        &self,
+        _state: BlockStateId,
+        _pos: BlockPos,
+        _face: Direction,
+        _odds: &mut Option<(i32, i32)>,
+    ) {
+    }
+    /// Whether the block `state` at `pos`, under a fire, keeps it burning
+    /// (`FireBlock.tick`'s `DimensionType.infiniburn` check), before the
+    /// dimension's tag answers it. An answer put in `source` is the result.
+    /// The default does nothing.
+    fn before_is_fire_source(
+        &self,
+        _state: BlockStateId,
+        _pos: BlockPos,
+        _source: &mut Option<bool>,
+    ) {
+    }
+    /// `LavaFluid.isFlammable` for the block `state` at `pos`, asked from its
+    /// side `face` (the one facing the air the fire would take), before the
+    /// state's `IGNITED_BY_LAVA` flag answers it. An answer put in `ignites`
+    /// is the result. The default does nothing.
+    fn before_ignited_by_lava(
+        &self,
+        _state: BlockStateId,
+        _pos: BlockPos,
+        _face: Direction,
+        _ignites: &mut Option<bool>,
+    ) {
+    }
+    /// Fire burned the block `state` at `pos` from its side `face`, the one
+    /// facing the fire (`FireBlock.checkBurnOut`), after the cell became fire
+    /// or air and after a TNT-class block primed. `ticks` schedules the ticks
+    /// the level's writes schedule. The default does nothing.
+    fn on_caught_fire(
+        &mut self,
+        _ticks: &mut Ticks,
+        _state: BlockStateId,
+        _pos: BlockPos,
+        _face: Direction,
+    ) {
+    }
     /// `CampfireBlock.isSmokeSource(state)` for the block under a campfire,
     /// before vanilla's rule (a hay bale) answers it: true makes the campfire
     /// a signal fire. An answer put in `smoke` is the result. The default
@@ -901,6 +976,27 @@ pub trait LevelAccess: BlockEntityNeighbors {
     ) -> bool {
         vanilla
     }
+    /// `PistonStructureResolver`'s slime test (`IBlockExtension.isSlimeBlock`) of `state`
+    /// once vanilla answered `vanilla` (a slime block): the answer to use. The default keeps it.
+    fn adjust_is_slime_block(&self, _state: BlockStateId, vanilla: bool) -> bool {
+        vanilla
+    }
+    /// `PistonStructureResolver.isSticky` (`IBlockExtension.isStickyBlock`) of `state` once
+    /// vanilla answered `vanilla` (a slime or honey block): the answer to use. The default
+    /// keeps it.
+    fn adjust_is_sticky_block(&self, _state: BlockStateId, vanilla: bool) -> bool {
+        vanilla
+    }
+    /// `IBlockExtension.canStickTo`: whether `state` sticks to the `other` beside it once the
+    /// library answered `vanilla`: the answer to use. The default keeps it.
+    fn adjust_can_stick_to(
+        &self,
+        _state: BlockStateId,
+        _other: BlockStateId,
+        vanilla: bool,
+    ) -> bool {
+        vanilla
+    }
     /// Whether redstone wire connection queries need the level hook.
     fn has_redstone_wire_connection_hook(&self) -> bool {
         false
@@ -1031,11 +1127,38 @@ pub trait LevelAccess: BlockEntityNeighbors {
         false
     }
     /// Whether a block entity a mod made lives at `pos` (`native_block_entity`),
-    /// whatever its block's template: it is removed with its block and no piston
-    /// moves it, as for a template that has one.
+    /// whatever its block's template: it is removed with its block, as for a
+    /// template that has one, and a piston moves it only when the block's
+    /// part answers `Some(true)` ([`Self::adjust_piston_carries_block_entity`]).
     fn has_mod_block_entity(&self, _pos: BlockPos) -> bool {
         false
     }
+    /// The `piston_carries_block_entity` hook (Horizon's own) for the block
+    /// `state` at `pos`, asked at the last step of `PistonBaseBlock.isPushable`, for a block that got
+    /// past its push reaction: `Some(false)` keeps it in place, `Some(true)`
+    /// lets a piston move it with its block entity, and `None` keeps
+    /// vanilla's rule (a block with a block entity does not move). The default
+    /// answers `None`.
+    fn adjust_piston_carries_block_entity(
+        &self,
+        _pos: BlockPos,
+        _state: BlockStateId,
+    ) -> Option<bool> {
+        None
+    }
+    /// Take the block entity at `from` out of the level with its
+    /// attachments, running none of its removal side effects, for the moving
+    /// piston `PistonBaseBlock.moveBlocks` puts at `to`, which holds it until
+    /// its block lands. Levels without block entities do nothing.
+    fn carry_block_entity(&mut self, _from: BlockPos, _to: BlockPos) {}
+    /// Install the block entity the moving piston at `pos` carried there, as
+    /// a new block entity of that position. False when it carried none.
+    fn land_block_entity(&mut self, _pos: BlockPos) -> bool {
+        false
+    }
+    /// Drop the block entity the moving piston at `pos` carried, without
+    /// installing it: a client's copy, once the server's block replaced it.
+    fn discard_carried_block_entity(&mut self, _pos: BlockPos) {}
     /// `ShulkerBoxBlockEntity.isClosed` at `pos`: whether the box's lid is
     /// still shut. None when no shulker box block entity lives there, or the
     /// level keeps none: vanilla then reads the box as closed, a full cube.
@@ -1418,6 +1541,22 @@ impl Behaviours {
             sim.update_neighbour_for_output_signal(pos, block);
         }
     }
+    /// `ShulkerBoxBlockEntity.doNeighborUpdates`: the box's collision shape
+    /// changes with its lid, so the neighbours' shapes are updated (flag 3)
+    /// and then their `neighborChanged` runs, at the four points in `tick`
+    /// where the lid starts or finishes opening or closing.
+    pub fn shulker_neighbor_updates<L: LevelAccess + ?Sized>(
+        &self,
+        level: &mut L,
+        ticks: &mut Ticks,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) {
+        let mut sim = self.sim(level, ticks);
+        sim.update_neighbour_shapes(state, pos, 3, flags::UPDATE_LIMIT);
+        let block = sim.block_of(state);
+        sim.update_neighbors_at(pos, block);
+    }
     /// `Level.updateNeighborsAt(pos, block)`: notify the six neighbours.
     pub fn update_neighbors_at<L: LevelAccess + ?Sized>(
         &self,
@@ -1799,3 +1938,5 @@ mod dimension_key_tests {
 
 #[cfg(test)]
 mod block_entity_neighbor_tests;
+
+mod piston_reactions;

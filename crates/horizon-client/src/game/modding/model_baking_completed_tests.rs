@@ -5,8 +5,9 @@ use super::native_entity_refs::tests::with_client_game;
 use super::packs::ReloadKind;
 use mod_api::{
     ClientHost, ClientResourcesReloadedEvent, ClientSetupEvent, Hooks, Identifier, ModEntry,
-    ModelBakingCompletedEvent, ModelError, ModelRef, TextureAtlasStitchedEvent, testing::with_mods,
+    ModelBakingCompletedEvent, ModelError, ModelRef, TextureAtlasStitchedEvent,
 };
+use mod_platform::testing::with_mods;
 use std::sync::{Arc, Mutex};
 
 /// The standalone model the mod asked for, installed by the fixture as `standalone_models`

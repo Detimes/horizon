@@ -171,8 +171,20 @@ impl ItemEnv for Env<'_, '_> {
                 models,
             });
     }
-    fn stack_fluid(&self, stack: &StackView) -> Option<String> {
-        horizon_client::fluid_models::held_fluid(&stack.item).map(str::to_owned)
+    fn stack_fluid(&self, stack: &StackView) -> Option<&str> {
+        // Vanilla's items keep vanilla's closed set; only a mod's own item asks its parts.
+        if stack.item.starts_with("minecraft:") {
+            return horizon_client::fluid_models::held_fluid(&stack.item);
+        }
+        if !mod_api::__private::item_listens(mod_api::HookId::ContainedFluid, &stack.item) {
+            return None;
+        }
+        let Ok(snapshot) = stack.try_into_api() else {
+            return None;
+        };
+        let mut fluid = None;
+        self.game.native_contained_fluid(&snapshot, &mut fluid);
+        drawn_contained_fluid(&stack.item, fluid?)
     }
     fn fluid_appearance(&self, fluid: &str) -> Option<FluidAppearance> {
         horizon_client::fluid_models::item_appearance(fluid)
@@ -232,6 +244,29 @@ impl ItemEnv for Env<'_, '_> {
         let nanos = self.game.started.elapsed().subsec_nanos();
         (nanos % 1_000_000) as f32 / 1_000_000.0
     }
+}
+/// The fluid a mod's `contained_fluid` answer `key` draws in a stack of `item`: none (the stack
+/// draws as holding none) for a key no fluid is registered under, logged the first time an item
+/// answers so. A registered fluid with no look in an item is drawn, as the missing sprite.
+fn drawn_contained_fluid(item: &str, key: mod_api::FluidKey) -> Option<&'static str> {
+    let fluid = mod_api::__private::fluid_id(key);
+    if fluid.is_none() && first_unregistered_answer(item) {
+        log::warn!(
+            "contained_fluid for {item} answered a fluid key no fluid is registered under: drawn as holding none"
+        );
+    }
+    fluid
+}
+/// Whether `item` answers an unregistered fluid key for the first time: only that path reads the
+/// list, so a stack that draws pays nothing for it.
+fn first_unregistered_answer(item: &str) -> bool {
+    static REPORTED: std::sync::Mutex<Vec<Box<str>>> = std::sync::Mutex::new(Vec::new());
+    let mut reported = REPORTED.lock().unwrap_or_else(|poison| poison.into_inner());
+    if reported.iter().any(|seen| &**seen == item) {
+        return false;
+    }
+    reported.push(item.into());
+    true
 }
 /// The days since 1970-01-01 as a civil (year, month, day) date.
 fn civil(days: i64) -> (i64, u32, u32) {
@@ -572,7 +607,7 @@ impl Game<'_> {
         light: u32,
         out: &mut Vec<Vertex>,
     ) {
-        let lights = diffuse_lights(self.dim == Dim::Nether);
+        let lights = diffuse_lights(self.nether_lighting());
         self.submit_item_lit(state, pose, light, lights, out);
     }
     /// [`Self::submit_item_world`] shaded by other diffuse lights (a
@@ -674,7 +709,7 @@ impl Game<'_> {
         light: u32,
         skinned: &mut super::creatures::Skinned,
     ) -> bool {
-        let lights = diffuse_lights(self.dim == Dim::Nether);
+        let lights = diffuse_lights(self.nether_lighting());
         let Some((mark, bounds)) = self.submit_item_skinned(state, &[pose], light, lights) else {
             return false;
         };
@@ -938,7 +973,7 @@ mod tests {
         let stack = StackView::new("minecraft:stick", 1);
 
         let mods: mod_api::Mods = vec![ModEntry::new("quiet", Box::new(Quiet))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 assert!(!mod_api::__private::listened(HookId::ItemModelProperty));
@@ -951,7 +986,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let mods: mod_api::Mods =
             vec![ModEntry::new("charged", Box::new(Charged(calls.clone())))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 for _ in 0..3 {
@@ -989,7 +1024,7 @@ mod tests {
     fn a_mod_registers_its_range_select_item_model_property() {
         use mod_api::__private::game::*;
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("fill", Box::new(Fill))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             let mut properties = Vec::new();
             Game::native_register_range_select_item_model_property(
                 &mod_api::RegistrationContext::new(),
@@ -1005,14 +1040,14 @@ mod tests {
     fn item_model_range_property_reads_the_mods_number() {
         let stack = StackView::new("minecraft:stick", 16);
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("fill", Box::new(Fill))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 assert_eq!(env.item_model_range_property("example:fill", &stack), 0.25);
                 assert_eq!(env.item_model_range_property("other:fill", &stack), 0.0);
             });
         });
-        mod_api::testing::with_mods(Vec::new().into(), || {
+        mod_platform::testing::with_mods(Vec::new().into(), || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 assert_eq!(env.item_model_range_property("example:fill", &stack), 0.0);
@@ -1053,7 +1088,7 @@ mod tests {
     fn a_mod_registers_its_select_item_model_property() {
         use mod_api::__private::game::*;
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("mode", Box::new(Mode))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             let mut properties = Vec::new();
             Game::native_register_select_item_model_property(
                 &mod_api::RegistrationContext::new(),
@@ -1068,7 +1103,7 @@ mod tests {
     #[ignore = "needs prepared resources"]
     fn item_model_select_property_reads_the_mods_value() {
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("mode", Box::new(Mode))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 let one = StackView::new("minecraft:stick", 1);
@@ -1086,7 +1121,7 @@ mod tests {
                 assert_eq!(env.item_model_select_property("other:mode", &one), None);
             });
         });
-        mod_api::testing::with_mods(Vec::new().into(), || {
+        mod_platform::testing::with_mods(Vec::new().into(), || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 let one = StackView::new("minecraft:stick", 1);
@@ -1238,7 +1273,7 @@ mod tests {
             models
         };
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("cellmod", Box::new(Cell))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             let mut types = Vec::new();
             Game::native_register_item_models(&mod_api::RegistrationContext::new(), &mut types);
             assert_eq!(types, ["cellmod:cell"]);
@@ -1260,7 +1295,7 @@ mod tests {
                 assert!(drawn(&env, "othermod:cell", 2, &on_ground).is_empty());
             });
         });
-        mod_api::testing::with_mods(Vec::new().into(), || {
+        mod_platform::testing::with_mods(Vec::new().into(), || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 assert!(drawn(&Env { game }, "cellmod:cell", 2, &on_ground).is_empty());
             });
@@ -1272,7 +1307,7 @@ mod tests {
     fn a_mod_registers_its_item_tint_source() {
         use mod_api::__private::game::*;
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("charge", Box::new(Charge))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             let mut sources = Vec::new();
             Game::native_register_item_tint_sources(
                 &mod_api::RegistrationContext::new(),
@@ -1293,7 +1328,7 @@ mod tests {
         let one = StackView::new("minecraft:stick", 1);
         let two = StackView::new("minecraft:stick", 2);
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new("charge", Box::new(Charge))].into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 let color = |source, stack| env.item_tint_source(source, &config, stack) as u32;
@@ -1302,7 +1337,7 @@ mod tests {
                 assert_eq!(color("other:charge", &one), 0xFFFF_FFFF);
             });
         });
-        mod_api::testing::with_mods(Vec::new().into(), || {
+        mod_platform::testing::with_mods(Vec::new().into(), || {
             super::super::native_entity_refs::tests::with_game(|game| {
                 let env = Env { game };
                 assert_eq!(env.item_tint_source("example:charge", &config, &one), -1);

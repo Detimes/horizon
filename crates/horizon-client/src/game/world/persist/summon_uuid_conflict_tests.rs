@@ -69,6 +69,75 @@ fn constructed_and_saved_mob_uuids_survive_repeated_reconstruction() {
     });
 }
 
+fn positioned(kind: &str, uuid: Option<[i32; 4]>) -> Tag {
+    let pos = |v: f64| Tag::Double(v.to_bits());
+    let mut tag = Tag::compound([
+        ("id", Tag::String(kind.into())),
+        ("Pos", Tag::List(vec![pos(4.5), pos(64.0), pos(4.5)])),
+    ]);
+    if let (Some(uuid), Tag::Compound(fields)) = (uuid, &mut tag) {
+        fields.insert("UUID".into(), Tag::IntArray(uuid.to_vec()));
+    }
+    tag
+}
+
+#[test]
+#[ignore = "needs prepared resources and a scratch HORIZON_HOME"]
+fn cloud_fangs_and_kept_entities_keep_their_constructor_uuid() {
+    // Opt in only in a fresh child; never mutate the parallel parent's environment.
+    if crate::game::native_entity_refs::tests::run_fresh_cases(
+        "game::persist::summon_uuid_conflict_tests::cloud_fangs_and_kept_entities_keep_their_constructor_uuid",
+        "HORIZON_TEST_SEEDS",
+        &["1"],
+    ) {
+        return;
+    }
+    use horizon_core::random::RandomSource;
+
+    // Independent Java LCG calculation, as in the mob test above: uniquifier 12345
+    // gives this Entity.random's first two nextLongs, the UUID. The constructor takes
+    // exactly one uniquifier step, so the next Entity.random is the one the uniquifier
+    // squared seeds, whose first nextInt is below.
+    const CONSTRUCTOR_UUID: [i32; 4] = [1462068314, 225001827, -1901508738, 42864579];
+    const NEXT_ENTITY_FIRST_INT: i32 = -705649180;
+    const SAVED: [i32; 4] = [160, 0, 0, 987];
+    const KINDS: [&str; 3] = [
+        "minecraft:area_effect_cloud",
+        "minecraft:evoker_fangs",
+        "minecraft:marker",
+    ];
+    with_game(|game, _| {
+        for kind in KINDS {
+            for saved in [None, Some(SAVED)] {
+                horizon_client::random_source::set_thread_uniquifier(12345).unwrap();
+                let tag = positioned(kind, saved);
+                let id = if kind == "minecraft:marker" {
+                    game.load_other(tag, kind).unwrap()
+                } else {
+                    game.load_unlisted((0, 0), kind, saved, tag).unwrap();
+                    if kind == "minecraft:evoker_fangs" {
+                        game.fangs.list.last().unwrap().id
+                    } else {
+                        game.breath_clouds.last().unwrap().id
+                    }
+                };
+                let expected = saved.unwrap_or(CONSTRUCTOR_UUID);
+                assert_eq!(game.persist.uuid_of(id), Some(expected), "{kind} {saved:?}");
+                assert_eq!(
+                    game.uuid_for(id),
+                    expected,
+                    "{kind} {saved:?}: saving draws no second UUID"
+                );
+                assert_eq!(
+                    horizon_client::random_source::entity().next_int(),
+                    NEXT_ENTITY_FIRST_INT,
+                    "{kind} {saved:?}: one constructor draw"
+                );
+            }
+        }
+    });
+}
+
 const PIG: &str = "NoAI:1b,NoGravity:1b,PersistenceRequired:1b,Silent:1b";
 
 fn pig(tag: &str, n: i32, riders: &str) -> String {

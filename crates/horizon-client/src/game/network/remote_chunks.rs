@@ -373,15 +373,38 @@ pub(super) enum Next {
 }
 
 impl Game<'_> {
-    /// A chunk packet's column was adopted. The dispatch point for the
-    /// client side of `chunk_load` (the client chunk seam, milestone 8);
-    /// event dispatch is added separately.
-    pub(in crate::game) fn client_chunk_load(&mut self, _x: i32, _z: i32) {}
+    /// A chunk packet's column was adopted, with its block entities in the
+    /// level: the client chunk seam (milestone 8) tells `client_chunk_load`.
+    pub(in crate::game) fn client_chunk_load(&mut self, x: i32, z: i32) {
+        if !mod_api::__private::listened(mod_api::HookId::ClientChunkLoad) {
+            return;
+        }
+        if let Some(dimension) = self.client_chunk_dimension() {
+            self.native_client_chunk_load(&dimension, [x, z]);
+        }
+    }
 
     /// A resident column was freed, whichever route freed it — the last
-    /// event for it. The dispatch point for the client side of
-    /// `chunk_unload`; event dispatch is added separately.
-    pub(in crate::game) fn client_chunk_unload(&mut self, _x: i32, _z: i32) {}
+    /// event for it, its data still there. Tells `client_chunk_unload` and,
+    /// when the level stays (`level_stays`), `on_chunk_unloaded`: a level that
+    /// goes takes its block entities with it.
+    pub(in crate::game) fn client_chunk_unload(&mut self, x: i32, z: i32, level_stays: bool) {
+        if mod_api::__private::listened(mod_api::HookId::ClientChunkUnload)
+            && let Some(dimension) = self.client_chunk_dimension()
+        {
+            self.native_client_chunk_unload(&dimension, [x, z]);
+        }
+        if level_stays && let Some(level) = self.native_client_level() {
+            self.notify_chunk_block_entities_unloaded(level, (x, z));
+        }
+    }
+
+    /// The client level's dimension, as the server named it, for the client
+    /// chunk hooks: none off a server (an integrated world's chunks are the
+    /// server's `chunk_load` and `chunk_unload`).
+    fn client_chunk_dimension(&self) -> Option<String> {
+        self.remote.as_ref()?.heard_level.clone()
+    }
 }
 
 impl Game<'_> {
@@ -418,9 +441,6 @@ impl Game<'_> {
             }
         };
         let (x, z) = (p.x, p.z);
-        // The client chunk seam: one load per packet adoption, a re-sent
-        // position included (below). A biome packet takes neither path.
-        self.client_chunk_load(x, z);
         // A column sent again while it is resident (a bulk edit): only what changed is lit and meshed again.
         let resident = self.world.chunks.contains_key(&(x, z));
         if resident {
@@ -445,7 +465,12 @@ impl Game<'_> {
             let state = self.world.block(pos.0, pos.1, pos.2);
             self.sync_block_entity(pos, None, state);
             // LevelChunk.replaceWithPacketData: the block entity loads its update tag.
-            self.remote_block_entity_data([pos.0, pos.1, pos.2], info.kind, &info.tag);
+            self.remote_block_entity_data(
+                [pos.0, pos.1, pos.2],
+                info.kind,
+                mod_api::BlockEntityDataSource::Chunk,
+                &info.tag,
+            );
             self.bind_remote_attachment(Holder::BlockEntity([pos.0, pos.1, pos.2]));
         }
         // After the column's block entities load: an attachment keeps its block entity if the
@@ -459,6 +484,12 @@ impl Game<'_> {
                 _ => true,
             });
         }
+        // Asked once the packet's block entities and attachments are in, so a part reading them
+        // sees this column's data.
+        self.ask_chunk_light_emission((x, z));
+        // The client chunk seam: one load per packet adoption, a re-sent position included,
+        // once the column and its block entities are in. A biome packet takes neither path.
+        self.client_chunk_load(x, z);
     }
 
     /// `ClientPacketListener.handleChunksBiomes`: each loaded column takes
@@ -515,6 +546,7 @@ impl Game<'_> {
             format.has_skylight,
         );
         Streaming::light_updated(&mut self.world, p.x, p.z, &changed);
+        self.ask_updated_light_emission((p.x, p.z), &changed);
     }
 }
 

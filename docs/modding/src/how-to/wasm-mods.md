@@ -36,6 +36,8 @@ the game by the launcher ([Native mods](native-mods.md)), or to `mod.wasm`, whic
 the same mod API runs with no rebuild. Only the build step differs: the hooks, Parts,
 `[dependencies]` and the manifest mean the same for both.
 
+The example counts ticks with the `server_tick` hook, so it also works on plain game builds.
+
 ```rust,ignore
 {{#include ../../examples/wasm-hello/src/lib.rs:mod}}
 ```
@@ -159,9 +161,7 @@ owner enable flag and stop behavior as native listeners. Mixins remain native-on
 
 A point's record is a copy of every parameter as an API value, `&mut` parameters copied back
 after the listener, exactly as for a native listener; a point with a parameter that has no API type
-yet refuses an `api` listener at registration, naming it. `access = "internals"` (raw records,
-call kinds, support modules) is native-only: a `mod.wasm` declaring `[[internals]]` or an internals
-injection is refused at load with "internals access is native-only".
+yet refuses an `api` listener at registration, naming it. The removed `access` key on `[[inject]]` is refused by name on both targets. Native code needing game internals uses `[[native.mixin]]`; wasm cannot declare `[[internals]]` or native transformations.
 
 ## ABI reference
 
@@ -252,6 +252,30 @@ refused. On Windows, persistent caching is disabled until owner, DACL and inheri
 can be verified for the cache folder and opened entries. Modules compile from wasm instead,
 with one warning explaining the fallback. The player's account is the trust boundary.
 
+At startup, the game removes regular `.cwasm` files from other engine configurations or
+Wasmtime versions, along with malformed and old-format cache names. It never follows symlinks
+for cleanup. Current-engine entries have a 1 GiB startup budget: when their combined size
+exceeds it, entries are removed oldest first by modification time until within the budget.
+Current entries are not removed just because they are old. Entries written during this launch
+are retained until a later startup. The proposed budget allows 30 copies of the largest
+measured compiled module (34,039,320 bytes) plus headroom; the 30-module allowance awaits
+maintainer confirmation and does not represent a measured pack.
+
 A failed check logs the reason once per launch. Unavailable, corrupt or incompatible entries
 fall back to compiling the wasm. Writes replace entries atomically without changing files that
 running modules have mapped. Deleting the cache is always safe: the next launch rebuilds it.
+
+## Guest stack
+
+Every wasm mod has the same 128 MiB guest stack limit; manifests cannot change it.
+At the reporter's measured ceiling of about 1.8 KB per frame, this covers about
+70,000 plain frames (Java's deepest reported case was about 59,000). Frame sizes
+vary with compiled code. Guest overflow still traps and names the mod.
+Guest-entering threads reserve another 8 MiB for host frames. Linux raises the
+main stack limit and re-execs before initialization, or refuses startup with
+`GuestStackUnavailable` when the hard limit is too low. Windows and macOS use
+executable linker stack reservations. These reserve address space; resident
+memory grows as stack pages are touched.
+
+Wasm runtime tests reserve their guest stack through a shared test helper;
+local `cargo test` and CI need no `RUST_MIN_STACK` setting.

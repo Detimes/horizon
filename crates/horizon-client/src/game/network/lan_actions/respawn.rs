@@ -14,7 +14,8 @@ impl Game<'_> {
         if !host.hub.guests[i].dead {
             return;
         }
-        let uuid = host.hub.guests[i].uuid;
+        let (uuid, entity_id) = (host.hub.guests[i].uuid, host.hub.guests[i].entity_id);
+        let original = self.capture_original_player(conn);
         // PlayerList.respawn replaces the player, retaining only opted-in data.
         if let Some(attachments) = self
             .lan
@@ -25,6 +26,8 @@ impl Game<'_> {
             attachments.replace_contents(copy);
         }
         self.reinitialize_server_player(uuid, conn);
+        // The new `ServerPlayer` is filed where it is placed, untold.
+        self.entity_section_forget(entity_id as u32);
         // PlayerList.respawn removes the dead player (Player.remove).
         self.guest_drop_carried(i);
         // AbstractContainerScreen.tick / ServerPlayer.closeContainer: the dead
@@ -132,18 +135,23 @@ impl Game<'_> {
                 progress: g.xp_progress,
                 total: g.xp_total,
             };
-            xp.respawn(
-                self.ui
-                    .rules
-                    .bool_at(horizon_client::gamerules::vanilla::KEEP_INVENTORY)
-                    || g.game_mode == SPECTATOR,
-            );
+            let keep_inventory = self
+                .ui
+                .rules
+                .bool_at(horizon_client::gamerules::vanilla::KEEP_INVENTORY)
+                || g.game_mode == SPECTATOR;
+            xp.respawn(keep_inventory);
+            g.effects = Default::default();
             (g.xp_level, g.xp_progress, g.xp_total) = (xp.level, xp.progress, xp.total);
             // PlayerEvent.Clone, at the end of `restoreFrom`: the data is copied,
             // the new player not yet placed.
             (g.uuid, g.name.clone())
         });
-        self.native_player_clone(cloned, &name, true);
+        if let Some(original) = original {
+            self.with_original_player(original, |game, original| {
+                game.native_player_clone(cloned, &name, true, original);
+            });
+        }
         let clock_rate = self.network_clock_rate();
         let ctx = TickCtx {
             world: &mut self.world,
@@ -397,7 +405,7 @@ impl Game<'_> {
                 let me = self.player_text(&name, uuid);
                 let text = match cause {
                     Some(key) => horizon_client::text::Text::translate(&key, &[me]),
-                    None if at[1] < f64::from(self.world.bottom_y() - 64) => {
+                    None if at[1] < self.world.below_world_y() => {
                         horizon_client::text::Text::translate("death.attack.outOfWorld", &[me])
                     }
                     None => self.guest_death_message(conn, me),

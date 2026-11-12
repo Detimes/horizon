@@ -88,8 +88,9 @@ mod tests {
     use horizon_world::native_load_context::{DataLoadOrigin, LoadContext, LoadInputs};
     use mod_api::{
         AlterGroundEvent, GroundLevel, GroundProvider, GroundStateProvider, Hooks, ModEntry,
-        WorldgenHost, testing,
+        WorldgenHost,
     };
+    use mod_platform::testing;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 

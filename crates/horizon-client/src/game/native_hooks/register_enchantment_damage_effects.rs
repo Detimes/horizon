@@ -16,8 +16,9 @@ mod tests {
     use horizon_core::geometry::Vec3;
     use mod_api::{
         EnchantmentDamageContext, EnchantmentDamageEffect, Hooks, ModEntry,
-        RegisterEnchantmentDamageEffectsEvent, ServerHost, testing::with_mods,
+        RegisterEnchantmentDamageEffectsEvent, ServerHost,
     };
+    use mod_platform::testing::with_mods;
     use std::sync::{Arc, Mutex};
 
     type Observations = Arc<Mutex<Vec<(u32, u32, String, u32, f32)>>>;

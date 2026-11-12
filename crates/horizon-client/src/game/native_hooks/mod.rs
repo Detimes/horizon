@@ -12,7 +12,7 @@ pub(in crate::game) use fire::{
     BlockDropsCall, BlockScreenEffectDrawCall, ConnectsToCall, EntityChangeBlockPreCall,
     ItemAfterVerticalCollisionCall, UpdateShapeCall,
 };
-use mod_api::BlockEntityRef;
+use mod_api::{BlockEntityDataSource, BlockEntityRef};
 
 use super::native_data_maps::DataMapType;
 use super::{
@@ -73,11 +73,12 @@ use mod_api::{
     CauldronInteractions, ClientAudioOptions, ClientChatOptions, ClientGraphicsOptions,
     ClientGuiOptions, ClientInputOptions, ClientMiningPrediction, ClientModifiers,
     ClientReloadListeners, ColorResolvers, CommandInvocation, EnchantmentDamageEffects,
-    EnchantmentInfo, EntityRef, GameRuleActor, HandRender, InteractionAttempt, InteractionKey,
-    JsonAnimationType, LayerDefinition, LifecycleContext, LivingRef, NoteBlockChange,
-    ParticleProviders, PathComputationType, Placement, PlayerRef, PoiTypeExtensions,
-    RecipeBookCategory, ScreenId, ScreenOpening, ScreenshotImage, ServerReloadListeners,
-    ServerTickPhase, TicketController, ToolUse, VillagerProfessions, WorldPhase,
+    EnchantmentInfo, EntityRef, GameRuleActor, HandRender, InsideEffects, InteractionAttempt,
+    InteractionKey, JsonAnimationType, LayerDefinition, LifecycleContext, LivingRef,
+    LoadConditions, NoteBlockChange, ParticleProviders, PathComputationType, Placement, PlayerRef,
+    PoiTypeExtensions, RecipeBookCategory, ScreenId, ScreenOpening, ScreenshotImage,
+    ServerReloadListeners, ServerTickPhase, TicketController, ToolUse, VillagerProfessions,
+    WorldPhase,
 };
 use mod_api::{
     ActiveEffect, AttachmentStore, BlockClick, BlockUpdateFlags, BonemealSource, ChunkRef,
@@ -115,6 +116,7 @@ use {
 
 include!(concat!(env!("OUT_DIR"), "/native_hook_modules.rs"));
 pub(in crate::game) use add_attribute_tooltips::HookedAttributeTooltips;
+pub(in crate::game) use bounce_restitution::install_block_contact_hooks;
 pub(in crate::game) use fishing_medium::NativeFishingMedium;
 pub(in crate::game) use living_change_target::NativeHookHost;
 include!("shared.rs");

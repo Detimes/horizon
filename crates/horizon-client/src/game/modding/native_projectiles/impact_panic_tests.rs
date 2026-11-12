@@ -72,7 +72,7 @@ fn shoot_listener_panic_after_admission_preserves_owned_rows() {
             }),
         )]
         .into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             crate::game::native_entity_refs::tests::with_game(|game| {
                 game.enter_level(dimension).unwrap();
                 game.options.dedicated = Some(Vec::new());

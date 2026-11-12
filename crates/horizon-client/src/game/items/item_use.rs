@@ -69,7 +69,7 @@ impl Game<'_> {
         };
         let data = stack.data();
         let mut animation = fixed.unwrap_or_else(|| {
-            if let Some(consumable) = stack.consumable(info) {
+            if let Some(consumable) = self.consumable(stack) {
                 consumable.animation
             } else if self.stack_can_perform(
                 stack,
@@ -139,7 +139,7 @@ impl Game<'_> {
             _ => {
                 if let Some(ticks) = patched_ticks {
                     ticks
-                } else if let Some(consumable) = stack.consumable(info) {
+                } else if let Some(consumable) = self.consumable(stack) {
                     consumable.ticks()
                 } else if patched_blocks
                     || self.stack_carries_blocks_attacks(stack, info)
@@ -161,7 +161,7 @@ impl Game<'_> {
         let info = self.items().get(&stack.item);
         !stack.item.starts_with("minecraft:")
             && info.is_some()
-            && stack.consumable(info).is_none()
+            && self.consumable(stack).is_none()
             && !self.stack_carries_blocks_attacks(stack, info)
             && !stack.carries_component(info, "minecraft:kinetic_weapon")
             && self.use_duration(stack) > 0
@@ -204,8 +204,8 @@ impl Game<'_> {
         self.using = None;
         self.send_use_item_complete();
         self.apply_use_cooldown(stack);
-        if let Some(consumable) = stack.consumable(Some(info)) {
-            self.finish_consuming(info, consumable, stack);
+        if let Some(consumable) = self.consumable(stack) {
+            self.finish_consuming(info, &consumable, stack);
         } else if &*stack.item == "minecraft:spyglass" {
             self.stop_spyglass();
         }
@@ -228,7 +228,10 @@ impl Game<'_> {
     /// `completeUsingItem` (`handleEntityEvent(9)`) ran for `stack` in `slot`.
     /// `ItemStack.finishUsingItem` runs first, as on the client: the use
     /// cooldown, then the hand holds `finish_result`. A mod's result is put in
-    /// the slot; the server's inventory update replaces either.
+    /// the slot; the server's inventory update replaces either. Finishing a use
+    /// sends no creative packet in vanilla (its inventory-slot edits go out
+    /// through the open creative screen's `CreativeInventoryListener`), so the
+    /// slot counts as synced for this client's creative sync.
     pub(super) fn remote_use_item_finished(
         &mut self,
         slot: usize,
@@ -239,7 +242,9 @@ impl Game<'_> {
         let mut result = self.finish_result(stack, info);
         let hand = hand_of(Some((slot, 0))).unwrap_or(self.hand);
         self.native_living_entity_use_item_finish(stack, None, hand, 0, &mut result);
+        let before = self.creative_stacks();
         *self.stack_in_mut(slot) = result.filter(|s| s.count > 0);
+        self.remote_synced_since(&before);
     }
     /// What `Item.finishUsingItem` leaves in the hand on a server's client: a
     /// stack that is not a consumable stays as it is (a spyglass); a
@@ -249,7 +254,7 @@ impl Game<'_> {
     /// remainder of a stack that is not emptied goes to the inventory on the
     /// server and arrives with its inventory update.
     pub(super) fn finish_result(&self, stack: &ItemStack, info: &ItemInfo) -> Option<ItemStack> {
-        if self.creative || stack.consumable(Some(info)).is_none() {
+        if self.creative || self.consumable(stack).is_none() {
             return Some(stack.clone());
         }
         let mut left = stack.clone();
@@ -769,7 +774,7 @@ mod tests {
         let mut overridden_geometry = None;
         let mods: Mods = vec![ModEntry::new("animation", Box::new(Mod(calls.clone())))].into();
         crate::game::api_values::install_parts(&mods).unwrap();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_client_game(|game| {
                 for id in [
                     "minecraft:bow",
@@ -946,7 +951,7 @@ mod tests {
         let mods: Mods = vec![ModEntry::new("hand", Box::new(hooks))].into();
         crate::game::api_values::install_parts(&mods).unwrap();
         let mut drawn = None;
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             super::super::native_entity_refs::tests::with_client_game(|game| {
                 hold_a_sword(game);
                 let kept = game.hand_geometry(0.0);
@@ -1162,7 +1167,7 @@ pub(super) mod interact_vibration_tests {
 
     type RecordedEvent = (&'static str, [f64; 3], Option<horizon_client::mobs::Who>);
     thread_local! {
-        static EVENTS: std::cell::RefCell<Vec<RecordedEvent>> = const { std::cell::RefCell::new(Vec::new()) };
+        pub(in crate::game) static EVENTS: std::cell::RefCell<Vec<RecordedEvent>> = const { std::cell::RefCell::new(Vec::new()) };
         static RECORDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
 
@@ -1179,7 +1184,10 @@ pub(super) mod interact_vibration_tests {
     /// Runs `f` on a windowless game built from the prepared resources with
     /// `held` in the main hand and returns the game events it posted;
     /// `None` without the resources.
-    fn with_game(held: &str, f: impl FnOnce(&mut Game<'_>)) -> Option<Vec<String>> {
+    pub(in crate::game) fn with_game(
+        held: &str,
+        f: impl FnOnce(&mut Game<'_>),
+    ) -> Option<Vec<String>> {
         use crate::game::{Audio, Options, Progress, Settings, load_resources};
         let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES")?);
         let settings = Settings::default();
@@ -1289,7 +1297,7 @@ pub(super) mod interact_vibration_tests {
             Box::new(Reverse(calls.clone())),
         )]
         .into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             with_game("minecraft:stick", |game| {
                 let use_block = |game: &mut Game<'_>, name: &str| {
                     let player = game.use_context();

@@ -312,12 +312,13 @@ impl Game<'_> {
                     g.guest_use = Some(GuestUse::OnBlock(hand));
                     let swings = g.swings_started;
                     let predicted = g.predicted_swings;
-                    let consumed = matches!(g.use_item(), Ok(Some(_)));
-                    // handleUseItemOn: a consuming useItemOn triggers
-                    // ANY_BLOCK_USE with the hand's stack as it now is.
-                    if consumed && !g.use_failed {
-                        g.finish_block_use(hit.pos, hand);
-                    }
+                    let consumed = g.with_block_use_original(hand, |g| {
+                        let consumed = matches!(g.use_item(), Ok(Some(_)));
+                        if consumed && !g.use_failed {
+                            g.finish_block_use(hit.pos, hand);
+                        }
+                        consumed
+                    });
                     (g.forced_hit, g.guest_use) = saved;
                     reset_use_attack_strength(&mut g.attack_ticks, swings, g.swings_started);
                     (
@@ -529,6 +530,9 @@ impl Game<'_> {
                 return Err(ActionRefused::OutOfReach);
             }
         }
+        if self.guest_attack_stops(gi, id) {
+            return Ok(false);
+        }
         // Native mods, where Player.attack starts: the global `attack_entity`,
         // then the held item's `on_left_click_entity` Part. A canceled blow
         // does nothing (game/native_hooks.rs).
@@ -567,13 +571,12 @@ impl Game<'_> {
                 && self.pvp_land(victim, &strike)
             {
                 let on_ground = self.pvp_victim_on_ground(victim);
-                let _ = self.as_guest_at(gi, conn, |g| {
-                    g.weapon_hit_player(on_ground);
-                    g.pvp_exhaustion();
-                    if strike.stops_sprint() {
-                        g.stop_sprint_after_extra_knockback();
-                    }
-                });
+                let stops_sprint = strike.stops_sprint();
+                let sent = self
+                    .as_guest_at(gi, conn, |g| g.pvp_hit_after(on_ground, stops_sprint))
+                    .ok()
+                    .flatten();
+                self.send_guest_motion(conn, sent);
                 return Ok(true);
             }
             return Ok(false);

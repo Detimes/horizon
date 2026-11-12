@@ -86,6 +86,8 @@ pub(crate) fn behavior_block(
 pub(crate) use super::native_ground::alter_ground;
 pub(in crate::game) use super::native_worldgen::prepare as prepare_block_states;
 pub(in crate::game) use block_state::install as install_block_states;
+#[path = "api_values/inside_write.rs"]
+mod inside_write;
 #[path = "api_values/landing_write.rs"]
 mod landing_write;
 #[path = "api_values/recipe_inputs.rs"]
@@ -185,7 +187,7 @@ fn block_definition_import_preserves_defaults_and_is_immutable_after_load() {
         ["s",false,false,"",{"id":"minecraft:stairs","properties":{"facing":"north"}}],
         ["s",false,false,"",{"id":"minecraft:stairs","properties":{"facing":"east"}}]
     ]}"#;
-    mod_api::__private::part_tests::install_parts_fixture(&[]).unwrap();
+    mod_platform::__private::part_tests::install_parts_fixture(&[]).unwrap();
     let registry =
         horizon_world::registry::BlockRegistry::from_facts_json(facts.as_bytes()).unwrap();
     resolve_block_definitions(&registry).unwrap();
@@ -267,7 +269,7 @@ impl TryIntoApi for horizon_world::chunk::BlockState {
 #[test]
 fn block_values_keep_frozen_ordinals_when_world_state_ids_reorder() {
     use horizon_world::registry::{BlockRegistry, BlockStateId};
-    mod_api::__private::part_tests::install_parts_fixture(&[]).unwrap();
+    mod_platform::__private::part_tests::install_parts_fixture(&[]).unwrap();
     let first = r#"{"defaults":{"minecraft:air":0,"minecraft:stairs":2},"states":[["air",true,false,"","minecraft:air"],["s",false,false,"",{"id":"minecraft:stairs","properties":{"facing":"north"}}],["s",false,false,"",{"id":"minecraft:stairs","properties":{"facing":"east"}}]]}"#;
     let first = BlockRegistry::from_facts_json(first.as_bytes()).unwrap();
     resolve_block_definitions(&first).unwrap();
@@ -403,6 +405,7 @@ where
 /// Validate a mod value against the game's registry before admitting it to engine state.
 #[path = "api_values/content_declarations.rs"]
 mod content_declarations;
+pub(in crate::game) use content_declarations::push_reaction;
 
 pub(crate) trait TryIntoEngine<Context: ?Sized = Items> {
     type Engine;
@@ -1525,8 +1528,9 @@ mod attribute_boundary_tests {
     use horizon_items::item_data::ModifierRow;
     use mod_api::{
         AttributeModifier, AttributeOperation, EquipmentSlotGroup, Hooks, Identifier,
-        ItemAttributeModifierEvent, ModEntry, testing::with_mods,
+        ItemAttributeModifierEvent, ModEntry,
     };
+    use mod_platform::testing::with_mods;
     use std::borrow::Cow;
     /// Makes a netherite chestplate heavier: +0.4 knockback resistance in
     /// the chest slot, and no armor toughness.
@@ -1718,7 +1722,8 @@ mod attribute_boundary_tests {
 mod enchantment_boundary_tests {
     use super::EngineStack as ItemStack;
     use crate::enchantment_levels::get_enchantment_level;
-    use mod_api::{GetEnchantmentLevelEvent, Hooks, Identifier, ModEntry, testing::with_mods};
+    use mod_api::{GetEnchantmentLevelEvent, Hooks, Identifier, ModEntry};
+    use mod_platform::testing::with_mods;
     use std::borrow::Cow;
     use std::sync::Arc;
     fn id(text: &str) -> Identifier {
@@ -1815,7 +1820,7 @@ mod brewed_boundary_tests {
     fn brewed_event_reports_player_and_converted_stack() {
         prepare_stack_boundary_tests();
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        mod_api::testing::with_mods(
+        mod_platform::testing::with_mods(
             vec![mod_api::ModEntry::new(
                 "watch",
                 Box::new(Watch(seen.clone())),
@@ -2709,13 +2714,14 @@ impl TryIntoApi for horizon_mod_package::packages::AdjacentManifest {
 pub(in crate::game) fn install_packages(
     native: &[horizon_mod_package::packages::AdjacentManifest],
     content: &[horizon_mod_package::selection::SelectedPackage],
-) {
+) -> Result<(), horizon_engine_slots::PlatformRefusal> {
     let native: Vec<_> = native.iter().map(|p| p.try_into_api().unwrap()).collect();
     let content: Vec<_> = content
         .iter()
         .map(|p| p.package.manifest.try_into_api().unwrap())
         .collect();
-    mod_api::__private::install_packages(&native, &content);
+    (horizon_engine_slots::platform()?.install_packages)(&native, &content);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2983,7 +2989,6 @@ impl<C: ?Sized> TryIntoEngine<C> for mod_api::client::hud_layout::GuiDraw {
 
 #[path = "api_values/text_boundary.rs"]
 mod text_boundary;
-pub(in crate::game) use text_boundary::style_hover;
 #[cfg(test)]
 mod gui_draw_boundary_tests {
     use super::{TryIntoApi, TryIntoEngine};
@@ -3204,15 +3209,40 @@ fn with_rule_schema<T>(f: impl FnOnce(&mod_api::__private::RuleSchema<'_>) -> T)
             .expect("vanilla rule count fits u32"),
     })
 }
+/// Supply the real platform when unit tests bypass executable startup.
+#[cfg(test)]
+pub(in crate::game) fn install_test_platform() {
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    INSTALLED.call_once(|| {
+        let result = horizon_engine_slots::install_platform(horizon_engine_slots::Platform {
+            install_packages: mod_platform::__private::install_packages,
+            install_registration_data: mod_platform::__private::install_registration_data,
+            install_parts: mod_platform::__private::install_parts,
+            profiler_is_enabled: mod_platform::__private::profiler::is_enabled,
+            profiler_start: mod_platform::__private::profiler::start,
+            profiler_stop: mod_platform::__private::profiler::stop,
+            profiler_summary: mod_platform::__private::profiler::summary,
+            profiler_firefox_profile: mod_platform::__private::profiler::firefox_profile,
+        });
+        assert!(
+            result.is_ok()
+                || result == Err(horizon_engine_slots::PlatformRefusal::AlreadyInstalled)
+        );
+    });
+}
 pub(in crate::game) fn install_parts(mods: &[mod_api::ModEntry]) -> Result<(), Vec<String>> {
+    #[cfg(test)]
+    install_test_platform();
     with_rule_schema(|schema| {
-        mod_api::__private::install_parts(mods, schema, super::native_dimensions::valid_shape)
+        (horizon_engine_slots::platform()
+            .map_err(|e| vec![e.to_string()])?
+            .install_parts)(mods, schema, super::native_dimensions::valid_shape)
     })
 }
 #[cfg(test)]
 pub(in crate::game) fn register_game_keys(ids: impl IntoIterator<Item = String>) {
     with_rule_schema(|schema| {
-        mod_api::__private::part_tests::register_game_keys(
+        mod_platform::__private::part_tests::register_game_keys(
             ids,
             schema,
             super::native_dimensions::valid_shape,

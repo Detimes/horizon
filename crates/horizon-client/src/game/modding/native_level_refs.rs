@@ -673,6 +673,28 @@ impl Game<'_> {
     pub(super) fn level_can_see_sky(&self, level: LevelRef, pos: [i32; 3]) -> Option<bool> {
         Some(self.level_brightness(level, LightLayer::Sky, pos)? >= 15)
     }
+    /// `LevelLightEngine.checkBlock` at `pos`, queued with the level's light edits: the next
+    /// update asks a `dynamic_light` block's parts again (`ask_edited_light_emission`) and
+    /// relights the cell, which `LightTables::differs` lets through for such a state set to
+    /// itself. A check already queued there since the last ask queues nothing, as vanilla's
+    /// queue is a set. False off the level in place, for a stale handle, on a client and for a
+    /// position that isn't loaded.
+    pub(super) fn level_check_light(&mut self, level: LevelRef, pos: [i32; 3]) -> bool {
+        if !self.native_level_write_allowed(level, pos) || self.dim.key() != level.dimension() {
+            return false;
+        }
+        let [x, y, z] = pos;
+        let edits = &self.world.light_edits;
+        if let Some(&i) = self.world.light_checks.get(&(x, y, z))
+            && edits.get(i).is_some_and(|edit| edit.0 == (x, y, z))
+        {
+            return true;
+        }
+        self.world.light_checks.insert((x, y, z), edits.len());
+        let state = self.world.block(x, y, z).0;
+        self.world.light_edits.push(((x, y, z), state, state));
+        true
+    }
     /// `LivingEntity.hasLineOfSight`'s clip between two points (collider shapes, no fluids):
     /// whether it misses. None as for `level_clip`.
     pub(super) fn level_line_of_sight(
@@ -1006,7 +1028,7 @@ mod tests {
             Box::new(Observer(heard.clone())),
         )]
         .into();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             with_guests(|game| {
                 game.world
                     .chunks
@@ -1098,7 +1120,7 @@ mod tests {
         use mod_api::Host;
         use std::sync::Arc;
 
-        mod_api::__private::part_tests::signal_game_thread();
+        mod_platform::__private::part_tests::signal_game_thread();
         with_game(|game| {
             game.world
                 .chunks
@@ -1789,7 +1811,7 @@ mod tests {
     }
 
     fn in_mod(id: &'static str) -> mod_api::content::crash::ModGuard {
-        mod_api::content::crash::enter_native_mod(mod_api::content::crash::ModCall {
+        mod_platform::content::crash::enter_native_mod(mod_api::content::crash::ModCall {
             id,
             hook: "test",
             part: None,
@@ -1874,7 +1896,7 @@ mod tests {
     }
     /// A game whose mods are `Machines` and `Other`, with their controllers registered.
     fn with_machines(test: impl FnOnce(&mut super::super::Game<'_>)) {
-        testing::with_mods(mods(), || with_chunk_streaming(test));
+        mod_platform::testing::with_mods(mods(), || with_chunk_streaming(test));
     }
 
     #[test]
@@ -2249,7 +2271,7 @@ mod tests {
     #[test]
     #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
     fn validation_runs_when_a_parked_level_opens_and_not_without_a_listener() {
-        testing::with_mods(mods(), || {
+        mod_platform::testing::with_mods(mods(), || {
             with_game(|game| {
                 let other = if game.dim == Dim::Nether {
                     Dim::End
@@ -2287,7 +2309,7 @@ mod tests {
             }
         }
         let mods: mod_api::Mods = vec![ModEntry::new("idle", Box::new(Idle))].into();
-        testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             with_game(|game| {
                 let tickets = vec![saved("idle:quarry", [1, 64, 1], (7, 7))];
                 game.streaming.load_forced(Default::default(), tickets);
@@ -2368,6 +2390,35 @@ mod tests {
             let stale = LevelRef::new(WorldEpoch::new(u64::MAX), game.dim.key());
             assert_eq!(game.level_brightness(stale, LightLayer::Sky, lit), None);
             assert_eq!(game.world.chunks.len(), chunks, "nothing was loaded");
+        });
+    }
+
+    /// `check_light` queues the cell with the level's light edits, its state set to itself,
+    /// where the next update asks a `dynamic_light` block again and relights it; a stale
+    /// handle and a position that isn't loaded queue nothing.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn check_light_queues_the_cell_with_the_light_edits() {
+        use horizon_client::chunk::Chunk;
+        use std::sync::Arc;
+
+        with_game(|game| {
+            game.world
+                .chunks
+                .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+            game.world.light_edits.clear();
+            let level = game.level(game.dim.id()).unwrap();
+            let state = game.world.block(3, 64, 5).0;
+            assert!(game.level_check_light(level, [3, 64, 5]));
+            assert_eq!(game.world.light_edits, [((3, 64, 5), state, state)]);
+            let stale = LevelRef::new(WorldEpoch::new(u64::MAX), game.dim.key());
+            assert!(!game.level_check_light(stale, [3, 64, 5]));
+            assert!(!game.level_check_light(level, [16, 64, 0]), "not loaded");
+            assert!(
+                !game.level_check_light(level, [3, 320, 5]),
+                "above the world"
+            );
+            assert_eq!(game.world.light_edits.len(), 1);
         });
     }
 }

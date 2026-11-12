@@ -1086,7 +1086,7 @@ fn tick_advancement_notice_precedes_recipe_reward() {
         Box::new(Observer(observed.clone())),
     )]
     .into();
-    mod_api::__private::install(mods);
+    mod_platform::__private::install(mods);
     let scratch =
         std::env::temp_dir().join(format!("horizon-tick-advancement-{}", std::process::id()));
     let dir = scratch.join("data/testmod/advancement");
@@ -1168,7 +1168,8 @@ fn set_selected_slot_tells_an_acting_guests_client() {
 fn a_vetoed_drop_gives_the_stack_back() {
     use super::api_values::TryIntoApi;
     use horizon_client::items::ItemStack;
-    use mod_api::{Flow, Hooks, ItemTossEvent, ModEntry, ServerHost, testing::with_mods};
+    use mod_api::{Flow, Hooks, ItemTossEvent, ModEntry, ServerHost};
+    use mod_platform::testing::with_mods;
 
     struct Veto;
     #[mod_api::__subscriptions]
@@ -1223,7 +1224,7 @@ fn guest_damage_unwind_restores_and_next_same_connection_hit_lands() {
         Box::new(PanicOnce(calls.clone())),
     )]
     .into();
-    mod_api::testing::with_mods(mods, || {
+    mod_platform::testing::with_mods(mods, || {
         with_guests(|game| {
             game.lan
                 .as_mut()
@@ -1309,7 +1310,7 @@ fn guest_message_capture_is_restored_after_a_real_native_panic() {
         Box::new(PanicOnce(calls.clone())),
     )]
     .into();
-    mod_api::testing::with_mods(mods, || {
+    mod_platform::testing::with_mods(mods, || {
         with_guests(|game| {
             for conn in [12, 13] {
                 game.lan
@@ -1392,7 +1393,7 @@ fn a_panic_in_a_turn_end_callback_still_restores_the_guest() {
         Box::new(PanicOnFood(calls.clone())),
     )]
     .into();
-    mod_api::testing::with_mods(mods, || {
+    mod_platform::testing::with_mods(mods, || {
         with_guests(|game| {
             game.lan
                 .as_mut()

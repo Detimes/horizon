@@ -1,6 +1,14 @@
 use super::*;
 
 impl Game<'_> {
+    /// `getEmptyBundleDescriptionTextHeight`'s lines: the empty bundle's description wrapped at
+    /// the grid's width in this font.
+    fn bundle_description_lines(&self) -> usize {
+        let text =
+            horizon_client::text::Text::translate("item.minecraft.bundle.empty.description", &[]);
+        self.gui.atlas.font.split_lines(&text, 96.0).len()
+    }
+
     /// `RenderTooltipEvent.Pre` for a tooltip of `lines` then `images`, hanging from `at`: the
     /// point a mod moved it to, `None` when one cancelled it. Only built when a mod listens.
     pub(in crate::game) fn tooltip_pre(
@@ -64,7 +72,7 @@ impl Game<'_> {
         })
     }
 
-    /// A stack's tooltip: its lines, and under them a bundle's contents
+    /// A stack's tooltip: its ordered lines and a bundle's contents
     /// (`ClientBundleTooltip`: the 4 wide grid, the `+N` of what it leaves
     /// out, and the weight bar).
     pub(in crate::game) fn draw_stack_tooltip(
@@ -89,20 +97,19 @@ impl Game<'_> {
         after_name: Vec<(horizon_client::text::Text, u32)>,
     ) {
         let mut lines = self.stack_tooltip_lines(stack, false, creative);
-        if lines.is_empty() {
+        if lines.is_empty()
+            && !horizon_client::item_tooltip::tooltip_display(stack).name_visible(creative)
+        {
             return;
         }
-        lines.splice(1..1, after_name);
-        // The component's height does not depend on where it is drawn, so a
-        // probe at the origin gives the box its extra height.
-        let probe =
-            horizon_client::item_tooltip::bundle_tooltip(self.items(), stack, 0.0, 0.0, 96.0);
+        let after_name_index = lines.len().min(1);
+        lines.splice(after_name_index..after_name_index, after_name);
         let mut component = None;
         self.native_tooltip_component(stack, &mut component);
         let images: Vec<TooltipImage> = tooltip_component_size(component)
             .and_then(|size| {
                 Some(TooltipImage {
-                    stack: stack.try_into_api().ok()?,
+                    source: mod_api::TooltipImageSource::ItemPart(stack.try_into_api().ok()?),
                     size,
                 })
             })
@@ -138,11 +145,7 @@ impl Game<'_> {
                 Element::Image(i) => i.size,
             })
             .collect();
-        let (mut size, offsets) = layout(&sizes, true);
-        if let Some(probe) = &probe {
-            size[0] = size[0].max(96.0);
-            size[1] += probe.height + 2.0;
-        }
+        let (size, offsets) = layout(&sizes, true);
         let (w, h) = (size[0].ceil(), size[1].ceil());
         let (x, y) = tooltip_position(at, screen, (w, h));
         self.tooltip_box(batch, Some(stack), x, y, w, h);
@@ -156,24 +159,55 @@ impl Game<'_> {
                     batch.text_styled(&self.gui.atlas, text, origin[0], origin[1], *color, true);
                 }
                 (Element::Image(image), true) => {
-                    if let Ok(stack) = crate::game::api_values::stack_value(&image.stack) {
-                        self.native_tooltip_component_draw(&stack, batch, origin, size);
-                    }
+                    self.draw_tooltip_image(batch, image, origin, size);
                 }
                 _ => {}
             },
         );
-        if let Some(layout) = horizon_client::item_tooltip::bundle_tooltip(
-            self.items(),
-            stack,
-            x,
-            y + h - probe.map_or(0.0, |p| p.height),
-            w,
-        ) {
-            self.draw_bundle_tooltip(batch, &layout);
-            self.draw_bundle_selected_name(batch, &layout, x, y + h - layout.height, w);
+    }
+
+    fn draw_tooltip_image(
+        &mut self,
+        batch: &mut HudBatch,
+        image: &TooltipImage,
+        origin: [f32; 2],
+        size: [f32; 2],
+    ) {
+        match &image.source {
+            mod_api::TooltipImageSource::ItemPart(stack) => {
+                self.draw_tooltip_item_part(batch, stack, origin, size);
+            }
+            mod_api::TooltipImageSource::Bundle(stack) => {
+                let Ok(stack) = crate::game::api_values::stack_value(stack) else {
+                    return;
+                };
+                if let Some(layout) = horizon_client::item_tooltip::bundle_tooltip(
+                    self.items(),
+                    &stack,
+                    origin[0],
+                    origin[1],
+                    size[0],
+                    self.bundle_description_lines(),
+                ) {
+                    self.draw_bundle_tooltip(batch, &layout);
+                    self.draw_bundle_selected_name(batch, &layout, origin[0], origin[1], size[0]);
+                }
+            }
         }
     }
+    fn draw_tooltip_item_part(
+        &mut self,
+        batch: &mut HudBatch,
+        stack: &mod_api::ItemStack,
+        origin: [f32; 2],
+        size: [f32; 2],
+    ) {
+        let Ok(stack) = crate::game::api_values::stack_value(stack) else {
+            return;
+        };
+        self.native_tooltip_component_draw(&stack, batch, origin, size);
+    }
+
     /// `RenderTooltipEvent.GatherComponents` for an item's tooltip: the
     /// lines and the images the item's part answered go to
     /// `render_tooltip_gather_components` as one list. A mod's `max_width`
@@ -196,7 +230,27 @@ impl Game<'_> {
             .collect::<Result<_, _>>()
             .ok()?;
         let index = usize::from(!elements.is_empty());
-        elements.splice(index..index, images.into_iter().map(TooltipElement::Image));
+        let bundle = horizon_client::item_tooltip::bundle_tooltip(
+            self.items(),
+            stack,
+            0.0,
+            0.0,
+            96.0,
+            self.bundle_description_lines(),
+        );
+        let bundle = bundle
+            .map(|layout| {
+                stack.try_into_api().map(|stack| TooltipImage {
+                    source: mod_api::TooltipImageSource::Bundle(stack),
+                    size: [96.0, layout.height],
+                })
+            })
+            .transpose()
+            .ok()?;
+        elements.splice(
+            index..index,
+            bundle.into_iter().chain(images).map(TooltipElement::Image),
+        );
         let (mut max_width, mut cancel) = (-1, false);
         self.native_render_tooltip_gather_components(
             stack,
@@ -330,7 +384,7 @@ mod tests {
         }
         let mods: Mods = vec![ModEntry::new("image", Box::new(Mod))].into();
         crate::game::api_values::install_parts(&mods).unwrap();
-        mod_api::testing::with_mods(mods, || {
+        mod_platform::testing::with_mods(mods, || {
             crate::game::native_entity_refs::tests::with_game(|game| {
                 DRAWN.store(false, Ordering::Relaxed);
                 game.draw_stack_tooltip(
@@ -383,3 +437,7 @@ mod tests {
         assert_eq!(layout(&sizes[..1], true).0, [70.0, 8.0]);
     }
 }
+
+#[cfg(test)]
+#[path = "tooltip_bundle_tests.rs"]
+mod bundle_tests;

@@ -56,7 +56,7 @@ fn with_provider(test: impl FnOnce(&mut super::Game<'_>, &Arc<Mutex<Vec<String>>
         Box::new(Provider(heard.clone())),
     )]
     .into();
-    mod_api::testing::with_mods(mods, || with_guests(|game| test(game, &heard)));
+    mod_platform::testing::with_mods(mods, || with_guests(|game| test(game, &heard)));
 }
 
 /// Each usage's literal path keeps its own node, else its command's first usage's (the

@@ -67,16 +67,7 @@ fn read_consumers_forward_nonresident_stacks_and_mutants() {
         ("item_stack", body(draw, "fn item_stack(")),
         ("gui_draw_item_with", body(draw, "fn gui_draw_item_with(")),
         ("block_item", body(block, "fn item(")),
-        (
-            "tooltip",
-            format!(
-                "if let Ok(stack) = crate::game::api_values::stack_value(&image.stack) {{ {} }}",
-                body(
-                    tooltip,
-                    "if let Ok(stack) = crate::game::api_values::stack_value(&image.stack)"
-                )
-            ),
-        ),
+        ("tooltip", body(tooltip, "fn draw_tooltip_item_part(")),
     ];
     let fixture = r#"
 #![allow(unused)]
@@ -86,7 +77,6 @@ pub(crate) fn stack_value(stack: &Stack) -> Result<Stack, ()> { Ok(stack.clone()
 mod game { pub mod api_values { pub(crate) use crate::stack_value; } }
 struct Display;
 impl Display { fn try_into_engine(&self, _: &()) -> Result<(), ()> { Ok(()) } }
-struct Image { stack: Stack, size: [f32; 2] }
 struct Engine;
 impl Engine {
     fn items(&self) -> &() { &() }
@@ -105,7 +95,7 @@ impl Context<'_> {
     }
 }
 impl Engine {
-    fn tooltip(&self, image: &Image, batch: &mut Vec<Stack>) {
+    fn tooltip(&self, stack: &Stack, batch: &mut Vec<Stack>) {
         let origin = [0.; 2]; let size = [70., 46.];
         TOOLTIP
     }
@@ -118,45 +108,50 @@ fn main() {
     }
 }
 "#;
-    let dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/read-consumer-proof");
-    std::fs::create_dir_all(&dir).unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let dir = scratch.path();
     for (name, original) in methods {
         for mutant in [false, true] {
             let adapted = original.replace("return;", "return false;");
             let (code, check, tooltip) = match name {
                 "may_place" => (adapted, "assert!(out.is_empty());", String::new()),
-                "tooltip" => ("self.game.tooltip(&Image { stack: stack.clone(), size: [16.; 2] }, &mut *self.surface); true".into(), "assert_eq!(out, vec![stack.clone()]);", original.clone()),
-                "gui_draw_item_with" => (format!("{adapted}; true"), "assert_eq!(out, vec![stack.clone()]);", String::new()),
-                _ => (adapted, "assert_eq!(out, vec![stack.clone()]);", String::new()),
+                "tooltip" => (
+                    "self.game.tooltip(stack, &mut *self.surface); true".into(),
+                    "assert_eq!(out, vec![stack.clone()]);",
+                    original.clone(),
+                ),
+                "gui_draw_item_with" => (
+                    format!("{adapted}; true"),
+                    "assert_eq!(out, vec![stack.clone()]);",
+                    String::new(),
+                ),
+                _ => (
+                    adapted,
+                    "assert_eq!(out, vec![stack.clone()]);",
+                    String::new(),
+                ),
             };
             let source = fixture
                 .replace("BODY", &code)
                 .replace("TOOLTIP", &tooltip)
                 .replace("CHECK", check);
             let source = if mutant {
-                source
-                    .replace(
-                        "stack_value(stack)",
-                        "stack.try_into_engine(self.game.items())",
-                    )
-                    .replace(
-                        "stack_value(&image.stack)",
-                        "image.stack.try_into_engine(self.items())",
-                    )
+                source.replace(
+                    "stack_value(stack)",
+                    if name == "tooltip" {
+                        "stack.try_into_engine(self.items())"
+                    } else {
+                        "stack.try_into_engine(self.game.items())"
+                    },
+                )
             } else {
                 source
             };
             // Qualifying replacement above leaves a path before the expression; remove it.
-            let source = source
-                .replace(
-                    "crate::game::api_values::stack.try_into_engine",
-                    "stack.try_into_engine",
-                )
-                .replace(
-                    "crate::game::api_values::image.stack.try_into_engine",
-                    "image.stack.try_into_engine",
-                );
+            let source = source.replace(
+                "crate::game::api_values::stack.try_into_engine",
+                "stack.try_into_engine",
+            );
             let input = dir.join(format!("{name}-{mutant}.rs"));
             let binary = dir.join(format!("{name}-{mutant}"));
             std::fs::write(&input, source).unwrap();

@@ -5,6 +5,7 @@ pub(crate) mod advancement_progress;
 #[doc(hidden)]
 pub mod biome;
 pub(crate) mod biome_modifier;
+pub(crate) mod biome_region;
 pub(crate) mod chunk_generator;
 pub(crate) mod criteria;
 pub(crate) mod custom_spawners;
@@ -19,6 +20,7 @@ pub(crate) mod game_rule_value;
 // hidden: a module of game-side types; mods use their re-exports
 #[doc(hidden)]
 pub mod ground;
+pub(crate) mod inside_write;
 pub(crate) mod landing_write;
 pub(crate) mod level_write_error;
 pub(crate) mod map_decoration_types;

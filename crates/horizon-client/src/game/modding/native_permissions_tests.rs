@@ -28,7 +28,7 @@ fn with_provider(test: impl FnOnce(&mut super::Game<'_>)) {
         Box::new(Provider),
     )]
     .into();
-    mod_api::testing::with_mods(mods, || with_guests(test));
+    mod_platform::testing::with_mods(mods, || with_guests(test));
 }
 
 pub(super) fn set_permission(game: &mut super::Game<'_>, conn: u32, permission: u8) {

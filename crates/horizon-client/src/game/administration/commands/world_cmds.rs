@@ -489,46 +489,10 @@ impl Game<'_> {
         {
             return false;
         }
-        // Use the same defaults and stack patch as the component resolver,
-        // including defaults changed by native mods and removed components.
-        let components =
-            self.pack
-                .item_renderer
-                .models
-                .components(&horizon_client::item_render::stack_view(
-                    &self.dropped[index].stack,
-                ));
-        let resistant = |source: &str| {
-            let matches = |value: &str| {
-                let (tag, value) = value
-                    .strip_prefix('#')
-                    .map_or((false, value), |v| (true, v));
-                let name = if value.contains(':') {
-                    value.to_owned()
-                } else {
-                    format!("minecraft:{value}")
-                };
-                if tag {
-                    registry
-                        .id(source)
-                        .is_some_and(|id| registry.in_tag(id, &name))
-                } else {
-                    source == name
-                }
-            };
-            match components
-                .get("minecraft:damage_resistant")
-                .and_then(|v| v.get("types"))
-            {
-                Some(serde_json::Value::String(value)) => matches(value),
-                Some(serde_json::Value::Array(values)) => {
-                    values.iter().any(|v| v.as_str().is_some_and(matches))
-                }
-                _ => false,
-            }
-        };
-        if resistant(damage_type)
-            || registry.in_tag(kind, "minecraft:is_fire") && resistant("minecraft:in_fire")
+        if self.stack_can_be_hurt_by(&self.dropped[index].stack, damage_type) == Some(false)
+            || registry.in_tag(kind, "minecraft:is_fire")
+                && self.stack_can_be_hurt_by(&self.dropped[index].stack, "minecraft:in_fire")
+                    == Some(false)
         {
             return false;
         }
