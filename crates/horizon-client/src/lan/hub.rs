@@ -343,6 +343,9 @@ pub struct Hub {
     /// only players of at least that permission level see them, in the
     /// player list, the world and their joining and leaving.
     pub hidden: crate::fast_hash::FxHashMap<u128, u8>,
+    /// Players `refresh_player` hid from everyone: the level a mod hid them
+    /// at before (`hidden`), and the tick it began.
+    refreshing: Vec<(u128, Option<u8>, u64)>,
     pub lan: Lan,
     pub config: HubConfig,
     /// What the hooks fired inside a click or a name format are given; the
@@ -831,6 +834,7 @@ impl Hub {
             native_reload_pending: false,
             mods_loaded: false,
             hidden: Default::default(),
+            refreshing: Vec::new(),
             teams: Vec::new(),
             nicknames: std::collections::HashMap::new(),
             former_names: std::collections::HashMap::new(),
@@ -2308,6 +2312,7 @@ impl Hub {
     /// packets queued for its own level's pass.
     pub fn poll(&mut self, ctx: &mut TickCtx) -> Vec<HostEvent> {
         self.ticks += 1;
+        self.end_refreshes();
         self.anticheat_tick(ctx.tick_rate);
         let mut events = std::mem::take(&mut self.pending_kicks);
         self.expire_arrivals(&mut events);
@@ -5127,6 +5132,40 @@ impl Hub {
     /// A player's nickname changed (None: their name again): kept for chat,
     /// and the Tab list shows it (PlayerInfo UPDATE_DISPLAY_NAME for
     /// everyone).
+    /// Paper's `hidePlayer` then `showPlayer` for every other player (as
+    /// SkinsRestorer refreshes a skin): the next tick takes the player out of
+    /// their Tab lists and worlds (`sync_hidden`, the entity tracker), the one
+    /// after brings them back with their profile as it is then. A level a mod
+    /// hid them at is kept.
+    pub fn refresh_player(&mut self, uuid: u128) {
+        let previous = self.hidden.insert(uuid, u8::MAX);
+        if let Some(pending) = self.refreshing.iter_mut().find(|r| r.0 == uuid) {
+            pending.2 = self.ticks;
+            return;
+        }
+        self.refreshing.push((uuid, previous, self.ticks));
+    }
+
+    /// Shows the players `refresh_player` hid a whole tick ago again, at the
+    /// level a mod hid them at before (or to everyone), unless a mod set
+    /// another meanwhile.
+    pub fn end_refreshes(&mut self) {
+        let ticks = self.ticks;
+        let (done, pending): (Vec<_>, Vec<_>) = std::mem::take(&mut self.refreshing)
+            .into_iter()
+            .partition(|r| r.2 + 1 < ticks);
+        self.refreshing = pending;
+        for (uuid, previous, _) in done {
+            if self.hidden.get(&uuid) != Some(&u8::MAX) {
+                continue;
+            }
+            match previous {
+                Some(level) => self.hidden.insert(uuid, level),
+                None => self.hidden.remove(&uuid),
+            };
+        }
+    }
+
     pub fn set_nickname(&mut self, uuid: u128, nickname: Option<String>) {
         match nickname {
             Some(n) => self.nicknames.insert(uuid, n),

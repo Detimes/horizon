@@ -526,6 +526,32 @@ pub trait PlayersBackendMut {
     /// Refuses text deeper than 512 component nodes before applying any changes.
     fn player_kick(&mut self, player: PlayerRef, reason: Text) -> Result<bool, TextFormError>;
     /// Side: server.
+    /// Sets property `name` of the player's game profile (`textures` for
+    /// a skin: Mojang's base64 value and its signature, which the client
+    /// checks on an online-mode server), replacing one of the same name.
+    /// Other players see it once the player is sent to them again
+    /// (`player_refresh`). False for a stale or unavailable player, a fake
+    /// player, an empty name, and a name, value or signature longer than the
+    /// protocol allows (64, 32767 and 1024 characters).
+    #[access(WorldOnly)]
+    fn player_set_profile_property(
+        &mut self,
+        player: PlayerRef,
+        name: &str,
+        value: &str,
+        signature: Option<&str>,
+    ) -> bool;
+    /// Side: server.
+    /// Sends the player to the other players again, as Paper's
+    /// `hidePlayer` then `showPlayer` does: over the next two ticks they
+    /// leave every other player's Tab list and world and come back with
+    /// their profile as it is now, so a new skin shows. The player's own
+    /// view keeps the skin their client has until they change level or join
+    /// again. A player a mod hid (`player_hide`) stays hidden from whom it
+    /// hid them. False for a stale or unavailable player and a fake player.
+    #[access(WorldOnly)]
+    fn player_refresh(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s
     /// ATTACK, and `ServerPlayerGameMode.destroyBlock`), as its packet would run it: reach,
