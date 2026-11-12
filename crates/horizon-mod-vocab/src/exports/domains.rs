@@ -35,7 +35,7 @@ pub use entity::types::{
     DragonRef, EffectApplicable, EffectKey, EffectTickChange, EntityAttributeError, EntityRef,
     EntityTypeKey, FishingHookRef, GoalSpec, ItemEntityRef, LeashHolder, LivingRef, MainHand,
     MerchantRef, MinecartKind, MinecartRef, MobFilter, MobGoalEntry, MobRef, ModifierLifetime,
-    PierceLevelError, PlayerAbilities, PlayerAction, PlayerActionSetup, PlayerExperience,
+    PierceLevelError, PlayerAbilities, Sidebar, SidebarLine, PlayerAction, PlayerActionSetup, PlayerExperience,
     PlayerFood, PlayerRef, ProjectileRef, RemovalReason, ServerPlayer, TextAlignment,
     Transformation, UnspawnedMobRef,
 };

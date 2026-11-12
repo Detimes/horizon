@@ -444,6 +444,19 @@ pub trait PlayersBackendMut {
         name: Option<Text>,
     ) -> Result<bool, TextFormError>;
     /// Side: server.
+    /// Shows `sidebar` on that player's screen in place of the one shown before, or takes it
+    /// away (None): an objective only their client holds, displayed in the sidebar slot, its
+    /// lines as scores with fixed or blank number formats (`ClientboundSetObjectivePacket`,
+    /// `SetDisplayObjective`, `SetScore`). The server's scoreboard, `/scoreboard` and the other
+    /// players don't see it; it covers a sidebar objective the world shows, for this player,
+    /// and is gone when they leave. False when they aren't on.
+    #[access(WorldOnly)]
+    fn player_set_sidebar(
+        &mut self,
+        player: PlayerRef,
+        sidebar: Option<Sidebar>,
+    ) -> Result<bool, TextFormError>;
+    /// Side: server.
     /// Hides that player (a vanish) from the players below permission
     /// `level`, or shows them again (None): from the next tick those players
     /// lose them from the Tab list and the world (their client stops
