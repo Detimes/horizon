@@ -6216,6 +6216,39 @@ mod tests {
         assert!(hub.list_names.contains_key(&7));
     }
 
+    /// The open native menu's items are replaced in place: one content packet for that
+    /// window, padded to its size; another window changes nothing.
+    #[test]
+    fn a_native_menus_items_are_replaced_without_reopening() {
+        let mut sync = SyncData::empty();
+        sync.builtin.registries.insert(
+            "minecraft:menu".to_string(),
+            horizon_protocol::registry::Ids::from_names(vec!["minecraft:generic_9x1".to_string()]),
+        );
+        let (mut hub, rx) = hub_with_sync(sync);
+        let window = hub
+            .open_native_menu(1, 1, Tag::String("shop".into()), vec![])
+            .unwrap();
+        let _ = sent(&rx);
+        let stone = crate::items::ItemStack::new("minecraft:stone", 3);
+        assert!(!hub.set_native_menu_items(1, window + 1, vec![Some(stone.clone())]));
+        assert!(sent(&rx).is_empty());
+        assert!(hub.set_native_menu_items(1, window, vec![None, Some(stone.clone())]));
+        assert_eq!(hub.guests[0].native_menu.len(), 9);
+        assert_eq!(hub.guests[0].native_menu[1], Some(stone));
+        let packets = sent(&rx);
+        assert!(
+            !packets
+                .iter()
+                .any(|p| matches!(p, play::Clientbound::OpenScreen(_))),
+            "not reopened"
+        );
+        assert!(packets.iter().any(|p| matches!(
+            p,
+            play::Clientbound::ContainerSetContent(c) if c.container == window && c.items.len() == 9 + 36
+        )));
+    }
+
     /// [`hub_with_a_guest`] over a sync the test built.
     fn hub_with_sync(sync: SyncData) -> (Hub, std::sync::mpsc::Receiver<crate::lan::Out>) {
         let config = crate::lan::NetConfig {
