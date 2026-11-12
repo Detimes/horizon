@@ -1020,4 +1020,16 @@ pub trait PlayersBackendMut {
     /// or dead player and on a client.
     #[access(WorldOnly)]
     fn player_set_statistics(&mut self, player: PlayerRef, json: &str) -> bool;
+    /// Side: server.
+    /// Gives `stack` as `/give` does, components and all: `Inventory.add` fills matching
+    /// stacks, then empty slots (the selected one first); what does not fit is thrown from
+    /// the player's eyes with no pickup delay and only they may pick it up; a stack that went
+    /// in whole plays the pickup sound. False, with nothing given, for a stale, unavailable or
+    /// dead player and on a client.
+    #[access(WorldOnly)]
+    fn player_give_stack(
+        &mut self,
+        player: PlayerRef,
+        stack: ItemStack,
+    ) -> Result<bool, StackWriteError>;
 }
