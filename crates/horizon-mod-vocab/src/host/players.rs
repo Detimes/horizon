@@ -24,6 +24,33 @@ pub trait PlayersServerHost {
     /// Create or retrieve a connectionless player for the level currently in place.
     #[access(WorldOnly)]
     fn fake_player(&mut self, level: LevelRef, uuid: u128, name: &str) -> Option<PlayerRef>;
+    /// Side: server.
+    /// The most players who may be on at once (`PlayerList.getMaxPlayers`,
+    /// `max-players`), as the server list shows it and logins are refused
+    /// beyond. None where nobody else can join.
+    #[access(WorldOnly)]
+    fn server_max_players(&self) -> Option<u32>;
+    /// Side: server.
+    /// Sets the player limit from the next login and server list ping on
+    /// (Paper's `Server.setMaxPlayers`); players already on stay.
+    /// `server.properties` is not changed, so a restart goes back to its
+    /// `max-players`. False where nobody else can join.
+    #[access(WorldOnly)]
+    fn server_set_max_players(&mut self, max_players: u32) -> bool;
+    /// Side: server.
+    /// The profile of the player with this UUID, as the server knows it,
+    /// never asked of Mojang: an online player's whole profile, else the user
+    /// cache's name (`usercache.json`, a dedicated server's), without
+    /// properties. None when neither knows them.
+    #[access(WorldOnly)]
+    fn profile_by_uuid(&self, uuid: u128) -> Option<PlayerProfile>;
+    /// Side: server.
+    /// The profile of the player with this name, any case, as
+    /// `profile_by_uuid` knows it: an online player's, else an unexpired
+    /// user cache entry. Never asked of Mojang, and an unknown name is not
+    /// made an offline player.
+    #[access(WorldOnly)]
+    fn profile_by_name(&self, name: &str) -> Option<PlayerProfile>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
@@ -151,6 +178,31 @@ pub trait PlayersBackend {
     /// None for a stale or unavailable player.
     #[access(WorldOnly)]
     fn player_permission_level(&self, player: PlayerRef) -> Option<u8>;
+    /// Side: server.
+    /// The permissions mods' answer for permission `node`
+    /// (`player_permission_check`): `Some(true)` granted, `Some(false)`
+    /// denied, None when no mod set it (Bukkit's `isPermissionSet` false),
+    /// for a stale or unavailable player, and on a client.
+    #[access(WorldOnly)]
+    fn player_permission_value(&self, player: PlayerRef, node: &str) -> Option<bool>;
+    /// Side: server.
+    /// Whether the player holds permission `node` (Bukkit's
+    /// `Permissible.hasPermission`): the permissions mods' answer
+    /// (`player_permission_value`), else vanilla's operator check, a
+    /// permission level of 2 or more (`Commands.LEVEL_GAMEMASTERS`). A node
+    /// every player should have without a permissions mod is read as
+    /// `player.permission_value(host, node).unwrap_or(true)`. False for a
+    /// stale or unavailable player.
+    #[access(WorldOnly)]
+    fn player_has_permission(&self, player: PlayerRef, node: &str) -> bool;
+    /// Side: server.
+    /// The player's game profile (`ServerPlayer.getGameProfile`): UUID, name
+    /// and the properties their client is sent about them (`textures`), as
+    /// the login gave them or `player_set_profile_property` changed them.
+    /// None for a stale or unavailable player, a fake player, and the
+    /// single-player owner, whose profile is their own client's.
+    #[access(WorldOnly)]
+    fn player_profile(&self, player: PlayerRef) -> Option<PlayerProfile>;
     /// Side: server.
     /// `Player.hasInfiniteMaterials`: the `instabuild` ability, which
     /// creative mode gives.
@@ -464,6 +516,50 @@ pub trait PlayersBackendMut {
     /// that is not finite.
     #[access(WorldOnly)]
     fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
+    /// Side: server.
+    /// Disconnects the player with `reason` on their screen
+    /// (`ServerGamePacketListenerImpl.disconnect`, Paper's `Player.kick`):
+    /// the log's "lost connection" line names it and `player_kicked` hears
+    /// it. Works inside the player's own hook; the connection closes after
+    /// it. False for a stale or unavailable player and a fake player.
+    #[access(WorldOnly)]
+    /// Refuses text deeper than 512 component nodes before applying any changes.
+    fn player_kick(&mut self, player: PlayerRef, reason: Text) -> Result<bool, TextFormError>;
+    /// Side: server.
+    /// Sets property `name` of the player's game profile (`textures` for
+    /// a skin: Mojang's base64 value and its signature, which the client
+    /// checks on an online-mode server), replacing one of the same name.
+    /// Other players see it once the player is sent to them again
+    /// (`player_refresh`). False for a stale or unavailable player, a fake
+    /// player, an empty name, and a name, value or signature longer than the
+    /// protocol allows (64, 32767 and 1024 characters).
+    #[access(WorldOnly)]
+    fn player_set_profile_property(
+        &mut self,
+        player: PlayerRef,
+        name: &str,
+        value: &str,
+        signature: Option<&str>,
+    ) -> bool;
+    /// Side: server.
+    /// Sends the player to the other players again, as Paper's
+    /// `hidePlayer` then `showPlayer` does: over the next two ticks they
+    /// leave every other player's Tab list and world and come back with
+    /// their profile as it is now, so a new skin shows. The player's own
+    /// view keeps the skin their client has until they change level or join
+    /// again. A player a mod hid (`player_hide`) stays hidden from whom it
+    /// hid them. False for a stale or unavailable player and a fake player.
+    #[access(WorldOnly)]
+    fn player_refresh(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
+    /// Respawns a dead player as their client's Respawn button does
+    /// (`ServerGamePacketListenerImpl.handleClientCommand`'s
+    /// `PERFORM_RESPAWN`, Spigot's `Player.spigot().respawn()`): at their
+    /// respawn point, else the world spawn, with `player_respawned` heard.
+    /// False for a player who is alive, a stale or unavailable player, a
+    /// fake player, and inside a player's hook (call it from `server_tick`).
+    #[access(WorldOnly)]
+    fn player_respawn(&mut self, player: PlayerRef) -> bool;
     /// Side: server.
     /// A fake player acts as a player does, through the game's own path for the action
     /// (`ServerGamePacketListenerImpl.handleUseItemOn` / `handleUseItem` / `handleInteract`'s

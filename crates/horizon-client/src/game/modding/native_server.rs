@@ -210,6 +210,48 @@ fn usage_nodes(
     Ok(out)
 }
 
+/// The permission node each native command names (`Command::with_node`), by its first word,
+/// with the level that decides when no permissions mod answers (the lowest of its usages').
+/// A node covers the whole command, so a usage that names another node than the command's
+/// first usage (or none where it has one) is left out, with why. The kept usages that name a
+/// node are open to every level in the tree: the node decides who runs and sees them.
+pub(super) fn command_nodes(
+    commands: Vec<mod_api::Command>,
+) -> (
+    Vec<mod_api::Command>,
+    HashMap<String, (String, u8)>,
+    Vec<String>,
+) {
+    let root = |c: &mod_api::Command| c.usage.split(' ').next().unwrap_or_default().to_owned();
+    let mut first: HashMap<String, Option<String>> = HashMap::new();
+    for command in &commands {
+        first
+            .entry(root(command))
+            .or_insert_with(|| command.node.clone());
+    }
+    let mut nodes: HashMap<String, (String, u8)> = HashMap::new();
+    let mut kept = Vec::with_capacity(commands.len());
+    let mut problems = Vec::new();
+    for mut command in commands {
+        let name = root(&command);
+        let wanted = first.get(&name).cloned().flatten();
+        if command.node != wanted {
+            problems.push(format!(
+                "`{}`: /{name} needs the same permission node in every usage",
+                command.usage
+            ));
+            continue;
+        }
+        if let Some(node) = wanted {
+            let entry = nodes.entry(name).or_insert((node, command.level));
+            entry.1 = entry.1.min(command.level);
+            command.level = 0;
+        }
+        kept.push(command);
+    }
+    (kept, nodes, problems)
+}
+
 /// Native mods' commands as a root in the commands report's format
 /// (`lan::commands`, which sends each player what their level allows), and
 /// each command's traversal level: the lowest of its usages. A node is runnable where
@@ -1938,6 +1980,8 @@ fn system_chat(line: &Text) -> C {
 /// Native command metadata and the server dispatcher containing their parsed usages.
 pub(super) struct NativeCommands {
     levels: HashMap<String, u8>,
+    /// Each node-gated command's node and fallback level (`command_nodes`).
+    nodes: HashMap<String, (String, u8)>,
     tree: Value,
     arguments: CommandArguments,
 }
@@ -1971,13 +2015,14 @@ impl Game<'_> {
             self.server_lists.is_some(),
         );
         commands.extend(extras.iter().cloned());
+        let (commands, nodes, node_problems) = command_nodes(commands);
         let arguments = command_arguments();
         let (tree, mut levels, problems) = command_tree(
             &commands,
             |name| host.hub.vanilla_command(name) || vanilla.find(name).is_some(),
             &arguments,
         );
-        for p in problems {
+        for p in node_problems.into_iter().chain(problems) {
             log::warn!("Horizon: a native mod's command was left out: {p}");
         }
         levels.retain(|name, _| {
@@ -1994,6 +2039,7 @@ impl Game<'_> {
         };
         host.native_commands = Some(NativeCommands {
             levels,
+            nodes,
             tree: execution_tree,
             arguments,
         });
@@ -2055,7 +2101,12 @@ impl Game<'_> {
                 return;
             };
             let names = host.hub.command_names(conn);
+            let permission = host.hub.guest(conn).map_or(0, |g| g.permission);
             let mut kept = names.clone();
+            kept.retain(|root| self.native_command_node_allows(uuid, &name, permission, root));
+            let Some(host) = self.lan.as_ref() else {
+                return;
+            };
             let placed = host.hub.guest(conn).is_some_and(|g| g.placed);
             if !placed {
                 // A joining player has no world yet: nothing can be told them.
@@ -2085,6 +2136,27 @@ impl Game<'_> {
         if let Some(host) = self.lan.as_mut() {
             host.hub.resend_commands();
         }
+    }
+
+    /// Whether a player (`uuid`, `name`, at `permission`) may run and see the native command
+    /// `root`: true for a command without a node; otherwise the permissions mods' answer for
+    /// its node, else its fallback level.
+    pub(super) fn native_command_node_allows(
+        &self,
+        uuid: u128,
+        name: &str,
+        permission: u8,
+        root: &str,
+    ) -> bool {
+        let Some((node, level)) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.native_commands.as_ref()?.nodes.get(root))
+        else {
+            return true;
+        };
+        self.permission_answer(uuid, name, node)
+            .unwrap_or(permission >= *level)
     }
 
     /// The traversal level of a mod's root (`line`, without its slash), when registered.
@@ -2141,6 +2213,19 @@ impl Game<'_> {
         use super::commands::err;
         let command = self.resolve_native_command(context)?;
         let origin = self.native_command_origin(self.ui.registries.permission)?;
+        // A node-gated command asks for its node of a player who runs it (`Command::with_node`);
+        // the console, functions and command blocks are not asked.
+        if let mod_api::CommandSource::Player { player, permission } = &origin
+            && let Some(root) = command.literals.first()
+            && !self.native_command_node_allows(
+                player.uuid(),
+                &self.player_name(*player).unwrap_or_default(),
+                permission.level(),
+                root,
+            )
+        {
+            return Err(err("command.unknown.command", &[]));
+        }
         let mut ran = false;
         self.native_run_mod_command(&origin, &command, &mut ran);
         if ran {
