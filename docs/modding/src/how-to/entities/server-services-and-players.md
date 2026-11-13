@@ -82,3 +82,11 @@ Reads accept `Host`; writes accept `ServerHost`.
 | `sleep_ignored(host)` | Reads the sleep-count exclusion setting. |
 | `counts_for_sleep(host)` | Reports whether the player counts toward the night skip. |
 | `sleep_timer(host)` / `set_sleep_timer(host, ticks)` | Reads or writes `Player.sleepCounter`, from 0 to 109; 100 means slept long enough. The write refuses larger values, fake players, guests in another level and stale players. |
+
+Why a player left: the `player_logged_out` hook (contract version 2) carries `reason` and
+`message` beside the player. `reason` is a `QuitReason`: `Quit` (the client closed the connection,
+or moved to another server), `Kicked` (a kick, a ban, a duplicate login, a packet limit),
+`TimedOut` (the keep-alive timeout), `Error` (a malformed packet or a read error) or
+`ServerStopping`. The hub keeps the first cause that ended the connection, so a timeout after a
+kick stays `Kicked`. `message` is the line the console's "lost connection" shows (`Server closed`
+when the server stops). Match `reason` with a catch-all arm: the enum is `non_exhaustive`.
