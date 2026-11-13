@@ -81,10 +81,20 @@ impl Game<'_> {
         let Some((slot, ticks)) = self.using else {
             return;
         };
+        // An emptied hand is a used-up stack (`/clear`, a broken shield): its
+        // `useItem` is empty too, so the use ends without a vibration.
         let Some(stack) = self.stack_in(slot).cloned() else {
             self.using = None;
+            self.use_item = None;
             return;
         };
+        // `isSameItem(getItemInHand(hand), useItem)`: another item stops the use
+        // of the stack it began with, without a release. The same item goes on;
+        // only the item is compared, so the start's stack is kept as it was.
+        if let Some(item) = self.use_item.take_if(|item| item.item != stack.item) {
+            self.stop_using_item(&item);
+            return;
+        }
         let hand_changed = self.use_hand_changed(slot);
         if !self.right || hand_changed || self.screen != Screen::Playing {
             self.using = None;
@@ -249,12 +259,32 @@ impl Game<'_> {
         }
     }
 
+    /// A command or a mod puts `stack` in inventory `slot` (`/item replace`, a
+    /// mod's slot write). When that slot's item is in use and `stack` isn't the
+    /// same item, `useItem` keeps the old stack, so the use stops with its
+    /// vibration, even for air: an emptied hand alone reads as used up.
+    /// The stop is for the stack the use began with, whatever the slot holds now.
+    pub(in crate::game) fn stop_use_replaced(&mut self, slot: usize, stack: Option<&ItemStack>) {
+        if !self.using.is_some_and(|(used, _)| used == slot) {
+            return;
+        }
+        let new = stack.map(|s| &s.item);
+        if let Some(item) = self.use_item.take_if(|item| Some(&item.item) != new) {
+            self.stop_using_item(&item);
+        } else if self.use_item.is_none()
+            && self.stack_in(slot).is_some_and(|s| Some(&s.item) != new)
+        {
+            self.stop_active_item_use();
+        }
+    }
+
     /// `LivingEntity.stopUsingItem`: the use of `stack` is over (`useItem` and
     /// its remaining ticks are cleared), and when the use effects of the stack
     /// ask for it, `ItemStack.causeUseVibration` sends an `ITEM_INTERACT_FINISH`
     /// game event from the player, at its feet.
     pub(super) fn stop_using_item(&mut self, stack: &ItemStack) {
         self.using = None;
+        self.use_item = None;
         self.use_vibration(stack, "minecraft:item_interact_finish");
     }
     /// `ItemStack.causeUseVibration` for `stack` used by the player: the

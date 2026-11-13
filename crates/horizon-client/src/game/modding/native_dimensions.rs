@@ -76,6 +76,9 @@ fn dimension_type(settings: &DimensionSettings) -> Value {
 }
 /// The level stem's `biome_source`.
 fn biome_source(settings: &DimensionSettings) -> Value {
+    if let Some(source) = &settings.mod_biome_source {
+        return json!({"type": source});
+    }
     match settings.biome_source {
         BiomeSourceKind::Fixed => json!({"type": "minecraft:fixed", "biome": settings.biome}),
         BiomeSourceKind::Checkerboard => json!({
@@ -762,6 +765,9 @@ mod biome_source_tests {
                 }]
             })
         );
+        // A mod's source replaces whichever kind is set.
+        settings.mod_biome_source = Some("mymod:chaos".into());
+        assert_eq!(biome_source(&settings), json!({"type": "mymod:chaos"}));
     }
 
     #[test]

@@ -4,7 +4,7 @@ use mod_api::mod_api::client::hud_layout::GuiDraw;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq)]
 struct ItemStack {
     item: Arc<str>,
     count: u32,
@@ -21,7 +21,14 @@ impl ItemStack {
         ItemKey(&self.item)
     }
 }
+#[derive(Debug)]
+enum StackWriteError {}
 mod content {
+    pub(super) mod crash {
+        pub fn current_native_mod() -> Option<&'static str> {
+            None
+        }
+    }
     pub(super) mod registry_keys {
         pub(in crate::tests) fn block_key(name: &str) -> Option<super::super::BlockKey> {
             match name {
@@ -114,15 +121,19 @@ mod generated {
             pub id: String,
         }
         pub(super) use super::super::ItemStack;
+        // The generated standalone-model dispatch builds the stub `Answered` and names the type through this path.
+        pub(super) use super::super::Answered;
         pub(super) use super::super::{
             Command, Config, Dispensed, InteractionResult, MapDecoration, MapInfo, Minimap, Screen,
             Zoom,
         };
         pub struct FluidModel;
+        #[derive(Clone, Copy)]
+        pub struct EntityRef;
         include!(concat!(env!("OUT_DIR"), "/dispatch_fixtures_api.rs"));
     }
     include!(concat!(env!("OUT_DIR"), "/mod_api_generated.rs"));
-    pub(super) use self::mod_api::{BlockKey, BlockState};
+    pub(super) use self::mod_api::{BlockEntityTickReply, BlockFace, BlockKey, BlockState};
     pub use horizon_mod_api_macros::__subscriptions;
 }
 use generated::*;
@@ -247,6 +258,7 @@ struct Parts {
     items: Vec<&'static dyn ItemPart>,
     menus: Vec<&'static dyn MenuPart>,
     fluids: Vec<&'static dyn FluidPart>,
+    entities: Vec<&'static dyn EntityPart>,
 }
 static NO_PARTS: Parts = Parts {
     blocks: Vec::new(),
@@ -254,6 +266,7 @@ static NO_PARTS: Parts = Parts {
     items: Vec::new(),
     menus: Vec::new(),
     fluids: Vec::new(),
+    entities: Vec::new(),
 };
 thread_local! {
     static PARTS: std::cell::Cell<&'static Parts> = const { std::cell::Cell::new(&NO_PARTS) };
@@ -273,6 +286,7 @@ fn has_part_hook(_: HookId) -> bool {
         || !parts.block_entities.is_empty()
         || !parts.items.is_empty()
         || !parts.menus.is_empty()
+        || !parts.entities.is_empty()
 }
 fn parts(_: HookId, _: &'static str) -> &'static Parts {
     PARTS.get()
@@ -312,6 +326,9 @@ impl Parts {
     }
     fn fluid<'k>(&self, _: impl FnOnce() -> Option<&'k str>) -> &[&'static dyn FluidPart] {
         &self.fluids
+    }
+    fn entity<'k>(&self, _: impl FnOnce() -> Option<&'k str>) -> &[&'static dyn EntityPart] {
+        &self.entities
     }
 }
 fn entered_parts<'a, P: ?Sized>(
@@ -389,6 +406,19 @@ impl MenuPart for Mod {
         assert_eq!(context.side(), "loop");
         event.may_place = false;
         event.max_stack = self.id;
+    }
+}
+impl EntityPart for Mod {
+    fn entity_subscribed(&self) -> &'static [Option<HookId>] {
+        &[]
+    }
+    fn general_entity_tick(
+        &self,
+        _host: &mut dyn ServerHost,
+        event: &mut GeneralEntityTickEvent<'_>,
+    ) {
+        assert_eq!(event.kind, "mymod:robot");
+        self.calls.lock().unwrap().push(self.id);
     }
 }
 impl ItemPart for Mod {
@@ -571,6 +601,11 @@ mod stubs {
     pub(super) struct TooltipDisplay<'a>(pub &'a ());
     pub(super) struct TriState;
     pub(super) struct InteractionResult;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) enum KnockbackEntry {
+        Short,
+        Full,
+    }
     pub(super) struct HurtSource<'a> {
         pub(super) damage_type: &'a str,
         pub(super) position: Option<[f64; 3]>,
@@ -579,7 +614,7 @@ mod stubs {
         pub(super) position: [f64; 3],
         pub(super) view: [f64; 3],
     }
-    pub(super) use crate::tests::mod_api::mod_api::DamageContainer;
+    pub(super) use crate::tests::mod_api::mod_api::{BlockEntityTickReply, DamageContainer};
     #[derive(Default)]
     pub(super) struct ModBlockEntity {
         id: String,
@@ -610,6 +645,8 @@ mod stubs {
         pub(super) fn id(&self) -> &str {
             self.id
         }
+        pub(super) fn __begin_tick_listener(&mut self) {}
+        pub(super) fn __finish_tick_listener(&mut self, _: BlockEntityTickReply) {}
     }
     pub(super) struct LootStack;
     pub(super) struct LootContext;
@@ -685,6 +722,22 @@ mod api {
         }
     }
     pub struct DamageContainer(pub f32);
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum BlockEntityTickReply {
+        Unchanged,
+        Changed,
+    }
+    #[derive(Clone, Copy)]
+    pub enum BlockFace {
+        Down,
+        Up,
+        North,
+        South,
+        West,
+        East,
+    }
+    #[derive(Clone)]
+    pub struct StandaloneModelForm;
     #[derive(Clone, Copy)]
     pub struct LivingRef;
     #[derive(Clone, Copy)]

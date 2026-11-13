@@ -91,8 +91,26 @@ jobs:
       - name: Exported names, toward Windows' 65,535
         run: python tools/prebuilt_game.py exports prebuilt | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Archive
+        # Python's tarfile, not tar: macOS's bsdtar has no --sort, and the archive must come out
+        # the same on every OS (sorted ./ entries, zero times and owners, no gzip name or time).
         run: |
-          tar --sort=name --mtime="@0" --owner=0 --group=0 --numeric-owner -cf - -C prebuilt . | gzip -n > "$ARCHIVE"
+          python - <<'PY'
+          import gzip, os, tarfile
+          def clean(info):
+              info.mtime, info.uid, info.gid, info.uname, info.gname = 0, 0, 0, "", ""
+              return info
+          paths = ["."]
+          for root, dirs, files in os.walk("prebuilt"):
+              dirs.sort()
+              rel = os.path.relpath(root, "prebuilt")
+              paths += sorted(os.path.normpath(os.path.join(rel, n)) for n in dirs + files)
+          with open(os.environ["ARCHIVE"], "wb") as out, gzip.GzipFile(
+              filename="", mode="wb", fileobj=out, mtime=0
+          ) as gz, tarfile.open(fileobj=gz, mode="w", format=tarfile.GNU_FORMAT) as tar:
+              for path in sorted(set(paths)):
+                  name = "." if path == "." else "./" + path.replace(os.sep, "/")
+                  tar.add(os.path.join("prebuilt", path), arcname=name, recursive=False, filter=clean)
+          PY
           echo "$(du -h "$ARCHIVE" | cut -f1) $ARCHIVE" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:

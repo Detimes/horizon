@@ -46,6 +46,7 @@ pub struct PartRegistrar {
     pub(crate) recipe_book_types: HashMap<String, String>,
     pub(crate) game_rule_categories: Vec<String>,
     pub(crate) game_rules: Vec<crate::GameRuleDecl>,
+    pub(crate) custom_stats: Vec<String>,
     pub(crate) mod_id: &'static str,
     pub(crate) mod_index: usize,
     /// Parts registered so far, by every mod: the next part's `order`.
@@ -68,6 +69,7 @@ pub struct PartRegistrar {
     pub(crate) dimensions: Vec<DimensionInfo>,
     pub(crate) dimension_shape: fn(&crate::DimensionSettings) -> bool,
     pub(crate) chunk_generators: Vec<ChunkGeneratorInfo>,
+    pub(crate) biome_sources: Vec<BiomeSourceInfo>,
     pub(crate) refused: Vec<String>,
 }
 
@@ -83,10 +85,11 @@ impl PartRegistrar {
             recipe_book_types: HashMap::new(),
             game_rule_categories: Vec::new(),
             game_rules: Vec::new(),
+            custom_stats: Vec::new(),
             mod_id,
             mod_index: 0,
             registered: 0,
-            parts: Parts::default(),
+            parts: Self::capability_parts(),
             tags: TagParts::default(),
             block_entity_types: Vec::new(),
             block_entity_transforms: HashMap::new(),
@@ -104,6 +107,7 @@ impl PartRegistrar {
             dimensions: Vec::new(),
             dimension_shape: |_| false,
             chunk_generators: Vec::new(),
+            biome_sources: Vec::new(),
             refused: Vec::new(),
         }
     }
@@ -213,7 +217,7 @@ pub(crate) fn register_all(
         }
     }
     registrar.expand_block_entity_parts();
-    registrar.refuse_unknown_dimension_generators();
+    registrar.refuse_unknown_generators_and_biome_sources();
     registrar
 }
 
@@ -252,6 +256,7 @@ pub(crate) fn install_registrar(
         game_rule_slots,
         game_rules: registrar.game_rules,
         game_rule_categories: registrar.game_rule_categories,
+        custom_stats: registrar.custom_stats,
         keys: registrar.parts,
         tags: registrar.tags,
         block_entity_types: registrar.block_entity_types,
@@ -269,6 +274,7 @@ pub(crate) fn install_registrar(
         effects: registrar.effects,
         fluids: OnceLock::new(),
         resolved_items: OnceLock::new(),
+        resolved_entity_types: OnceLock::new(),
         resolved_blocks: OnceLock::new(),
         particles: OnceLock::new(),
         controllers: registrar.controllers,
@@ -276,6 +282,7 @@ pub(crate) fn install_registrar(
         structure_types: registrar.structure_types,
         dimensions: registrar.dimensions,
         chunk_generators: registrar.chunk_generators,
+        biome_sources: registrar.biome_sources,
     };
     mod_vocab::__private::parts_installation::install(installed);
 

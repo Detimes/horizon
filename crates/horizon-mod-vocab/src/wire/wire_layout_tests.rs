@@ -182,6 +182,7 @@ fn handle_records_have_declared_field_bytes() {
     fields(ChunkRef::new(level, [3, -4]), (level, [3i32, -4]));
     fields(RaidRef::new(level, 53), (level, 53i32));
     fields(RaidRef::new(level, -1), (level, -1i32));
+    fields(WaterTicket::new(level, 59), (level, 59u64));
     fields(player, (entity, 0x1234u128));
     fields(
         GlobalPos::new(id("example:moon"), pos),

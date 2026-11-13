@@ -264,25 +264,9 @@ impl TryIntoApi for horizon_client::boss_overlay::ModBar {
     }
 }
 
-/// Registry access for generated stack write-back in full and narrowed hook hosts.
-pub(in crate::game) trait ItemBoundary {
-    fn boundary_items(&self) -> Option<&Items>;
-}
-impl ItemBoundary for super::Game<'_> {
-    fn boundary_items(&self) -> Option<&Items> {
-        Some(self.items())
-    }
-}
-impl ItemBoundary for super::GameLevel<'_> {
-    fn boundary_items(&self) -> Option<&Items> {
-        Some(self.items)
-    }
-}
-impl ItemBoundary for super::native_hooks::HitLevel<'_> {
-    fn boundary_items(&self) -> Option<&Items> {
-        self.0.tags()
-    }
-}
+#[path = "api_values/item_snapshot.rs"]
+mod item_snapshot;
+pub(in crate::game) use item_snapshot::ItemBoundary;
 
 impl TryIntoApi for horizon_world::chunk::BlockState {
     type Api = mod_api::BlockState;
@@ -1909,45 +1893,6 @@ impl TryIntoApi for crate::containers::ModBlockEntity {
 include!("api_values/block_entity_writeback.rs");
 
 impl super::Game<'_> {
-    pub(in crate::game) fn api_block_entity_tick(
-        &mut self,
-        pos: [i32; 3],
-        entity: &mut crate::containers::ModBlockEntity,
-    ) {
-        // #2051: the one decision whether a block entity ticks is its
-        // type's own ticker (`native_block_entity_ticks`,
-        // `EntityBlock.getTicker`), answered when the world opens — the
-        // level's ticking list carries it here, whichever path registered
-        // the type (a Registrar part or a bare declaration whose tick
-        // arrives another way). No second gate: a parts-only check here
-        // kept declared types' ticks — and the injections on
-        // `native_block_entity_tick` — unreachable.
-        let Ok(mut api) = entity.try_into_api() else {
-            return;
-        };
-        let revision = api.revision();
-        self.native_block_entity_tick(pos, &mut api);
-        if let Some(scope) = &mut self.block_entity_tick_items
-            && scope.items.is_some()
-        {
-            scope.snapshot = Some(Box::new((api, revision)));
-            return;
-        }
-        let _ = finish_block_entity_writeback(
-            entity,
-            &api,
-            revision,
-            self.items(),
-            "block_entity_tick",
-            if self.block_entity_tick_key.as_ref().is_none_or(|key| {
-                !key.unbalanced && key.failure_generation == self.wasm_dispatch_failures.get()
-            }) {
-                Ok(())
-            } else {
-                Err(BlockEntitySnapshotError::InvalidRevision)
-            },
-        );
-    }
     pub(in crate::game) fn api_block_entity_update_tag(
         pos: [i32; 3],
         entity: &crate::containers::ModBlockEntity,

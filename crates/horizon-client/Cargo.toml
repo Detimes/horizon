@@ -41,6 +41,8 @@ horizon-world = { path = "../horizon-world" }
 horizon-protocol = { path = "../horizon-protocol" }
 # server.properties, eula.txt and the user lists, shared with horizon-server.
 horizon-server-files = { path = "../horizon-server-files" }
+# The JDK's clock, for the LAN host's random seed and the probes.
+horizon-java-properties = { path = "../horizon-java-properties" }
 # The dedicated server's anticheat, off unless server.toml's [anticheat] turns it on (docs/anticheat.md).
 horizon-anticheat = { path = "../horizon-anticheat" }
 # The dedicated server's chat filter: [chat_filter], the slur list, mutes (docs/chat-filter.md);
@@ -172,6 +174,10 @@ path = "tests/mod_biome_sync.rs"
 [[test]]
 name = "mod_api_hooks"
 path = "tests/mod_api_hooks.rs"
+
+[[test]]
+name = "skull_models"
+path = "tests/skull_models.rs"
 
 [lints]
 workspace = true

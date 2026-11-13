@@ -277,7 +277,11 @@ fn matrix(mods: mod_api::Mods) {
                             Default::default(),
                         );
                         control.data = case.controls.iter().map(|&b| i32::from(b)).collect();
-                        game.native_block_entity_tick([0, 64, 0], &mut control);
+                        game.native_block_entity_tick(
+                            &mut mod_api::BlockEntityTickReply::Changed,
+                            [0, 64, 0],
+                            &mut control,
+                        );
                         assert!(
                             control.data.is_empty(),
                             "the control callback must run and accept {case:?}"
@@ -313,7 +317,11 @@ fn matrix(mods: mod_api::Mods) {
                                 "{client:?} {hand:?} {name} {case:?}"
                             );
                         }
-                        game.native_block_entity_tick([0, 64, 0], &mut control);
+                        game.native_block_entity_tick(
+                            &mut mod_api::BlockEntityTickReply::Changed,
+                            [0, 64, 0],
+                            &mut control,
+                        );
                         let expected: Vec<i32> = case
                             .phases
                             .iter()
