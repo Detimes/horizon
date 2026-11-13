@@ -35,6 +35,7 @@ pub mod handoff;
 pub mod hub;
 pub mod import;
 mod io_pool;
+pub mod leave;
 pub mod menu;
 #[cfg(test)]
 mod payload_bounds_tests;
@@ -77,8 +78,8 @@ pub enum NetEvent {
     Joined(Box<Joined>),
     /// A packet and the bytes of its body on the wire.
     Packet(u32, Box<play::Serverbound>, usize),
-    /// The connection ended (reason for the log).
-    Left(u32, String),
+    /// The connection ended: the reason for the log, and what ended it.
+    Left(u32, String, leave::LeaveCause),
     /// PlayerList.disconnectAllPlayersWithProfile: a new login of this
     /// profile replaces the player already in the world.
     Duplicate(u128),
@@ -146,7 +147,7 @@ impl NetEvent {
             Self::Packet(_, packet, _) => {
                 size_of::<play::Serverbound>().saturating_add(packet.as_ref().owned_heap_bytes())
             }
-            Self::Left(_, reason) => reason.capacity(),
+            Self::Left(_, reason, _) => reason.capacity(),
             Self::Duplicate(_) => 0,
         };
         // Source snapshot, guest inbox, derived HostEvent batch and credit marker,

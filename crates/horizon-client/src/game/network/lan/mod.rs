@@ -2756,7 +2756,7 @@ impl Game<'_> {
                             .as_ref()
                             .is_some_and(|host| !host.players_told_left)
                     {
-                        self.native_player_logged_out(guest.uuid, &guest.name);
+                        self.native_guest_logged_out(&guest);
                     }
                 }
                 HostEvent::Flight { conn, flying } => {
@@ -5039,6 +5039,60 @@ mod tests {
                 "mainhand", "offhand", "head", "chest", "legs", "feet", "body", "saddle"
             ]
         );
+    }
+
+    /// `player_logged_out` says why: the cause the hub kept for a guest that
+    /// left (the first one), and the server stopping for the players still on.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_player_who_left_is_heard_with_why() {
+        use super::super::native_guest_turn_tests::with_guests;
+        use horizon_client::lan::{hub::HostEvent, leave::LeaveCause};
+        use mod_api::{Hooks, PlayerLoggedOutEvent, QuitReason, ServerHost};
+        use std::sync::Mutex;
+
+        static HEARD: Mutex<Vec<(u128, QuitReason, String)>> = Mutex::new(Vec::new());
+        struct Listener;
+        #[mod_api::__subscriptions]
+        impl Hooks for Listener {
+            fn player_logged_out(
+                &self,
+                _: &mut dyn ServerHost,
+                event: &mut PlayerLoggedOutEvent<'_>,
+            ) {
+                HEARD
+                    .lock()
+                    .unwrap()
+                    .push((event.player, event.reason, event.message.to_owned()));
+            }
+        }
+        let mods: mod_api::Mods =
+            vec![mod_api::ModEntry::new("listener", Box::new(Listener))].into();
+        mod_platform::testing::with_mods(mods, || {
+            with_guests(|game| {
+                let host = game.lan.as_mut().unwrap();
+                let mut gone = host.hub.guests.remove(0);
+                gone.left_reason = "Timed out".into();
+                gone.left_for(LeaveCause::TimedOut);
+                gone.left_for(LeaveCause::Kicked);
+                let host = game.lan.take().unwrap();
+                game.lan = game.lan_process_events(
+                    host,
+                    [HostEvent::Left(Box::new(gone))],
+                    &[],
+                    [0.5, 64.0, 0.5],
+                );
+                game.native_players_leaving();
+                assert_eq!(
+                    *HEARD.lock().unwrap(),
+                    [
+                        (12, QuitReason::TimedOut, "Timed out".to_owned()),
+                        (13, QuitReason::ServerStopping, "Server closed".to_owned()),
+                    ],
+                    "the first cause kept, then the server stopping"
+                );
+            });
+        });
     }
 
     /// `server_chat`'s replies reach the sender alone, as system chat, whether

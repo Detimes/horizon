@@ -36,8 +36,8 @@ pub use entity::types::{
     EntityTypeKey, FishingHookRef, GoalSpec, ItemEntityRef, LeashHolder, LivingRef, MainHand,
     MerchantRef, MinecartKind, MinecartRef, MobFilter, MobGoalEntry, MobRef, ModifierLifetime,
     OriginalPlayerRef, PierceLevelError, PlayerAbilities, PlayerAction, PlayerActionSetup,
-    PlayerExperience, PlayerFood, PlayerRef, ProjectileRef, RemovalReason, ServerPlayer,
-    TextAlignment, Transformation, UnspawnedMobRef,
+    PlayerExperience, PlayerFood, PlayerRef, ProjectileRef, QuitReason, RemovalReason,
+    ServerPlayer, TextAlignment, Transformation, UnspawnedMobRef,
 };
 pub use item::types::{
     ArmorHurt, ArrowPickup, ClientMiningPrediction, Dispensed, EnchantmentInfo, EnchantmentKey,

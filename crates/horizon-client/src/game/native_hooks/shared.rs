@@ -2739,7 +2739,7 @@ impl Game<'_> {
             .map(|g| (g.uuid, g.name.clone()))
             .collect();
         for (player, name) in players {
-            self.native_player_logged_out(player, &name);
+            self.native_server_stopped_for(player, &name);
         }
     }
     /// The mobs from index `from` on are new in the world.

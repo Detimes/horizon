@@ -7,10 +7,15 @@ pub trait Hooks {
     /// Once for each player `native_player_logged_in` told of. They've already
     /// left `host.players().server_players()`, except when the server stops, which tells
     /// before it saves, with them still listed and able to get a last message.
-    /// Server-side.
+    /// `reason` is what ended the connection, the first cause kept (a timeout
+    /// after a kick stays a kick), and `message` the line the console's "lost
+    /// connection" shows (a kick's text, `Timed out`, the read error, `Server
+    /// closed` when the server stops). Contract version `2`: version `1` did
+    /// not say why. Server-side.
     #[hook(
         side = "server",
         contract = "listen",
+        version = 2,
         neoforge = "PlayerEvent.PlayerLoggedOutEvent"
     )]
     fn player_logged_out();

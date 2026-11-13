@@ -1,5 +1,6 @@
 //! Ordered Hub/action-stream tests. No prepared resources or game process.
 use super::*;
+use crate::lan::leave::LeaveCause;
 
 fn with_input_context<T>(run: impl FnOnce(&mut TickCtx<'_>) -> T) -> T {
     let mut world = World::new(horizon_world::registry::BlockStateId(0), 0);
@@ -63,7 +64,7 @@ fn leaving_physical_guest_keeps_then_discards_its_queued_input_credit() {
     publish_packet(&hub, S::Punch(horizon_protocol::packets::Empty));
     let conn = hub.guests[0].conn;
     provider
-        .send(NetEvent::Left(conn, "test departure".into()))
+        .send(NetEvent::Left(conn, "test departure".into(), LeaveCause::Quit))
         .unwrap();
     with_input_context(|ctx| {
         let events = hub.poll(ctx);
@@ -274,7 +275,7 @@ fn cancelled_epoch_and_left_physical_connection_never_yield_raw_callbacks() {
         let conn = hub.guests[0].conn;
         publish_raw(&hub, vec![1]);
         provider
-            .send(NetEvent::Left(conn, "left physical incarnation".into()))
+            .send(NetEvent::Left(conn, "left physical incarnation".into(), LeaveCause::Quit))
             .unwrap();
         with_input_context(|ctx| {
             let events = hub.poll(ctx);

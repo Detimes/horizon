@@ -61,6 +61,14 @@ the player is counted, and `sleep_timer(host)` / `set_sleep_timer(host, ticks)` 
 `Player.sleepCounter` (0 to 109; 100 is slept long enough). Reads take a `Host`, writes a
 `ServerHost`.
 
+Why a player left: the `player_logged_out` hook (contract version 2) carries `reason` and
+`message` beside the player. `reason` is a `QuitReason`: `Quit` (the client closed the connection,
+or moved to another server), `Kicked` (a kick, a ban, a duplicate login, a packet limit),
+`TimedOut` (the keep-alive timeout), `Error` (a malformed packet or a read error) or
+`ServerStopping`. The hub keeps the first cause that ended the connection, so a timeout after a
+kick stays `Kicked`. `message` is the line the console's "lost connection" shows (`Server closed`
+when the server stops). Match `reason` with a catch-all arm: the enum is `non_exhaustive`.
+
 These small services exist only on `ServerHost`, not `Host`, `ClientHost` or a
 restricted level host. Native and wasm mods use the same calls: service methods
 are generated imports, and acquiring a service just reborrows the current call's

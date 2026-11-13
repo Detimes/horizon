@@ -3420,7 +3420,7 @@ pub(super) mod tests {
             )]
             .into();
             mod_platform::testing::with_mods(mods, || {
-                game.native_player_logged_out(0, "control");
+                game.native_player_logged_out(0, "control", mod_api::QuitReason::Quit, "");
                 assert_eq!(logouts.swap(0, std::sync::atomic::Ordering::Relaxed), 1);
                 game.tick_lan_packets();
                 assert_eq!(logouts.load(std::sync::atomic::Ordering::Relaxed), 0);

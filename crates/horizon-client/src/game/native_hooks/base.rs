@@ -3744,15 +3744,6 @@ impl Game<'_> {
     pub(in crate::game) fn native_player_logged_in(&mut self, player: u128, name: &str) {
         self.fire_player_logged_in(player, name);
     }
-    /// `player` (`name`) left the game (NeoForge's `PlayerLoggedOutEvent`), by
-    /// any path: a lost connection, a kick, the server stopping or failing.
-    /// Once for each player `native_player_logged_in` told of. They've already
-    /// left `native_server_players`, except when the server stops, which tells
-    /// before it saves, with them still listed and able to get a last message.
-    /// Server-side.
-    pub(in crate::game) fn native_player_logged_out(&mut self, player: u128, name: &str) {
-        self.fire_player_logged_out(player, name);
-    }
     /// `PlayerRespawnPositionEvent`: where `player` respawns, once the server found it. The
     /// `original_*` arguments are that point; the mods may change `level`, `position`, `yaw`,
     /// `pitch` and `copy_original_spawn_position` (`game/world/respawn_position.rs` applies them).

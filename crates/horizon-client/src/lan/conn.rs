@@ -12,6 +12,7 @@ use super::{
     data::{CORE_PACK, SyncData},
     forwarding,
     io_pool::{self, Session as _},
+    leave::LeaveCause,
 };
 use crate::raw_payloads::{Side, Transport};
 use horizon_protocol::{
@@ -1992,6 +1993,7 @@ fn play(
         watch,
         counted,
         undrained,
+        cause: None,
     };
     let joined = Joined {
         conn,
@@ -2039,8 +2041,21 @@ struct PlayConn {
     counted: Option<super::Counted>,
     /// Shared with the player's [`PlayerSender`]: what the hub hasn't taken yet.
     undrained: Arc<Undrained>,
+    /// What this connection ended the player for itself (a packet limit, a declined pack, the
+    /// keep-alive timeout), when it did.
+    cause: Option<LeaveCause>,
 }
 impl PlayConn {
+    /// A kick of this connection's own: the disconnect goes after what is queued.
+    fn kick(
+        &mut self,
+        cause: LeaveCause,
+        (reason, text): (horizon_core::nbt::Tag, String),
+    ) -> io_pool::Verdict {
+        self.cause = Some(cause);
+        let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
+        io_pool::Verdict::Kick(text, body)
+    }
     /// `IntegratedServer.isSingleplayerOwner`: the integrated server's own player,
     /// by name (ignoring case).
     fn is_owner(&self) -> bool {
@@ -2056,16 +2071,12 @@ impl io_pool::Session for PlayConn {
     /// required resource pack declined, a rate-limit excess, a malformed packet.
     fn packet(&mut self, id: i32, payload: Vec<u8>) -> io_pool::Verdict {
         use io_pool::Verdict;
-        let kick = |(reason, text): (horizon_core::nbt::Tag, String)| {
-            let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
-            Verdict::Kick(text, body)
-        };
         if self.payload_transport.closed() {
             return Verdict::Go;
         }
         let now = Instant::now();
         if let Some(average) = self.rate.as_mut().and_then(|r| r.received(now)) {
-            return kick(rate_exceeded(&self.shared, average));
+            return self.kick(LeaveCause::Kicked, rate_exceeded(&self.shared, average));
         }
         match play::Serverbound::decode_with_payload_codecs(
             id,
@@ -2088,16 +2099,22 @@ impl io_pool::Session for PlayConn {
                 } else if self.is_owner() {
                     Verdict::Go
                 } else {
-                    kick((
-                        translatable("disconnect.timeout", &[]),
-                        "Timed out".to_owned(),
-                    ))
+                    self.kick(
+                        LeaveCause::TimedOut,
+                        (
+                            translatable("disconnect.timeout", &[]),
+                            "Timed out".to_owned(),
+                        ),
+                    )
                 }
             }
             Ok(play::Serverbound::ResourcePack(r))
                 if r.action == PACK_DECLINED && self.required_pack =>
             {
-                kick(pack_rejected(&self.shared, &self.name, r.id))
+                self.kick(
+                    LeaveCause::Kicked,
+                    pack_rejected(&self.shared, &self.name, r.id),
+                )
             }
             Ok(p) => {
                 let p = match p {
@@ -2157,7 +2174,10 @@ impl io_pool::Session for PlayConn {
                 };
                 // Bounded here, where packets are made, not only where the hub drains them.
                 if !self.undrained.handed(payload.len()) {
-                    return kick(undrained_exceeded(&self.shared, &self.name));
+                    return self.kick(
+                        LeaveCause::Kicked,
+                        undrained_exceeded(&self.shared, &self.name),
+                    );
                 }
                 let event = NetEvent::Packet(self.conn, Box::new(p), payload.len());
                 match self.shared.events.send(event) {
@@ -2182,7 +2202,13 @@ impl io_pool::Session for PlayConn {
         Some(play::Clientbound::KeepAlive(cfg::KeepAlive { id }).encode())
     }
     fn left(&mut self, reason: String) {
-        let _ = self.shared.events.send(NetEvent::Left(self.conn, reason));
+        let cause = self
+            .cause
+            .unwrap_or_else(|| LeaveCause::from_network(&reason));
+        let _ = self
+            .shared
+            .events
+            .send(NetEvent::Left(self.conn, reason, cause));
         self.shared.closing.fetch_add(1, Ordering::AcqRel);
     }
     fn closed(&mut self) {
@@ -3328,6 +3354,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            cause: None,
         };
         let answer = |c: &mut PlayConn, id: i64| c.packet(KEEP_ALIVE, id.to_be_bytes().to_vec());
         // The pending one: accepted.
