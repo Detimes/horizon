@@ -1576,6 +1576,41 @@ mod tests {
         assert_eq!(down(2), Some(2));
     }
 
+    /// 1.21.1 has no client_tick_end: one follows each of its moves. 26.3's client_tick_end is 13.
+    #[test]
+    fn a_1_21_1_move_is_followed_by_one_client_tick_end() {
+        let s = ClientSession::new(ServerVersion::V1_21_1);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        // move_player_pos: 26 in 1.21.1, 30 in 26.3; x, y, z and the on-ground boolean.
+        let mut w = Writer::new();
+        for v in [1.0, 64.0, 2.0] {
+            w.f64(v);
+        }
+        w.bool(true);
+        let (id, _) = s.serverbound(26, w.data).unwrap().unwrap();
+        assert_eq!(id, 30);
+        assert_eq!(s.next_serverbound(), Some((13, Vec::new())));
+        assert_eq!(s.next_serverbound(), None);
+        // A keep-alive (24 in 1.21.1) is no move: nothing follows it.
+        s.serverbound(24, vec![0; 8]).unwrap().unwrap();
+        assert_eq!(s.next_serverbound(), None);
+    }
+
+    #[test]
+    fn a_1_21_4_move_is_followed_by_nothing() {
+        let s = ClientSession::new(ServerVersion::V1_21_4);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        // move_player_pos: 28 in 1.21.4; x, y, z and the flags byte (on the ground).
+        let mut w = Writer::new();
+        for v in [1.0, 64.0, 2.0] {
+            w.f64(v);
+        }
+        w.u8(1);
+        let (id, _) = s.serverbound(28, w.data).unwrap().unwrap();
+        assert_eq!(id, 30);
+        assert_eq!(s.next_serverbound(), None);
+    }
+
     #[test]
     fn a_26_2_teleport_confirmation_states_where_the_teleport_put_the_client() {
         use play::relative as rel;
