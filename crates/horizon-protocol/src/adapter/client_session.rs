@@ -680,8 +680,6 @@ impl ClientSession {
     }
 }
 
-/// A 26.2 client's packets whose layout changed are written in its layout ([`layout_26_2`], when enabled),
-/// the others renumbered by [`down`].
 /// An older client's serverbound `sign_update` (position, the side as a boolean, the four lines) in
 /// 26.3's order (position, the four lines, the side as a VarInt): the mirror of translate's `sign_update`.
 fn sign_update_up(payload: &[u8]) -> Result<Vec<u8>> {
@@ -697,6 +695,8 @@ fn sign_update_up(payload: &[u8]) -> Result<Vec<u8>> {
     Ok(w.data)
 }
 
+/// A 26.2 client's packets whose layout changed are written in its layout ([`layout_26_2`], when enabled),
+/// the others renumbered by [`down`].
 fn layout_then_ids(
     version: ServerVersion,
     ids: &'static Ids,
