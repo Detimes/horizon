@@ -32,23 +32,13 @@ pub use command::types::{Authority, Command, PermissionLevel};
 pub use entity::effect_category::EffectCategory;
 pub use entity::types::{
     ActiveEffect, AttributeModifier, AttributeOperation, AttributeRegistrationError, Billboard,
-<<<<<<< HEAD
-    ChannelRef, ChatVisibility, ClientInfo, Deflection, DisplayKind, DisplayRef, DragonPhase,
-    DragonRef, EffectApplicable, EffectKey, EffectTickChange, EntityAttributeError, EntityRef,
-    EntityTypeKey, FishingHookRef, GoalSpec, ItemEntityRef, LeashHolder, LivingRef, MainHand,
-    MerchantRef, MinecartKind, MinecartRef, MobFilter, MobGoalEntry, MobRef, ModifierLifetime,
-    OriginalPlayerRef, PierceLevelError, PlayerAbilities, PlayerAction, PlayerActionSetup,
-    PlayerExperience, PlayerFood, PlayerRef, ProjectileRef, QuitReason, RemovalReason,
-    ServerPlayer, TextAlignment, Transformation, UnspawnedMobRef,
-=======
     ChannelRef, ChatVisibility, ClientInfo, CollisionExclusionsError, Deflection, DisplayKind,
     DisplayRef, DragonPhase, DragonRef, EffectApplicable, EffectKey, EffectTickChange,
     EntityAttributeError, EntityRef, EntityTypeKey, FishingHookRef, GoalSpec, ItemEntityRef,
     LeashHolder, LivingRef, MainHand, MerchantRef, MinecartKind, MinecartRef, MobFilter,
     MobGoalEntry, MobRef, ModifierLifetime, OriginalPlayerRef, PierceLevelError, PlayerAbilities,
     PlayerAction, PlayerActionSetup, PlayerExperience, PlayerFood, PlayerRef, ProjectileRef,
-    RemovalReason, ServerPlayer, TextAlignment, Transformation, UnspawnedMobRef,
->>>>>>> arismoko/main
+    QuitReason, RemovalReason, ServerPlayer, TextAlignment, Transformation, UnspawnedMobRef,
 };
 pub use item::types::{
     ArmorHurt, ArrowPickup, ClientMiningPrediction, Dispensed, EnchantmentInfo, EnchantmentKey,
