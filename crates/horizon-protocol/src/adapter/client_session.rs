@@ -24,6 +24,7 @@ mod step_1_20_6;
 mod step_1_21_1;
 mod step_1_21_10;
 mod step_1_21_11;
+mod step_1_21_3;
 mod step_1_21_4;
 mod step_1_21_5;
 mod step_1_21_6;
@@ -568,6 +569,12 @@ impl ClientSession {
         // 1.21.4 is older than 1.21.5 too: after its step, the last one.
         if v.at_most(ServerVersion::V1_21_4)
             && let Some(next) = step_1_21_4::clientbound(state, id, &payload)?
+        {
+            payload = next;
+        }
+        // 1.21.2 and 1.21.3 (one protocol): 1.21.4's two additions go.
+        if v == ServerVersion::V1_21_3
+            && let Some(next) = step_1_21_3::clientbound(state, id, &payload)?
         {
             payload = next;
         }
@@ -1443,6 +1450,35 @@ mod tests {
         assert_eq!(slot(72), 65);
         // ocean_monument_map (1239, new in 26.3) is a filled map: filled_map (1238 in 26.3, 1133 in 26.2).
         assert_eq!(slot(1239), 1133);
+    }
+
+    /// Every client through 1.21.6 was disconnected by the first equipment with a component ("NBT at byte 1"):
+    /// 1.21.6's step read the stacks, already in the client's ids, as pinned ones.
+    #[test]
+    fn equipment_with_components_reaches_every_older_client() {
+        use crate::item::{Component, Stack, component};
+        use horizon_world::nbt::Tag;
+        let mut hat = Stack::new(1012, 1);
+        hat.added.push((
+            component::CUSTOM_NAME,
+            Component::Text(Tag::String("Santa Hat".into())),
+        ));
+        hat.added
+            .push((component::ENCHANTMENT_GLINT_OVERRIDE, Component::Bool(true)));
+        let p = play::Clientbound::SetEquipment(play::SetEquipment {
+            id: 4,
+            slots: vec![(0, Some(hat.clone())), (5, Some(hat))],
+        });
+        for v in ServerVersion::ALL {
+            if v == ServerVersion::Current || v.at_most(ServerVersion::V1_20_3) {
+                continue;
+            }
+            let s = ClientSession::new(v);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            let sent = s.clientbound(&p.encode());
+            assert!(matches!(sent, Ok(Some(_))), "{v:?}: {sent:?}");
+        }
     }
 
     #[test]
