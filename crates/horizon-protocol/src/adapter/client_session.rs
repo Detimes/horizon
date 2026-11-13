@@ -321,6 +321,7 @@ impl ClientSession {
                 self.tick_ended(pinned);
                 payload
             }
+            (State::Play, sb::SIGN_UPDATE) => sign_update_up(&payload)?,
             _ => payload,
         };
         let Some(ids) = self.version.ids() else {
@@ -681,6 +682,21 @@ impl ClientSession {
 
 /// A 26.2 client's packets whose layout changed are written in its layout ([`layout_26_2`], when enabled),
 /// the others renumbered by [`down`].
+/// An older client's serverbound `sign_update` (position, the side as a boolean, the four lines) in
+/// 26.3's order (position, the four lines, the side as a VarInt): the mirror of translate's `sign_update`.
+fn sign_update_up(payload: &[u8]) -> Result<Vec<u8>> {
+    let mut r = Reader::new(payload);
+    let pos = r.i64()?;
+    let front = r.bool()?;
+    let mut w = Writer::new();
+    w.i64(pos);
+    for _ in 0..4 {
+        w.string(&r.string(384)?);
+    }
+    w.varint(i32::from(front));
+    Ok(w.data)
+}
+
 fn layout_then_ids(
     version: ServerVersion,
     ids: &'static Ids,
@@ -1053,6 +1069,26 @@ fn entity_value(ids: &Ids, kind: i32, value: &mut Value) -> bool {
 mod tests {
     use super::*;
     use crate::buf::Codec;
+
+    #[test]
+    fn an_older_clients_sign_update_reaches_26_3_with_the_side_after_the_lines() {
+        let mut w = Writer::new();
+        w.i64(0x1234);
+        w.bool(false); // back side
+        for line in ["a", "bb", "", "dddd"] {
+            w.string(line);
+        }
+        let up = sign_update_up(&w.data).unwrap();
+        let mut r = Reader::new(&up);
+        assert_eq!(r.i64().unwrap(), 0x1234);
+        for line in ["a", "bb", "", "dddd"] {
+            assert_eq!(r.string(384).unwrap(), line);
+        }
+        assert_eq!(r.varint().unwrap(), 0);
+        assert!(r.rest().is_empty());
+        let packet = play::Serverbound::decode(packet_ids::play::serverbound::SIGN_UPDATE, &up);
+        assert!(packet.is_ok(), "{packet:?}");
+    }
 
     fn body(id: i32, payload: &[u8]) -> Vec<u8> {
         let mut w = Writer::new();
