@@ -159,6 +159,8 @@ impl Drop for ClientIds {
 /// (a particle's data, say, is chosen by its pinned id).
 pub(super) fn read_in_client_ids<T>(read: impl FnOnce() -> Result<T>) -> Result<T> {
     let _guard = CLIENT_IDS.get().map(|ids| ids::renumbering(ids, Way::Up));
+    // Its synchronised registry ids too, which [`write_in_client_ids`] renumbers again.
+    let _synced = ids::synced_writing().map(ids::synced_reading);
     read()
 }
 
@@ -273,6 +275,14 @@ impl ClientSession {
             _ => state,
         };
         self.reading.store(to_u8(next), Ordering::Release);
+        // The stacks it names carry its own synchronised registry ids (enchantments, trims, banner patterns,
+        // painting variants): read as the pinned ones.
+        let maps = self
+            .synced
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let _synced = (!maps.is_empty()).then(|| ids::synced_reading(maps));
         let Some((pinned, payload)) = self.older_layout_up(state, pinned, payload)? else {
             return Ok(None);
         };
@@ -1352,6 +1362,107 @@ mod tests {
         // ...but the client's next real move is.
         assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
         assert!(s.serverbound(31, pos_rot(101.0)).unwrap().is_some());
+    }
+
+    /// A session of `version` in play, its `minecraft:enchantment` registry sent as aqua_affinity, lunge,
+    /// mending (pinned 0, 1, 2).
+    fn with_enchantments(version: ServerVersion) -> ClientSession {
+        let s = ClientSession::new(version);
+        s.writing
+            .store(to_u8(State::Configuration), Ordering::Release);
+        s.clientbound(&body(
+            packet_ids::configuration::clientbound::REGISTRY_DATA,
+            &enchantments(&[
+                "minecraft:aqua_affinity",
+                "minecraft:lunge",
+                "minecraft:mending",
+            ]),
+        ))
+        .unwrap()
+        .unwrap();
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        s
+    }
+
+    fn enchantments(names: &[&str]) -> Vec<u8> {
+        let mut w = Writer::new();
+        configuration::RegistryData::write(
+            &configuration::RegistryData {
+                registry: "minecraft:enchantment".into(),
+                entries: names
+                    .iter()
+                    .map(|n| configuration::RegistryEntry {
+                        id: (*n).into(),
+                        data: None,
+                    })
+                    .collect(),
+            },
+            &mut w,
+        );
+        w.data
+    }
+
+    /// 1.21.1 has no lunge: its mending is 1, 26.3's 2.
+    #[test]
+    fn a_1_21_1_creative_stack_takes_the_pinned_enchantment_after_one_it_lacks() {
+        use crate::item::{Component, component};
+        let s = with_enchantments(ServerVersion::V1_21_1);
+        // set_creative_mode_slot (50 in 1.21.1): slot 36, one diamond_sword (838 in 1.21.1) with one
+        // component, enchantments (9 in 1.21.1): mending (1) at level 3, shown in the tooltip.
+        let mut w = Writer::new();
+        w.i16(36);
+        for v in [1, 838, 1, 0, 9, 1, 1, 3] {
+            w.varint(v);
+        }
+        w.bool(true);
+        let (id, payload) = s.serverbound(50, w.data).unwrap().unwrap();
+        assert_eq!(id, 57);
+        let play::Serverbound::SetCreativeModeSlot(p) =
+            play::Serverbound::decode(id, &payload).unwrap()
+        else {
+            panic!("not a creative slot");
+        };
+        let stack = p.item.unwrap();
+        // diamond_sword: 1050 in 26.3; enchantments: component 13.
+        assert_eq!(stack.item, 1050);
+        assert_eq!(
+            stack.component(component::ENCHANTMENTS),
+            Some(&Component::Enchantments(vec![(2, 3)]))
+        );
+    }
+
+    /// set_equipment with a saddle is read back and written again in the client's ids for clients through
+    /// 1.21.6 (they have no saddle slot): its enchantments are renumbered once, not twice.
+    #[test]
+    fn a_1_21_1_client_is_sent_its_own_enchantment_once() {
+        use crate::item::{Component, Stack, component};
+        let s = with_enchantments(ServerVersion::V1_21_1);
+        let mut sword = Stack::new(1050, 1);
+        sword.added.push((
+            component::ENCHANTMENTS,
+            Component::Enchantments(vec![(2, 3)]),
+        ));
+        let p = play::Clientbound::SetEquipment(play::SetEquipment {
+            id: 4,
+            // Main hand, and the saddle slot (7) 1.21.6 lacks.
+            slots: vec![(0, Some(sword)), (7, Some(Stack::new(1050, 1)))],
+        });
+        let sent = s.clientbound(&p.encode()).unwrap().unwrap();
+        let mut r = Reader::new(&sent);
+        // set_equipment: 91 in 1.21.1; entity 4, main hand (0, the last slot: the saddle is left out).
+        assert_eq!(r.varint().unwrap(), 91);
+        assert_eq!(r.varint().unwrap(), 4);
+        assert_eq!(r.u8().unwrap(), 0);
+        let stack = {
+            let _up = ids::renumbering(ServerVersion::V1_21_1.ids().unwrap(), Way::Up);
+            crate::item::Slot::read(&mut r).unwrap().unwrap()
+        };
+        // Mending is 1 in the client's numbering (renumbered twice, it was left out).
+        assert_eq!(
+            stack.component(component::ENCHANTMENTS),
+            Some(&Component::Enchantments(vec![(1, 3)]))
+        );
     }
 
     #[test]

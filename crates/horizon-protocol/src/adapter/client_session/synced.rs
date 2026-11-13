@@ -142,18 +142,31 @@ pub(super) fn absent_registry(version: ServerVersion, payload: &[u8]) -> Result<
     Ok(absent(version, &p.registry))
 }
 
-/// Pinned index -> the client's, -1 for a removed entry without a stand-in.
+/// One registry's renumbering.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct IdMap(pub(super) Vec<i32>);
+pub(super) struct IdMap {
+    /// Pinned index -> the client's, -1 for a removed entry without a stand-in.
+    pub(super) down: Vec<i32>,
+    /// The client's index -> the pinned one (the entries kept, in order).
+    pub(super) up: Vec<i32>,
+}
 
 impl IdMap {
     /// The client's id; `None`: removed without a stand-in. Ids past the table pass unchanged.
     pub(super) fn down(&self, id: i32) -> Option<i32> {
-        match usize::try_from(id).ok().and_then(|i| self.0.get(i)) {
+        match usize::try_from(id).ok().and_then(|i| self.down.get(i)) {
             Some(&-1) => None,
             Some(&to) => Some(to),
             None => Some(id),
         }
+    }
+    /// The pinned id of the client's `id`. Ids past the table pass unchanged.
+    pub(super) fn up(&self, id: i32) -> i32 {
+        usize::try_from(id)
+            .ok()
+            .and_then(|i| self.up.get(i))
+            .copied()
+            .unwrap_or(id)
     }
     /// The client's id, the first entry for a removed one without a stand-in.
     pub(super) fn down_or_first(&self, id: i32) -> i32 {
@@ -161,7 +174,7 @@ impl IdMap {
     }
     /// Bits of the client's global biome palette (`Mth.ceillog2` of its biome count).
     fn global_bits(&self) -> u8 {
-        let n = self.0.iter().copied().max().map_or(1, |m| m + 1).max(1) as u32;
+        let n = self.down.iter().copied().max().map_or(1, |m| m + 1).max(1) as u32;
         (32 - (n - 1).leading_zeros()) as u8
     }
     fn container(&self, p: &Paletted) -> Paletted {
@@ -187,6 +200,12 @@ impl crate::adapter::ids::SyncedIds for IdMaps {
         match self.get(registry) {
             Some(map) => map.down(id),
             None => Some(id),
+        }
+    }
+    fn up(&self, registry: &str, id: i32) -> i32 {
+        match self.get(registry) {
+            Some(map) => map.up(id),
+            None => id,
         }
     }
 }
@@ -226,11 +245,14 @@ pub(super) fn registry_data(
             }
         })
         .collect();
+    let up = (0..p.entries.len() as i32)
+        .filter(|&i| !removed.contains(&p.entries[i as usize].id.as_str()))
+        .collect();
     let registry = p.registry.clone();
     p.entries.retain(|e| !removed.contains(&e.id.as_str()));
     let mut w = Writer::new();
     configuration::RegistryData::write(&p, &mut w);
-    Ok(Some((w.data, registry, IdMap(map))))
+    Ok(Some((w.data, registry, IdMap { down: map, up })))
 }
 
 /// Tags of registries the client doesn't have are left out; the members of renumbered registries take the
@@ -382,7 +404,8 @@ mod tests {
                 "minecraft:the_void"
             ]
         );
-        assert_eq!(map, IdMap(vec![0, 1, 1, 2]));
+        assert_eq!(map.down, [0, 1, 1, 2]);
+        assert_eq!(map.up, [0, 2, 3]);
         assert!(
             registry_data(ServerVersion::Current, &registry(BIOMES, &biomes))
                 .unwrap()
@@ -412,8 +435,10 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(map, IdMap(vec![0, -1, 1]));
+        assert_eq!(map.down, [0, -1, 1]);
         assert_eq!(map.down(1), None);
+        assert_eq!(map.up, [0, 2]);
+        assert_eq!(map.up(1), 2);
         let gone = lacking(DAMAGE_TYPE)[0];
         let (_, _, map) = registry_data(
             ServerVersion::V1_21_1,
@@ -421,7 +446,8 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(map, IdMap(vec![0, 1, 1]));
+        assert_eq!(map.down, [0, 1, 1]);
+        assert_eq!(map.up, [0, 2]);
         let mut w = Writer::new();
         w.varint(7);
         w.varint(1);
@@ -455,7 +481,13 @@ mod tests {
             .unwrap()
         );
         let mut maps = IdMaps::new();
-        maps.insert(BIOMES.into(), IdMap(vec![0, 1, 1, 2]));
+        maps.insert(
+            BIOMES.into(),
+            IdMap {
+                down: vec![0, 1, 1, 2],
+                up: vec![0, 2, 3],
+            },
+        );
         let mut regs = vec![
             configuration::RegistryTags {
                 registry: "minecraft:pig_variant".into(),
@@ -476,7 +508,10 @@ mod tests {
 
     #[test]
     fn biome_containers_take_the_clients_numbering() {
-        let map = IdMap(vec![0, 1, 1, 2]);
+        let map = IdMap {
+            down: vec![0, 1, 1, 2],
+            up: vec![0, 2, 3],
+        };
         let single = Paletted::from_values(&[3; chunk::BIOMES], Strategy::Biomes, 2);
         assert_eq!(map.container(&single).get(0), 2);
         let mixed: Vec<i32> = (0..chunk::BIOMES as i32).map(|i| i % 4).collect();
