@@ -841,6 +841,14 @@ fn layout_then_ids(
     id: i32,
     payload: &[u8],
 ) -> Result<Sent> {
+    // update_recipes carries 26.3 item ids in its property sets and stonecutter recipes (1.21.2 and later).
+    if state == State::Play
+        && id == packet_ids::play::clientbound::UPDATE_RECIPES
+        && version.at_most(ServerVersion::V26_2)
+        && !version.at_most(ServerVersion::V1_21_1)
+    {
+        return Ok(Sent::Rewritten(update_recipes(ids, payload)?));
+    }
     if version.at_most(ServerVersion::V26_2) && layout_26_2::enabled() {
         match layout_26_2::clientbound(ids, state, id, payload)? {
             layout_26_2::Out::Untouched => {}
@@ -1061,6 +1069,61 @@ fn encode_down(ids: &'static Ids, p: &play::Clientbound) -> Vec<u8> {
     strip_id(p.encode())
 }
 
+/// 26.3's update_recipes in the item ids of an older client (1.21.2 to 26.2 lay it out as 26.3 does): the items
+/// of each recipe property set (an item the client lacks is left out, a stand-in would be a wrong answer to
+/// "may this go in the slot"), and each stonecutter recipe's input and result display. A recipe whose input
+/// has no item left, or whose result the client has nothing to show for, is not sent.
+fn update_recipes(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
+    use crate::packets::recipes::{HolderSet, SlotDisplay};
+    let mut r = Reader::new(payload);
+    let mut w = Writer::new();
+    let sets = r.count(r.remaining())?;
+    w.varint(sets as i32);
+    for _ in 0..sets {
+        w.string(&r.string(32767)?);
+        let n = r.count(r.remaining())?;
+        let mut items = Vec::with_capacity(n.min(4096));
+        for _ in 0..n {
+            items.extend(ids.item.down(r.varint()?));
+        }
+        w.varint(items.len() as i32);
+        items.iter().for_each(|&id| w.varint(id));
+    }
+    let n = r.count(r.remaining())?;
+    let mut kept = Vec::with_capacity(n.min(4096));
+    for _ in 0..n {
+        let mut input = HolderSet::read(&mut r)?;
+        let result = SlotDisplay::read(&mut r)?;
+        if let HolderSet::Items(items) = &mut input {
+            items.retain(|&id| ids.item.down(id).is_some());
+            if items.is_empty() {
+                continue;
+            }
+        }
+        let shown = match &result {
+            SlotDisplay::Item(id) => Some(*id),
+            SlotDisplay::ItemStack(stack) => Some(stack.item),
+            _ => None,
+        };
+        if let Some(id) = shown
+            && down_or_substitute(ids.item, ids.substitutes.item, id).is_none()
+        {
+            continue;
+        }
+        kept.push((input, result));
+    }
+    w.varint(kept.len() as i32);
+    {
+        // The input's items are already the ones the client has; the display takes stand-ins.
+        let _down = ids::renumbering(ids, Way::Down);
+        for (input, result) in &kept {
+            input.write(&mut w);
+            result.write(&mut w);
+        }
+    }
+    Ok(w.data)
+}
+
 /// The registry ids in a pinned clientbound packet, renumbered for the older client.
 fn down(ids: &'static Ids, state: State, id: i32, payload: &[u8]) -> Result<Sent> {
     use packet_ids::play::clientbound as cb;
@@ -1269,6 +1332,44 @@ mod tests {
 
     // Expected ids are read off the 26.2 and 26.3 packets and registries reports by hand, not from the
     // generated tables.
+
+    /// 1.21.4 has no item 26.3's ids reach (pinned 72 is one with a stand-in): update_recipes names only items
+    /// it has. Expected bytes by hand from 1.21.4's ClientboundUpdateRecipesPacket (a map of item lists, then
+    /// stonecutter entries of a HolderSet and a SlotDisplay).
+    #[test]
+    fn update_recipes_names_the_items_of_a_1_21_4_client() {
+        use crate::packets::recipes::{HolderSet, SlotDisplay};
+        let mut w = Writer::new();
+        w.varint(1);
+        w.string("minecraft:furnace_input");
+        w.varint(2);
+        w.varint(1012); // diamond; 836 in 1.21.4
+        w.varint(72); // 1.21.4 lacks it
+        w.varint(3);
+        HolderSet::Items(vec![1012, 72]).write(&mut w);
+        SlotDisplay::ItemStack(crate::item::Stack::new(1012, 2)).write(&mut w);
+        HolderSet::Tag("minecraft:planks".into()).write(&mut w);
+        SlotDisplay::Item(72).write(&mut w);
+        HolderSet::Items(vec![72]).write(&mut w); // nothing left to input
+        SlotDisplay::Item(1012).write(&mut w);
+        let s = ClientSession::new(ServerVersion::V1_21_4);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        let id = packet_ids::play::clientbound::UPDATE_RECIPES;
+        let sent = s.clientbound(&body(id, &w.data)).unwrap().unwrap();
+        let mut r = Reader::new(&sent);
+        r.varint().unwrap();
+        let mut expected = vec![1, 23];
+        expected.extend(b"minecraft:furnace_input");
+        expected.extend([1, 0xc4, 0x06]);
+        expected.push(2); // stonecutter recipes
+        expected.extend([2, 0xc4, 0x06]); // input: the diamond
+        expected.extend([5, 2, 0xc4, 0x06, 0, 0]); // item_stack display: two diamonds
+        expected.push(0);
+        expected.push(16);
+        expected.extend(b"minecraft:planks");
+        expected.extend([4, 38]); // item display: pinned 72's stand-in
+        assert_eq!(r.rest(), &expected[..]);
+    }
 
     /// #15138: a 26.2 client is offered `minecraft:core` 26.2 (so it loads its own registry data), its
     /// answer reaches the server as the pinned pack, and its biome registry loses `dappled_forest`.

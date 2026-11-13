@@ -37,6 +37,12 @@ impl HolderSet {
                 w.string(name);
             }
             Self::Items(ids) => {
+                // Written for an older client, an item it lacks (no stand-in either) is left out.
+                let ids: Vec<i32> = ids
+                    .iter()
+                    .map(|&id| crate::adapter::ids::item(id))
+                    .filter(|&id| id >= 0)
+                    .collect();
                 w.varint(ids.len() as i32 + 1);
                 ids.iter().for_each(|id| w.varint(*id));
             }
