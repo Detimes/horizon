@@ -252,6 +252,10 @@ pub(crate) trait SyncedIds: Send + Sync {
 pub(crate) fn synced(ids: Arc<dyn SyncedIds>) -> SyncedGuard {
     SyncedGuard(SYNCED.replace(Some(ids)))
 }
+/// Whether writers on this thread renumber synchronised registry ids ([`synced`]).
+pub(crate) fn synced_set() -> bool {
+    SYNCED.with_borrow(Option::is_some)
+}
 pub(crate) struct SyncedGuard(Option<Arc<dyn SyncedIds>>);
 impl Drop for SyncedGuard {
     fn drop(&mut self) {

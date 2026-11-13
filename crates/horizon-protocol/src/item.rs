@@ -608,6 +608,14 @@ impl Component {
                 };
                 w.bytes(legacy.as_deref().unwrap_or(bytes));
             }
+            // Nothing renumbered (a 26.3 client): written as they are, as the enchantments below.
+            Self::BannerPatterns(layers) if !ids::synced_set() => {
+                w.varint(layers.len() as i32);
+                for (pattern, color) in layers {
+                    w.varint(pattern + 1);
+                    w.varint(*color);
+                }
+            }
             Self::BannerPatterns(layers) => {
                 // A pattern an older client lacks is left out (ids::synced_down).
                 let layers: Vec<(i32, i32)> = layers
@@ -645,10 +653,11 @@ impl Component {
                 lines.iter().for_each(|l| w.nbt(l));
             }
             Self::Enchantments(list)
-                if matches!(
-                    kind,
-                    component::ENCHANTMENTS | component::STORED_ENCHANTMENTS
-                ) =>
+                if ids::synced_set()
+                    && matches!(
+                        kind,
+                        component::ENCHANTMENTS | component::STORED_ENCHANTMENTS
+                    ) =>
             {
                 // An enchantment an older client lacks is left out (ids::synced_down).
                 let list: Vec<(i32, i32)> = list
