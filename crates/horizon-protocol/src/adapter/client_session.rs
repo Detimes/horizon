@@ -748,6 +748,11 @@ impl ClientSession {
             (State::Configuration, cfg::REGISTRY_DATA)
                 if synced::absent_registry(self.version, payload)? =>
             {
+                // Not sent; a registry the client has built in is still renumbered by what the server names.
+                if let Some((registry, m)) = synced::built_in(self.version, payload)? {
+                    let mut guard = self.synced.lock().unwrap_or_else(|e| e.into_inner());
+                    Arc::make_mut(&mut guard).insert(registry, m);
+                }
                 return Ok(Some(Vec::new()));
             }
             (State::Configuration, cfg::SELECT_KNOWN_PACKS) => {
@@ -1095,9 +1100,15 @@ fn entity_value(ids: &Ids, kind: i32, value: &mut Value) -> bool {
             *id = state_down(ids, *id);
             true
         }
-        // A painting variant the client lacks is its stand-in (a holder: the id plus one).
+        // A painting variant the client lacks is its stand-in (a holder: the id plus one). 1.20.5/1.20.6
+        // write the registry id itself (`ByteBufCodecs.holderRegistry`), 1.21 on a holder.
         Value::Id(holder) if kind == serializer::PAINTING_VARIANT && *holder >= 1 => {
-            *holder = ids::synced_down_or_first(synced::PAINTING_VARIANT, *holder - 1) + 1;
+            let id = ids::synced_down_or_first(synced::PAINTING_VARIANT, *holder - 1);
+            *holder = if ids.quirks.components_before_1_21 {
+                id
+            } else {
+                id + 1
+            };
             true
         }
         Value::Particle(p) => particle(p),

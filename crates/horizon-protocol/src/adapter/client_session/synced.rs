@@ -142,6 +142,124 @@ pub(super) fn absent_registry(version: ServerVersion, payload: &[u8]) -> Result<
     Ok(absent(version, &p.registry))
 }
 
+/// 1.20.5 and 1.20.6 have enchantments and painting variants built in, not synchronised: no registry data is
+/// sent for them (they are in the release's `ABSENT`), and the client numbers them in its own fixed order
+/// (vanilla 1.20.5/1.20.6 `registries.json` report, `protocol_id` order; both releases agree).
+const ENCHANTMENTS_1_20_5: &[&str] = &[
+    "minecraft:protection",
+    "minecraft:fire_protection",
+    "minecraft:feather_falling",
+    "minecraft:blast_protection",
+    "minecraft:projectile_protection",
+    "minecraft:respiration",
+    "minecraft:aqua_affinity",
+    "minecraft:thorns",
+    "minecraft:depth_strider",
+    "minecraft:frost_walker",
+    "minecraft:binding_curse",
+    "minecraft:soul_speed",
+    "minecraft:swift_sneak",
+    "minecraft:sharpness",
+    "minecraft:smite",
+    "minecraft:bane_of_arthropods",
+    "minecraft:knockback",
+    "minecraft:fire_aspect",
+    "minecraft:looting",
+    "minecraft:sweeping_edge",
+    "minecraft:efficiency",
+    "minecraft:silk_touch",
+    "minecraft:unbreaking",
+    "minecraft:fortune",
+    "minecraft:power",
+    "minecraft:punch",
+    "minecraft:flame",
+    "minecraft:infinity",
+    "minecraft:luck_of_the_sea",
+    "minecraft:lure",
+    "minecraft:loyalty",
+    "minecraft:impaling",
+    "minecraft:riptide",
+    "minecraft:channeling",
+    "minecraft:multishot",
+    "minecraft:quick_charge",
+    "minecraft:piercing",
+    "minecraft:density",
+    "minecraft:breach",
+    "minecraft:wind_burst",
+    "minecraft:mending",
+    "minecraft:vanishing_curse",
+];
+const PAINTING_VARIANTS_1_20_5: &[&str] = &[
+    "minecraft:kebab",
+    "minecraft:aztec",
+    "minecraft:alban",
+    "minecraft:aztec2",
+    "minecraft:bomb",
+    "minecraft:plant",
+    "minecraft:wasteland",
+    "minecraft:pool",
+    "minecraft:courbet",
+    "minecraft:sea",
+    "minecraft:sunset",
+    "minecraft:creebet",
+    "minecraft:wanderer",
+    "minecraft:graham",
+    "minecraft:match",
+    "minecraft:bust",
+    "minecraft:stage",
+    "minecraft:void",
+    "minecraft:skull_and_roses",
+    "minecraft:wither",
+    "minecraft:fighters",
+    "minecraft:pointer",
+    "minecraft:pigscene",
+    "minecraft:burning_skull",
+    "minecraft:skeleton",
+    "minecraft:earth",
+    "minecraft:wind",
+    "minecraft:water",
+    "minecraft:fire",
+    "minecraft:donkey_kong",
+];
+
+/// For a registry `version` has built in: the pinned ids (the order of the entries the server names in
+/// `payload`, a `registry_data`) as the client numbers them, -1 for an entry it lacks. A 1.20.6 client
+/// left with "No value with id 42" over the first item that named an enchantment in 26.3's order.
+pub(super) fn built_in(version: ServerVersion, payload: &[u8]) -> Result<Option<(String, IdMap)>> {
+    if version != ServerVersion::V1_20_6 {
+        return Ok(None);
+    }
+    let p = configuration::RegistryData::read(&mut Reader::new(payload))?;
+    let own = match p.registry.as_str() {
+        ENCHANTMENT => ENCHANTMENTS_1_20_5,
+        PAINTING_VARIANT => PAINTING_VARIANTS_1_20_5,
+        _ => return Ok(None),
+    };
+    let down = p
+        .entries
+        .iter()
+        .map(|e| {
+            own.iter()
+                .position(|o| *o == e.id)
+                .or_else(|| {
+                    stand_in(&p.registry, &e.id).and_then(|s| own.iter().position(|o| *o == s))
+                })
+                .map_or(-1, |i| i as i32)
+        })
+        .collect();
+    // The client's index -> the pinned one: where the server names the same entry (the first if it does not).
+    let up = own
+        .iter()
+        .map(|o| {
+            p.entries
+                .iter()
+                .position(|e| e.id == *o)
+                .map_or(0, |i| i as i32)
+        })
+        .collect();
+    Ok(Some((p.registry, IdMap { down, up })))
+}
+
 /// One registry's renumbering.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct IdMap {
@@ -255,14 +373,51 @@ pub(super) fn registry_data(
     Ok(Some((w.data, registry, IdMap { down: map, up })))
 }
 
+/// Tags a release's own registry data names that 26.3 has under another name: (registry, the release's
+/// tag, 26.3's tag with the same members). A client from 1.21.2 on reads its built-in enchantments against
+/// the tags sent in configuration and leaves with "Failed to load registries" over a tag that is missing
+/// ("Missing tag: 'minecraft:enchantable/sword' in 'minecraft:item'"). Through 1.21.10 the swords' tag was
+/// `enchantable/sword` (`#minecraft:swords`); 1.21.11 named it `enchantable/sweeping`.
+fn renamed_tags(version: ServerVersion) -> &'static [(&'static str, &'static str, &'static str)] {
+    if version != ServerVersion::Current && version.at_most(ServerVersion::V1_21_10) {
+        &[(
+            "minecraft:item",
+            "minecraft:enchantable/sword",
+            "minecraft:enchantable/sweeping",
+        )]
+    } else {
+        &[]
+    }
+}
+
 /// Tags of registries the client doesn't have are left out; the members of renumbered registries take the
-/// client's ids (a removed member is left out, duplicates a stand-in makes are kept once).
+/// client's ids (a removed member is left out, duplicates a stand-in makes are kept once). A tag the
+/// client's release knows by an older name is sent under that name too ([`renamed_tags`]).
 pub(super) fn tags(
     version: ServerVersion,
     maps: &IdMaps,
     registries: &mut Vec<configuration::RegistryTags>,
 ) {
     registries.retain(|r| !absent(version, &r.registry));
+    for (registry, old, new) in renamed_tags(version) {
+        let Some(r) = registries.iter_mut().find(|r| r.registry == *registry) else {
+            continue;
+        };
+        if r.tags.iter().any(|t| t.name == *old) {
+            continue;
+        }
+        if let Some(ids) = r
+            .tags
+            .iter()
+            .find(|t| t.name == *new)
+            .map(|t| t.ids.clone())
+        {
+            r.tags.push(configuration::TagEntry {
+                name: (*old).into(),
+                ids,
+            });
+        }
+    }
     for registry in registries.iter_mut() {
         let Some(map) = maps.get(&registry.registry) else {
             continue;
@@ -519,6 +674,109 @@ mod tests {
         assert_eq!(
             (0..4).map(|i| down.get(i)).collect::<Vec<_>>(),
             [0, 1, 1, 2]
+        );
+    }
+
+    #[test]
+    fn a_tag_26_3_renamed_is_sent_under_the_name_the_clients_release_has() {
+        let item_tags = || {
+            vec![configuration::RegistryTags {
+                registry: "minecraft:item".into(),
+                tags: vec![
+                    configuration::TagEntry {
+                        name: "minecraft:enchantable/sweeping".into(),
+                        ids: vec![901, 906, 911],
+                    },
+                    configuration::TagEntry {
+                        name: "minecraft:swords".into(),
+                        ids: vec![901, 906, 911],
+                    },
+                ],
+            }]
+        };
+        // 1.21.2 to 1.21.10 read their own enchantments against `enchantable/sword` and leave without it.
+        for version in [
+            ServerVersion::V1_21_10,
+            ServerVersion::V1_21_4,
+            ServerVersion::V1_21_3,
+            ServerVersion::V1_21_1,
+            ServerVersion::V1_20_6,
+        ] {
+            let mut regs = item_tags();
+            tags(version, &IdMaps::new(), &mut regs);
+            let names: Vec<&str> = regs[0].tags.iter().map(|t| t.name.as_str()).collect();
+            assert_eq!(
+                names,
+                [
+                    "minecraft:enchantable/sweeping",
+                    "minecraft:swords",
+                    "minecraft:enchantable/sword"
+                ]
+            );
+            assert_eq!(regs[0].tags[2].ids, vec![901, 906, 911]);
+        }
+        // 1.21.11 and later have the tag under 26.3's name: nothing is added.
+        for version in [
+            ServerVersion::V1_21_11,
+            ServerVersion::V26_1,
+            ServerVersion::V26_2,
+            ServerVersion::Current,
+        ] {
+            let mut regs = item_tags();
+            tags(version, &IdMaps::new(), &mut regs);
+            assert_eq!(regs[0].tags.len(), 2);
+        }
+        // A data pack that already defines the old name keeps its own definition.
+        let mut regs = item_tags();
+        regs[0].tags.push(configuration::TagEntry {
+            name: "minecraft:enchantable/sword".into(),
+            ids: vec![5],
+        });
+        tags(ServerVersion::V1_21_4, &IdMaps::new(), &mut regs);
+        assert_eq!(regs[0].tags.len(), 3);
+        assert_eq!(regs[0].tags[2].ids, vec![5]);
+    }
+
+    #[test]
+    fn a_1_20_6_client_gets_enchantments_and_paintings_in_its_built_in_numbering() {
+        // 26.3 sends enchantments in its registry's order; 1.20.6 numbers its built-in ones differently and
+        // has neither lunge nor an entry past 41.
+        let sent = registry(
+            ENCHANTMENT,
+            &[
+                "minecraft:aqua_affinity",
+                "minecraft:lunge",
+                "minecraft:mending",
+                "minecraft:wind_burst",
+            ],
+        );
+        let (name, map) = built_in(ServerVersion::V1_20_6, &sent).unwrap().unwrap();
+        assert_eq!(name, "minecraft:enchantment");
+        assert_eq!(map.down, vec![6, -1, 40, 39]);
+        // What the client sends comes back: its mending (40) is the server's third entry.
+        assert_eq!(map.up(40), 2);
+        assert_eq!(map.up(6), 0);
+        assert_eq!(map.up(39), 3);
+        assert_eq!(map.down(1), None);
+        let sent = registry(
+            PAINTING_VARIANT,
+            &[
+                "minecraft:alban",
+                "minecraft:kebab",
+                "minecraft:donkey_kong",
+            ],
+        );
+        let (_, map) = built_in(ServerVersion::V1_20_6, &sent).unwrap().unwrap();
+        assert_eq!(map.down, vec![2, 0, 29]);
+        // Later releases synchronise both registries: no built-in table.
+        assert_eq!(built_in(ServerVersion::V1_21_1, &sent).unwrap(), None);
+        assert_eq!(
+            built_in(
+                ServerVersion::V1_20_6,
+                &registry(BIOMES, &["minecraft:plains"])
+            )
+            .unwrap(),
+            None
         );
     }
 }
