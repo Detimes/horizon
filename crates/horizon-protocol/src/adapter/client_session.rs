@@ -588,7 +588,9 @@ impl ClientSession {
         }
         // 1.21.8 is newer than 1.21.6: its packets are brought down after the steps above.
         if v.at_most(ServerVersion::V1_21_6) {
-            match step_1_21_6::clientbound(state, id, &payload)? {
+            // 1.21.5 and 1.21.6 have the saddle slot; 1.21.4 doesn't.
+            match step_1_21_6::clientbound(state, id, &payload, !v.at_most(ServerVersion::V1_21_4))?
+            {
                 step_1_21_6::Out::Untouched => {}
                 step_1_21_6::Out::Rewritten(p) => payload = p,
                 step_1_21_6::Out::Dropped => return Ok(None),
