@@ -12,7 +12,7 @@ use crate::{
     ids as packet_ids,
     packets::play,
 };
-use horizon_world::nbt::{JavaString, Tag};
+use horizon_core::nbt::{JavaString, Tag};
 
 /// `SoundEvents.EMPTY`: what a 26.2 client is told to play for a blast 26.3 keeps silent.
 const SILENT: &str = "minecraft:intentionally_empty";
@@ -443,11 +443,11 @@ mod tests {
     fn a_decorated_pots_sherds_are_a_list_of_items_for_26_2() {
         let ids = ids();
         let stack = |id: &str| {
-            let mut c = horizon_world::nbt::Compound::new();
+            let mut c = horizon_core::nbt::Compound::new();
             c.insert(JavaString::from("id"), Tag::String(JavaString::from(id)));
             Tag::Compound(c)
         };
-        let mut sides = horizon_world::nbt::Compound::new();
+        let mut sides = horizon_core::nbt::Compound::new();
         sides.insert(JavaString::from("back"), stack("minecraft:brick"));
         sides.insert(
             JavaString::from("front"),
@@ -457,11 +457,11 @@ mod tests {
             JavaString::from("right"),
             stack("minecraft:arms_up_pottery_sherd"),
         );
-        let mut root = horizon_world::nbt::Compound::new();
+        let mut root = horizon_core::nbt::Compound::new();
         root.insert(JavaString::from("sherds"), Tag::Compound(sides));
         let list = |names: [&str; 4]| {
             let items = names.map(|n| Tag::String(JavaString::from(n))).to_vec();
-            let mut c = horizon_world::nbt::Compound::new();
+            let mut c = horizon_core::nbt::Compound::new();
             c.insert(JavaString::from("sherds"), Tag::List(items));
             Tag::Compound(c)
         };
