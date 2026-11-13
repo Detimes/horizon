@@ -223,32 +223,45 @@ impl SlotDisplay {
         }
         Ok(())
     }
+    /// The type id a client of the active older version knows this display type by; `None` when it has no
+    /// such type (1.21.2 to 1.21.11 lack `with_any_potion`, `only_with_component` and `dyed`).
+    fn type_id(pinned: i32) -> Option<i32> {
+        let id = crate::adapter::ids::slot_display(pinned);
+        (id >= 0).then_some(id)
+    }
     pub fn write(&self, w: &mut Writer) {
+        let ty = |w: &mut Writer, pinned| w.varint(Self::type_id(pinned).unwrap_or(0));
         match self {
-            Self::Empty => w.varint(0),
-            Self::AnyFuel => w.varint(1),
+            Self::Empty => ty(w, 0),
+            Self::AnyFuel => ty(w, 1),
+            // A client without the type shows what it wraps: the potions and components only narrow it.
+            Self::WithAnyPotion(d) | Self::OnlyWithComponent(d, _)
+                if Self::type_id(2).is_none() =>
+            {
+                d.write(w)
+            }
             Self::WithAnyPotion(d) => {
-                w.varint(2);
+                ty(w, 2);
                 d.write(w);
             }
             Self::OnlyWithComponent(d, component) => {
-                w.varint(3);
+                ty(w, 3);
                 d.write(w);
                 w.varint(*component);
             }
             Self::Item(id) => {
-                w.varint(4);
+                ty(w, 4);
                 w.varint(crate::adapter::ids::item(*id));
             }
             Self::ItemStack(stack) => {
-                w.varint(5);
+                ty(w, 5);
                 Template::write(stack, w);
             }
             Self::Tag(set) if crate::adapter::ids::quirks_written().tag_slot_display_is_id => {
                 match set {
                     // TagSlotDisplay of 26.2: the tag's bare id.
                     HolderSet::Tag(name) => {
-                        w.varint(6);
+                        ty(w, 6);
                         w.string(name);
                     }
                     // A list of items has no such form: a composite of item displays shows the same.
@@ -259,11 +272,13 @@ impl SlotDisplay {
                 }
             }
             Self::Tag(set) => {
-                w.varint(6);
+                ty(w, 6);
                 set.write(w);
             }
+            // The dyed result is the target; the dye only tints it.
+            Self::Dyed { target, .. } if Self::type_id(7).is_none() => target.write(w),
             Self::Dyed { dye, target } => {
-                w.varint(7);
+                ty(w, 7);
                 dye.write(w);
                 target.write(w);
             }
@@ -272,11 +287,20 @@ impl SlotDisplay {
                 material,
                 pattern,
             } => {
-                w.varint(8);
+                ty(w, 8);
                 base.write(w);
                 material.write(w);
+                if crate::adapter::ids::quirks_written().components_before_1_21_5 {
+                    // Through 1.21.4 the pattern is a display of its template item. The item behind a
+                    // pattern id is not known here, so the preview shows no template.
+                    w.varint(Self::type_id(0).unwrap_or(0));
+                    return;
+                }
                 match pattern {
-                    TrimPattern::Id(id) => w.varint(id + 1),
+                    TrimPattern::Id(id) => w.varint(
+                        crate::adapter::ids::synced_down_or_first("minecraft:trim_pattern", *id)
+                            + 1,
+                    ),
                     TrimPattern::Direct {
                         asset,
                         description,
@@ -290,12 +314,12 @@ impl SlotDisplay {
                 }
             }
             Self::WithRemainder { input, remainder } => {
-                w.varint(9);
+                ty(w, 9);
                 input.write(w);
                 remainder.write(w);
             }
             Self::Composite(list) => {
-                w.varint(10);
+                ty(w, 10);
                 w.varint(list.len() as i32);
                 list.iter().for_each(|d| d.write(w));
             }

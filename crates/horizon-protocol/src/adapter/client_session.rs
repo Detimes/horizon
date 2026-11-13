@@ -1363,12 +1363,77 @@ mod tests {
         expected.extend([1, 0xc4, 0x06]);
         expected.push(2); // stonecutter recipes
         expected.extend([2, 0xc4, 0x06]); // input: the diamond
-        expected.extend([5, 2, 0xc4, 0x06, 0, 0]); // item_stack display: two diamonds
+        expected.extend([3, 2, 0xc4, 0x06, 0, 0]); // item_stack display (3 in 1.21.4): two diamonds
         expected.push(0);
         expected.push(16);
         expected.extend(b"minecraft:planks");
-        expected.extend([4, 38]); // item display: pinned 72's stand-in
+        expected.extend([2, 38]); // item display (2 in 1.21.4): pinned 72's stand-in
         assert_eq!(r.rest(), &expected[..]);
+    }
+
+    /// 1.21.2 to 1.21.11 know eight slot display types, numbered otherwise than the pinned eleven: the types
+    /// are renumbered, the three they lack show what they wrap, and the trim pattern is a display through 1.21.4.
+    /// Expected ids are read off the `slot_display` registry reports of 1.21.4 and 1.21.8.
+    #[test]
+    fn slot_displays_of_1_21_2_to_1_21_11_use_their_own_type_ids() {
+        use crate::packets::recipes::{SlotDisplay as D, TrimPattern};
+        let write = |version: ServerVersion, d: &D| {
+            let mut w = Writer::new();
+            let _down = ids::renumbering(version.ids().unwrap(), Way::Down);
+            d.write(&mut w);
+            w.data
+        };
+        let b = |d: D| Box::new(d);
+        let v8 = |d: &D| write(ServerVersion::V1_21_8, d);
+        assert_eq!(v8(&D::Empty), [0]);
+        assert_eq!(v8(&D::AnyFuel), [1]);
+        assert_eq!(v8(&D::Composite(vec![D::Empty, D::AnyFuel])), [7, 2, 0, 1]);
+        let mut tag = vec![4, 16];
+        tag.extend(b"minecraft:planks");
+        assert_eq!(
+            v8(&D::Tag(crate::packets::recipes::HolderSet::Tag(
+                "minecraft:planks".into()
+            ))),
+            tag
+        );
+        // Without with_any_potion, only_with_component and dyed: what they wrap (the target of a dye).
+        assert_eq!(v8(&D::WithAnyPotion(b(D::AnyFuel))), [1]);
+        assert_eq!(v8(&D::OnlyWithComponent(b(D::Empty), 5)), [0]);
+        assert_eq!(
+            v8(&D::Dyed {
+                dye: b(D::Empty),
+                target: b(D::AnyFuel)
+            }),
+            [1]
+        );
+        assert_eq!(
+            v8(&D::WithRemainder {
+                input: b(D::Empty),
+                remainder: b(D::AnyFuel)
+            }),
+            [6, 0, 1]
+        );
+        let trim = D::SmithingTrim {
+            base: b(D::Empty),
+            material: b(D::AnyFuel),
+            pattern: TrimPattern::Direct {
+                asset: "a:b".into(),
+                description: horizon_world::nbt::Tag::String("T".into()),
+                decal: true,
+            },
+        };
+        // 1.21.5 and later: type 5, base, material, then a holder (0, then the direct pattern).
+        let mut expected = vec![5, 0, 1, 0, 3];
+        expected.extend(b"a:b");
+        expected.extend([8, 0, 1, b'T', 1]);
+        assert_eq!(v8(&trim), expected);
+        // Through 1.21.4 the pattern is a display of its template item: none is shown here.
+        assert_eq!(write(ServerVersion::V1_21_4, &trim), [5, 0, 1, 0]);
+        // 26.1 and 26.2 number them as the pinned version does.
+        assert_eq!(
+            write(ServerVersion::V26_2, &D::WithAnyPotion(b(D::AnyFuel))),
+            [2, 1]
+        );
     }
 
     /// #15138: a 26.2 client is offered `minecraft:core` 26.2 (so it loads its own registry data), its
