@@ -1644,7 +1644,6 @@ pub(crate) mod client_layout_v1_21_4 {
             return Ok(None);
         }
         Ok(Some(match id {
-            cb::EXPLODE => explode_up(payload)?,
             cb::PLAYER_CHAT => player_chat_up(payload)?,
             cb::SET_PLAYER_TEAM => team_up(payload)?,
             cb::UPDATE_ADVANCEMENTS => advancements_up(payload),
@@ -1675,25 +1674,6 @@ pub(crate) mod client_layout_v1_21_4 {
             .position(|n| *n == name)
             .map(|i| i as i32)
             .ok_or_else(|| crate::Error::new(format!("unknown team enum {name}")))
-    }
-
-    /// The explosion's player knockback: 1.21.4 writes a double, then two floats; 1.21.5 three doubles.
-    #[cfg(test)]
-    fn explode_up(payload: &[u8]) -> Result<Vec<u8>> {
-        let mut r = Reader::new(payload);
-        let mut w = Writer::new();
-        for _ in 0..3 {
-            w.f64(r.f64()?);
-        }
-        let knockback = r.bool()?;
-        w.bool(knockback);
-        if knockback {
-            w.f64(r.f64()?);
-            w.f64(f64::from(r.f32()?));
-            w.f64(f64::from(r.f32()?));
-        }
-        w.bytes(r.rest());
-        Ok(w.data)
     }
 
     /// A player chat with the global index 1.21.5 starts it with.
