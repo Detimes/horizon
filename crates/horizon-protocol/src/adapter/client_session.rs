@@ -753,6 +753,15 @@ impl ClientSession {
     ) -> Result<Option<(i32, Vec<u8>)>> {
         use packet_ids::play::serverbound as sb;
         let v = self.version;
+        // 1.21.2 named recipes by a display id; a 1.21.1 client sends the recipe's key (a string) in place_recipe
+        // and recipe_book_seen_recipe, which the pinned readers take for a VarInt. It gets no recipe book (see
+        // `older_layout_down`), so these are not passed on.
+        if v.at_most(ServerVersion::V1_21_1)
+            && state == State::Play
+            && matches!(pinned, sb::PLACE_RECIPE | sb::RECIPE_BOOK_SEEN_RECIPE)
+        {
+            return Ok(None);
+        }
         // 1.20.6 is the oldest release: its use_item is read first, with the client's last rotation.
         if v.at_most(ServerVersion::V1_20_6) {
             let (yaw, pitch) = {
@@ -823,8 +832,8 @@ impl ClientSession {
     }
 }
 
-/// A 26.2 client's packets whose layout changed are written in its layout ([`layout_26_2`], when enabled),
-/// the others renumbered by [`down`].
+/// A pinned packet for a client through 26.2: the packets whose layout changed in 26.3 written in 26.2's
+/// ([`layout_26_2`], when enabled), the others renumbered by [`down`].
 fn layout_then_ids(
     version: ServerVersion,
     ids: &'static Ids,
@@ -1482,6 +1491,35 @@ mod tests {
             Some((packet_ids::play::serverbound::PUNCH, Vec::new()))
         );
         assert_eq!(s.serverbound(63, vec![1]).unwrap(), None);
+    }
+
+    #[test]
+    fn the_recipe_packets_of_a_1_21_1_client_are_not_passed_on() {
+        let s = ClientSession::new(ServerVersion::V1_21_1);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        let key = |id: i32| {
+            let mut w = Writer::new();
+            if id == 34 {
+                w.varint(2);
+            }
+            w.string("minecraft:oak_planks");
+            if id == 34 {
+                w.bool(false);
+            }
+            w.data
+        };
+        // place_recipe is 34 and recipe_book_seen_recipe 41 in 1.21.1 (packets report); both name the recipe by key.
+        assert_eq!(s.serverbound(34, key(34)).unwrap(), None);
+        assert_eq!(s.serverbound(41, key(41)).unwrap(), None);
+        // The settings packet is laid out alike and goes on (40 in 1.21.1, 47 pinned).
+        assert_eq!(
+            s.serverbound(40, vec![0, 1, 0]).unwrap(),
+            Some((
+                packet_ids::play::serverbound::RECIPE_BOOK_CHANGE_SETTINGS,
+                vec![0, 1, 0]
+            ))
+        );
     }
 
     #[test]
