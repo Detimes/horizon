@@ -1202,6 +1202,10 @@ fn write_value(kind: i32, c: &Component, w: &mut Writer) {
         CONTAINER => !quirks.stacks_in_components,
         _ => false,
     };
+    // JukeboxPlayable's song is an EitherHolder until 26.1 (1.21.1 to 1.21.4 jars): a flag set for the holder.
+    if renumbered && kind == JUKEBOX_PLAYABLE && quirks.either_holders_and_tag_resistance {
+        w.bool(true);
+    }
     if !renumbered || !held {
         return c.write(kind, w);
     }
