@@ -38,6 +38,7 @@ use super::{
     ServerVersion,
     ids::{self, Ids, Way, down_or_substitute},
     layout_26_2,
+    pinned_ids::entity_type::EXPERIENCE_ORB,
     translate::{packet_ids_entity::FALLING_BLOCK, swing_id},
 };
 use crate::{
@@ -92,6 +93,9 @@ pub struct ClientSession {
     /// (it carries the place) made redundant, and which counts as the tick's move on the server. Other
     /// packets (a keep-alive answer, a swing) may come between them.
     accepted: Mutex<Option<Place>>,
+    /// A client through 1.21.4 is told an experience orb's value by its own packet (`add_experience_orb`): the
+    /// orb's add waits here for the entity data that carries the value ([`Self::experience_orbs`]).
+    orb: Mutex<Option<play::AddEntity>>,
     /// Packet bodies, in the client's numbering, to send after the one [`Self::clientbound`] returned
     /// ([`Self::take_extra`]).
     extra: Mutex<Vec<Vec<u8>>>,
@@ -191,6 +195,7 @@ impl ClientSession {
             held: AtomicU8::new(0),
             synced: Mutex::new(Arc::default()),
             accepted: Mutex::new(None),
+            orb: Mutex::new(None),
             extra: Mutex::new(Vec::new()),
             pending: Mutex::new(None),
         }
@@ -395,7 +400,7 @@ impl ClientSession {
     }
 
     /// [`Self::clientbound_in`], for the packets that become several or wait for another: a wooden boat
-    /// (1.21.1 and older).
+    /// (1.21.1 and older) and an experience orb (1.21.4 and older).
     fn clientbound_with_extras(&self, state: State, body: &[u8]) -> Result<Option<Vec<u8>>> {
         use packet_ids::play::clientbound as cb;
         if state != State::Play {
@@ -404,6 +409,57 @@ impl ClientSession {
         let mut r = Reader::new(body);
         let id = r.varint()?;
         let payload = r.rest();
+        if self.version.at_most(ServerVersion::V1_21_4) {
+            let waiting = self.orb.lock().unwrap_or_else(|e| e.into_inner()).take();
+            let orb = |add: &play::AddEntity, value: i32| {
+                self.entities
+                    .lock()
+                    .unwrap()
+                    .insert(add.id, (add.kind, add.uuid));
+                let mut w = Writer::new();
+                // add_experience_orb has been id 2 in every release through 1.21.4 (the id tables name no such
+                // packet)
+                w.varint(2);
+                w.varint(add.id);
+                add.position.iter().for_each(|v| w.f64(*v));
+                w.i16(value.clamp(0, i32::from(i16::MAX)) as i16);
+                w.data
+            };
+            if let Some(add) = waiting {
+                if id == cb::SET_ENTITY_DATA {
+                    let mut d = play::SetEntityData::read(&mut Reader::new(payload))?;
+                    if d.id == add.id {
+                        let value = d.values.iter().find_map(|(index, _, v)| match v {
+                            Value::Int(v) if *index == 8 => Some(*v),
+                            _ => None,
+                        });
+                        d.values.retain(|(index, _, _)| *index != 8);
+                        if !d.values.is_empty()
+                            && let Some(rest) = self.clientbound_in(
+                                state,
+                                &play::Clientbound::SetEntityData(d).encode(),
+                            )?
+                        {
+                            self.extra.lock().unwrap().push(rest);
+                        }
+                        return Ok(Some(orb(&add, value.unwrap_or(0))));
+                    }
+                }
+                // Anything else shows the orb with no value first.
+                let first = orb(&add, 0);
+                if let Some(next) = self.clientbound_with_extras(state, body)? {
+                    self.extra.lock().unwrap().insert(0, next);
+                }
+                return Ok(Some(first));
+            }
+            if id == cb::ADD_ENTITY {
+                let e = play::AddEntity::read(&mut Reader::new(payload))?;
+                if e.kind == EXPERIENCE_ORB {
+                    *self.orb.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
+                    return Ok(None);
+                }
+            }
+        }
         // 1.21.2 gave every wood its own boat type; 1.21.1 has the plain one and the wood in entity data.
         if id == cb::ADD_ENTITY && self.version.at_most(ServerVersion::V1_21_1) {
             let e = play::AddEntity::read(&mut Reader::new(payload))?;
@@ -2230,5 +2286,60 @@ mod tests {
         s.writing.store(to_u8(State::Play), Ordering::Release);
         assert!(s.clientbound(&add(entity::ACACIA_BOAT)).unwrap().is_some());
         assert!(s.take_extra().is_empty());
+    }
+
+    /// A client through 1.21.4 takes an orb's value from `add_experience_orb` (id 2), not from entity data:
+    /// the add waits for the data that follows it.
+    #[test]
+    fn an_experience_orb_is_added_with_its_value_for_a_client_through_1_21_4() {
+        let add = play::Clientbound::AddEntity(play::AddEntity {
+            id: 41,
+            uuid: 7,
+            kind: EXPERIENCE_ORB,
+            position: [1.0, 2.0, -3.0],
+            velocity: [0.0; 3],
+            pitch: 0,
+            yaw: 0,
+            head_yaw: 0,
+            data: 0,
+        })
+        .encode();
+        let data = play::Clientbound::SetEntityData(play::SetEntityData {
+            id: 41,
+            values: vec![(8, serializer::INT, Value::Int(7))],
+        })
+        .encode();
+        let orb = |value: u8| {
+            let mut w = Writer::new();
+            w.varint(2);
+            w.varint(41);
+            for v in [1.0, 2.0, -3.0] {
+                w.f64(v);
+            }
+            w.bytes(&[0, value]);
+            w.data
+        };
+        for version in [
+            ServerVersion::V1_21_4,
+            ServerVersion::V1_21_1,
+            ServerVersion::V1_20_6,
+        ] {
+            let s = ClientSession::new(version);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            assert_eq!(s.clientbound(&add).unwrap(), None);
+            assert_eq!(s.clientbound(&data).unwrap(), Some(orb(7)), "{version:?}");
+            assert!(s.take_extra().is_empty());
+            // with no data after it, another packet shows it with the value 0 first
+            assert_eq!(s.clientbound(&add).unwrap(), None);
+            let gone = play::Clientbound::RemoveEntities(play::RemoveEntities { ids: vec![41] });
+            assert_eq!(s.clientbound(&gone.encode()).unwrap(), Some(orb(0)));
+            assert_eq!(s.take_extra().len(), 1, "{version:?}");
+        }
+        // 1.21.5 and later have it as entity data: nothing waits
+        let s = ClientSession::new(ServerVersion::V1_21_5);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        assert!(s.clientbound(&add).unwrap().is_some());
     }
 }
