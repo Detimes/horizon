@@ -110,6 +110,8 @@ struct Teleport {
     id: i32,
     to: Place,
     relatives: i32,
+    /// A 1.21.2/1.21.3 client's echo of it was dropped ([`ClientSession::echo_before_accept`]).
+    echoed: bool,
 }
 
 impl Teleport {
@@ -288,6 +290,12 @@ impl ClientSession {
             return Ok(None);
         };
         use packet_ids::play::serverbound as sb;
+        if (state, pinned) == (State::Play, sb::MOVE_PLAYER_POS_ROT)
+            && self.version == ServerVersion::V1_21_3
+            && self.echo_before_accept(&payload)
+        {
+            return Ok(None);
+        }
         // The first move after an accept is its echo or shows that none is coming (the client sends the echo
         // before its next tick's move): either way the accepted place is done with.
         if state == State::Play
@@ -315,8 +323,11 @@ impl ClientSession {
             }
             (State::Play, sb::ACCEPT_TELEPORTATION) => {
                 let accept = self.accept_teleport(&payload)?;
-                *self.accepted.lock().unwrap_or_else(|e| e.into_inner()) =
-                    Some(*self.place.lock().unwrap_or_else(|e| e.into_inner()));
+                // 1.21.2/1.21.3 sent the echo before the accept (echo_before_accept).
+                if self.version != ServerVersion::V1_21_3 {
+                    *self.accepted.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some(*self.place.lock().unwrap_or_else(|e| e.into_inner()));
+                }
                 accept
             }
             // 26.3 inserted CHANGE_DESTROY_DIRECTION at 1: 26.2's actions past 0 are one up.
@@ -808,11 +819,29 @@ impl ClientSession {
             pitch: r.f32()?,
         };
         let relatives = r.i32()?;
-        self.teleports
-            .lock()
-            .unwrap()
-            .push_back(Teleport { id, to, relatives });
+        self.teleports.lock().unwrap().push_back(Teleport {
+            id,
+            to,
+            relatives,
+            echoed: false,
+        });
         Ok(())
+    }
+
+    /// Whether a 1.21.2/1.21.3 client's `move_player_pos_rot` is the echo of a teleport: its
+    /// `ClientPacketListener.handleMovePlayer` sends the move to the teleport's place before the
+    /// `accept_teleportation` (the other releases after it). The echo names where the first teleport not yet
+    /// accepted puts the client; one is dropped per teleport, and the accept that follows states the same place.
+    fn echo_before_accept(&self, payload: &[u8]) -> bool {
+        let place = *self.place.lock().unwrap_or_else(|e| e.into_inner());
+        let mut teleports = self.teleports.lock().unwrap_or_else(|e| e.into_inner());
+        match teleports.front_mut() {
+            Some(t) if !t.echoed && same_place(payload, t.applied(place)) => {
+                t.echoed = true;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// A move the client reports (`move_player_pos`, `_pos_rot`, `_rot`): where it now is.
@@ -1574,6 +1603,54 @@ mod tests {
         // registry_data: 7 in 1.21.1, sent as it is.
         assert_eq!(sent, body(7, &again));
         assert_eq!(down(2), Some(2));
+    }
+
+    /// A 1.21.3 session in play that was sent teleport 1 to (100.5, 46, 100.5), yaw 180, pitch 0.
+    fn teleported_1_21_3() -> ClientSession {
+        let s = ClientSession::new(ServerVersion::V1_21_3);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        let p = play::Clientbound::PlayerPosition(play::PlayerPosition {
+            teleport: 1,
+            position: [100.5, 46.0, 100.5],
+            delta: [0.0; 3],
+            yaw: 180.0,
+            pitch: 0.0,
+            relatives: 0,
+        });
+        s.clientbound(&p.encode()).unwrap().unwrap();
+        s
+    }
+
+    /// 1.21.2 and 1.21.3 send the echo before the accept: move_player_pos_rot (29 in 1.21.3, 31 in 26.3),
+    /// accept_teleportation (0), then the tick's own move.
+    #[test]
+    fn a_1_21_3_echo_before_its_accept_is_dropped() {
+        let s = teleported_1_21_3();
+        assert_eq!(s.serverbound(29, pos_rot(100.5)).unwrap(), None);
+        let (id, _) = s.serverbound(0, vec![1]).unwrap().unwrap();
+        assert_eq!(id, 0);
+        // The tick's move at the same place goes on: nothing waits after the accept.
+        assert_eq!(
+            s.serverbound(29, pos_rot(100.5)).unwrap(),
+            Some((31, pos_rot(100.5)))
+        );
+    }
+
+    #[test]
+    fn a_1_21_3_move_elsewhere_or_a_second_echo_before_the_accept_goes_on() {
+        let s = teleported_1_21_3();
+        // A move from before the client took the teleport.
+        assert_eq!(
+            s.serverbound(29, pos_rot(90.0)).unwrap(),
+            Some((31, pos_rot(90.0)))
+        );
+        assert_eq!(s.serverbound(29, pos_rot(100.5)).unwrap(), None);
+        // One echo per teleport.
+        assert_eq!(
+            s.serverbound(29, pos_rot(100.5)).unwrap(),
+            Some((31, pos_rot(100.5)))
+        );
     }
 
     /// 1.21.1 has no client_tick_end: one follows each of its moves. 26.3's client_tick_end is 13.
