@@ -1028,6 +1028,7 @@ fn renumber(ids: &Ids, p: &mut play::Clientbound) -> Option<()> {
             Some(())
         }
         play::Clientbound::BlockEntityData(b) => {
+            world::pot_sherds_down(ids, &mut b.tag);
             b.kind = ids.block_entity_type.down(b.kind)?;
             Some(())
         }
@@ -2051,5 +2052,62 @@ mod tests {
             let sent = s.clientbound(&trail).unwrap().unwrap();
             assert!(sent.ends_with(tail), "{version:?}: {sent:?}");
         }
+    }
+
+    /// 26.2 and older read a decorated pot's `sherds` as a list of the four item ids (26.3: a compound of
+    /// stack templates).
+    #[test]
+    fn a_decorated_pot_update_has_its_sherds_as_a_list_for_26_2_and_older() {
+        use horizon_world::nbt::{Compound, JavaString, Tag};
+        let text = |s: &str| Tag::String(JavaString::from(s));
+        let mut front = Compound::new();
+        front.insert(
+            JavaString::from("id"),
+            text("minecraft:angler_pottery_sherd"),
+        );
+        let mut sides = Compound::new();
+        sides.insert(JavaString::from("front"), Tag::Compound(front));
+        let mut root = Compound::new();
+        root.insert(JavaString::from("sherds"), Tag::Compound(sides));
+        let update = play::Clientbound::BlockEntityData(play::BlockEntityData {
+            pos: [1, 64, 2],
+            kind: 41,
+            tag: Tag::Compound(root),
+        })
+        .encode();
+        let list = Tag::List(vec![
+            text("minecraft:brick"),
+            text("minecraft:brick"),
+            text("minecraft:brick"),
+            text("minecraft:angler_pottery_sherd"),
+        ]);
+        for version in [
+            ServerVersion::V26_2,
+            ServerVersion::V26_1,
+            ServerVersion::V1_21_11,
+            ServerVersion::V1_21_5,
+            ServerVersion::V1_20_6,
+        ] {
+            let s = ClientSession::new(version);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            let sent = s.clientbound(&update).unwrap().unwrap();
+            let mut r = Reader::new(&sent);
+            r.varint().unwrap();
+            let tag = play::BlockEntityData::read(&mut r).unwrap().tag;
+            let Tag::Compound(root) = tag else {
+                panic!("{version:?}")
+            };
+            assert_eq!(
+                root.get(&JavaString::from("sherds")),
+                Some(&list),
+                "{version:?}"
+            );
+        }
+        // a 26.3 client reads the compound
+        let s = ClientSession::new(ServerVersion::Current);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        assert_eq!(s.clientbound(&update).unwrap().unwrap(), update);
     }
 }
