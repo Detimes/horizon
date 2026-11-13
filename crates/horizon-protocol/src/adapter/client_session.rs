@@ -42,7 +42,7 @@ use super::{
 };
 use crate::{
     Result, State,
-    buf::{Reader, Writer},
+    buf::{Codec, Reader, Writer},
     entity_data::{ParticleData, Value, serializer},
     ids as packet_ids,
     packets::{configuration, play},
@@ -377,16 +377,73 @@ impl ClientSession {
     }
 
     /// A packet body (VarInt id + payload) the server sends, as the client numbers it. `None`: the client
-    /// has no such packet, or nothing it could show for what the packet names, so nothing is sent.
+    /// has no such packet, or nothing it could show for what the packet names, so nothing is sent. A packet
+    /// that becomes several (a wooden boat, 1.21.1 and older) gives only the first here: the connection uses
+    /// [`Self::clientbound_all`].
     pub fn clientbound(&self, body: &[u8]) -> Result<Option<Vec<u8>>> {
+        Ok(self.translate(body)?.0)
+    }
+
+    /// Every body a packet becomes for the client, in the order to send them: empty when [`Self::clientbound`]
+    /// would give `None` and nothing came with it, the one body for most packets, and for a packet that brings
+    /// another (a boat's wood in entity data) the other after it.
+    pub fn clientbound_all(&self, body: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let (first, rest) = self.translate(body)?;
+        Ok(first.into_iter().chain(rest).collect())
+    }
+
+    fn translate(&self, body: &[u8]) -> Result<(Option<Vec<u8>>, Vec<Vec<u8>>)> {
         let state = self.writing();
-        self.clientbound_in(state, body).map_err(|e| {
+        self.clientbound_with_extras(state, body).map_err(|e| {
             let id = Reader::new(body).varint().unwrap_or(-1);
             crate::Error::new(format!(
                 "{e} (packet {id} in {state:?} for a {} client)",
                 self.version.name()
             ))
         })
+    }
+
+    /// [`Self::clientbound_in`], for the packets that become several: a wooden boat (1.21.1 and older). The
+    /// second part is what goes after the first.
+    fn clientbound_with_extras(
+        &self,
+        state: State,
+        body: &[u8],
+    ) -> Result<(Option<Vec<u8>>, Vec<Vec<u8>>)> {
+        use packet_ids::play::clientbound as cb;
+        if state != State::Play {
+            return Ok((self.clientbound_in(state, body)?, Vec::new()));
+        }
+        let mut r = Reader::new(body);
+        let id = r.varint()?;
+        let payload = r.rest();
+        // 1.21.2 gave every wood its own boat type; 1.21.1 has the plain one and the wood in entity data.
+        if id == cb::ADD_ENTITY && self.version.at_most(ServerVersion::V1_21_1) {
+            let e = play::AddEntity::read(&mut Reader::new(payload))?;
+            if let Some((plain, wood)) = step_1_21_1::boat(e.kind) {
+                let entity = e.id;
+                let sent = self.clientbound_in(
+                    state,
+                    &play::Clientbound::AddEntity(play::AddEntity { kind: plain, ..e }).encode(),
+                )?;
+                let mut extra = Vec::new();
+                if let Some(ids) = self.version.ids()
+                    && let Some(mapped) =
+                        self.version.clientbound_id_down(state, cb::SET_ENTITY_DATA)
+                {
+                    let data = play::Clientbound::SetEntityData(play::SetEntityData {
+                        id: entity,
+                        values: vec![(11, serializer::INT, Value::Int(wood))],
+                    });
+                    let mut w = Writer::new();
+                    w.varint(mapped);
+                    w.bytes(&encode_down(ids, &data));
+                    extra.push(w.data);
+                }
+                return Ok((sent, extra));
+            }
+        }
+        Ok((self.clientbound_in(state, body)?, Vec::new()))
     }
 
     fn clientbound_in(&self, state: State, body: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -536,6 +593,9 @@ impl ClientSession {
                 // 1.21.5's indexes go back to 1.21.4's last.
                 if self.version.at_most(ServerVersion::V1_21_4) {
                     step_1_21_4::entity_data(kind, d);
+                }
+                if self.version.at_most(ServerVersion::V1_21_1) {
+                    step_1_21_1::boat_data(kind, d);
                 }
                 return Ok(Some(strip_id(p.encode())));
             }
@@ -2182,5 +2242,73 @@ mod tests {
             let sent = s.clientbound(&data).unwrap().unwrap();
             assert!(sent.ends_with(tail), "{version:?}: {sent:?}");
         }
+    }
+
+    /// 1.21.2 split `boat` and `chest_boat` into one type per wood; a client through 1.21.1 knows the two
+    /// types (10 and 17) and takes the wood from entity data index 11 (Boat.Type's ordinal), where the
+    /// paddles and the bubble time move up by one.
+    #[test]
+    fn a_boat_of_any_wood_is_the_plain_boat_with_its_wood_for_a_client_through_1_21_1() {
+        use crate::adapter::pinned_ids::entity_type as entity;
+        use packet_ids::play::clientbound as cb;
+        let add = |kind: i32| {
+            play::Clientbound::AddEntity(play::AddEntity {
+                id: 5,
+                uuid: 1,
+                kind,
+                position: [0.0; 3],
+                velocity: [0.0; 3],
+                pitch: 0,
+                yaw: 0,
+                head_yaw: 0,
+                data: 0,
+            })
+            .encode()
+        };
+        // (pinned type, the client's type, the wood)
+        let cases = [
+            (entity::ACACIA_BOAT, 10, 4),
+            (entity::BAMBOO_RAFT, 10, 8),
+            (entity::OAK_BOAT, 10, 0),
+            (95, 10, 2), // pale_oak_boat, a birch to this client
+            (entity::ACACIA_CHEST_BOAT, 17, 4),
+            (entity::BAMBOO_CHEST_RAFT, 17, 8),
+            (entity::OAK_CHEST_BOAT, 17, 0),
+        ];
+        for version in [ServerVersion::V1_21_1, ServerVersion::V1_20_6] {
+            let data_id = version
+                .clientbound_id_down(State::Play, cb::SET_ENTITY_DATA)
+                .unwrap() as u8;
+            for (pinned, old, wood) in cases {
+                let s = ClientSession::new(version);
+                s.reading.store(to_u8(State::Play), Ordering::Release);
+                s.writing.store(to_u8(State::Play), Ordering::Release);
+                let all = s.clientbound_all(&add(pinned)).unwrap();
+                assert_eq!(all.len(), 2, "{version:?} {pinned}");
+                let (main, extra) = (&all[0], &all[1]);
+                let mut r = Reader::new(main);
+                r.varint().unwrap();
+                let spawned = play::AddEntity::read(&mut r).unwrap();
+                assert_eq!(spawned.kind, old, "{version:?} {pinned}");
+                // entity 5; index 11, serializer 1 (int), the wood, the end marker
+                assert_eq!(*extra, [data_id, 5, 11, 1, wood as u8, 0xff]);
+                // the paddles (11, 12) and the bubble time (13) take 1.21.1's indexes 12 to 14
+                let paddles = play::Clientbound::SetEntityData(play::SetEntityData {
+                    id: 5,
+                    values: vec![
+                        (11, serializer::BOOLEAN, Value::Bool(true)),
+                        (13, serializer::INT, Value::Int(7)),
+                    ],
+                })
+                .encode();
+                let sent = s.clientbound_all(&paddles).unwrap();
+                assert_eq!(sent, [[data_id, 5, 12, 8, 1, 14, 1, 7, 0xff]]);
+            }
+        }
+        // a 1.21.2 client has every wood as it is
+        let s = ClientSession::new(ServerVersion::V1_21_3);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        assert_eq!(s.clientbound_all(&add(entity::ACACIA_BOAT)).unwrap().len(), 1);
     }
 }
