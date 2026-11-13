@@ -1871,4 +1871,29 @@ mod tests {
             other => panic!("{other:?}"),
         }
     }
+
+    /// 26.1's `spectate_entity` is its id 62 (the packets report: sign_update 61, spectate_entity 62, swing 63);
+    /// 26.3 has it as `spectator_action` at 63 (by network id, sign_update at 62).
+    #[test]
+    fn a_26_1_client_spectating_an_entity_reaches_the_server_by_network_id() {
+        let s = ClientSession::new(ServerVersion::V26_1);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        s.entities.lock().unwrap().insert(7, (0, 0x42));
+        let mut w = Writer::new();
+        w.uuid(0x42);
+        let (id, payload) = s.serverbound(62, w.data).unwrap().unwrap();
+        assert_eq!(id, 63);
+        // OptVarInt: the network id plus one.
+        assert_eq!(payload, [8]);
+        // An entity the client was never told of is dropped.
+        let mut w = Writer::new();
+        w.uuid(0x43);
+        assert_eq!(s.serverbound(62, w.data).unwrap(), None);
+        // The ids around it keep their numbers: 26.1's sign_update (61) is the pinned 62.
+        assert_eq!(
+            ServerVersion::V26_1.serverbound_id_up(State::Play, 61),
+            Some(62)
+        );
+    }
 }
