@@ -11,6 +11,7 @@
 //! TODO(step3): the hashes of a stack with a component that names a registry entry are incomplete (`Hashed::of`
 //! hashes without registry names), and 1.21.5's item components are not written in 1.21.4's layout (see the
 //! TODOs in `translate::v1_21_4`).
+use super::text_down as text;
 use crate::{
     Result, State,
     adapter::{
@@ -45,10 +46,25 @@ pub(super) fn clientbound(state: State, id: i32, payload: &[u8]) -> Result<Optio
     Ok(Some(match id {
         cb::PLAYER_CHAT => {
             // The global index goes; 1.21.4 numbers no messages globally.
-            let mut r = Reader::new(payload);
+            // A packet the text rewrite can't read keeps its text as it is.
+            let text = text_packet_down(id, payload).ok().flatten();
+            let mut r = Reader::new(text.as_deref().unwrap_or(payload));
             r.varint()?;
             r.rest().to_vec()
         }
+        cb::SYSTEM_CHAT
+        | cb::DISGUISED_CHAT
+        | cb::TAB_LIST
+        | cb::SET_TITLE_TEXT
+        | cb::SET_SUBTITLE_TEXT
+        | cb::SET_ACTION_BAR_TEXT
+        | cb::DISCONNECT
+        | cb::OPEN_SCREEN
+        | cb::PLAYER_COMBAT_KILL
+        | cb::SET_OBJECTIVE => match text_packet_down(id, payload)? {
+            Some(p) => p,
+            None => return Ok(None),
+        },
         cb::SET_PLAYER_TEAM => team_down(payload)?,
         // The show flag is the last field; 1.21.4 has none.
         cb::UPDATE_ADVANCEMENTS => payload[..payload.len().saturating_sub(1)].to_vec(),
@@ -57,6 +73,46 @@ pub(super) fn clientbound(state: State, id: i32, payload: &[u8]) -> Result<Optio
         cb::CHUNKS_BIOMES => chunks_biomes_down(payload)?,
         _ => return Ok(None),
     }))
+}
+
+/// A packet that carries text components, with their click and hover events in 1.21.4's form: `None` for any
+/// other packet. Not converted yet: boss bars, entity data (custom names, text displays), books, resource pack
+/// prompts, server links and the configuration state's disconnect.
+fn text_packet_down(id: i32, payload: &[u8]) -> Result<Option<Vec<u8>>> {
+    use play::Clientbound as P;
+    let mut p = P::decode(id, payload)?;
+    let down = text::component_down;
+    match &mut p {
+        P::SystemChat(c) => down(&mut c.content),
+        P::DisguisedChat(c) => {
+            down(&mut c.message);
+            down(&mut c.chat_type.name);
+            c.chat_type.target.as_mut().map(down);
+        }
+        P::PlayerChat(c) => {
+            c.unsigned_content.as_mut().map(down);
+            down(&mut c.chat_type.name);
+            c.chat_type.target.as_mut().map(down);
+        }
+        P::TabList(t) => {
+            down(&mut t.header);
+            down(&mut t.footer);
+        }
+        P::SetTitleText(t) | P::SetSubtitleText(t) | P::SetActionBarText(t) => down(&mut t.text),
+        P::Disconnect(d) => down(&mut d.reason),
+        P::OpenScreen(o) => down(&mut o.title),
+        P::PlayerCombatKill(k) => down(&mut k.message),
+        P::SetObjective(o) => {
+            if let Some((name, ..)) = &mut o.display {
+                down(name);
+            }
+        }
+        _ => return Ok(None),
+    }
+    let encoded = p.encode();
+    let mut r = Reader::new(&encoded);
+    r.varint()?;
+    Ok(Some(r.rest().to_vec()))
 }
 
 /// The serverbound packet `id` the 1.21.4 client sent (`payload`, under the pinned id) in 1.21.5's layout. `ids` is
@@ -192,7 +248,7 @@ fn block_entity_data_down(payload: &[u8]) -> Result<Vec<u8>> {
 /// four `messages` and `filtered_messages` per side, and `CustomName`, become JSON text (the lines of a sign
 /// that mixes plain and styled text arrive wrapped as `{"": line}`, which goes first).
 ///
-/// The click and hover events of a styled line keep their 1.21.5 spelling.
+/// Their click and hover events take 1.21.4's spelling first (`text::component_down`).
 fn block_entity_text_down(tag: &mut Tag) {
     let Tag::Compound(root) = tag else {
         return;
@@ -214,7 +270,9 @@ fn block_entity_text_down(tag: &mut Tag) {
 
 /// A text component in NBT form as a string of its JSON.
 fn json_text(tag: &Tag) -> Tag {
-    Tag::String(JavaString(json::to_stable_string(&text_json(tag))))
+    let mut tag = tag.clone();
+    text::component_down(&mut tag);
+    Tag::String(JavaString(json::to_stable_string(&text_json(&tag))))
 }
 
 fn text_json(tag: &Tag) -> Json {
@@ -262,6 +320,11 @@ fn chunks_biomes_down(payload: &[u8]) -> Result<Vec<u8>> {
     Ok(w.data)
 }
 
+fn text_nbt(mut tag: Tag) -> Tag {
+    text::component_down(&mut tag);
+    tag
+}
+
 /// An update to a team in 1.21.4's layout: the name tag visibility and collision rule are sent by name.
 fn team_down(payload: &[u8]) -> Result<Vec<u8>> {
     let mut r = Reader::new(payload);
@@ -270,7 +333,7 @@ fn team_down(payload: &[u8]) -> Result<Vec<u8>> {
     let method = r.u8()?;
     w.u8(method);
     if method == 0 || method == 2 {
-        w.nbt(&r.nbt()?);
+        w.nbt(&text_nbt(r.nbt()?));
         w.u8(r.u8()?);
         w.string(translate::client_layout_v1_21_4::name_of(
             &translate::client_layout_v1_21_4::VISIBILITY,
@@ -281,8 +344,8 @@ fn team_down(payload: &[u8]) -> Result<Vec<u8>> {
             r.varint()?,
         )?);
         w.varint(r.varint()?);
-        w.nbt(&r.nbt()?);
-        w.nbt(&r.nbt()?);
+        w.nbt(&text_nbt(r.nbt()?));
+        w.nbt(&text_nbt(r.nbt()?));
     }
     if method == 0 || method == 3 || method == 4 {
         let n = r.count(r.remaining())?;
@@ -601,6 +664,139 @@ mod tests {
         let sections = plain.len() - 3;
         assert_eq!(&down[..sections], &plain[..sections]);
         assert_eq!(&down[sections..], &tail(&old)[..]);
+    }
+
+    fn click_new() -> Tag {
+        Tag::compound([
+            ("text", string("link")),
+            (
+                "click_event",
+                Tag::compound([
+                    ("action", string("open_url")),
+                    ("url", string("https://example.com")),
+                ]),
+            ),
+            (
+                "hover_event",
+                Tag::compound([("action", string("show_text")), ("value", string("tip"))]),
+            ),
+        ])
+    }
+
+    fn click_old() -> Tag {
+        Tag::compound([
+            ("text", string("link")),
+            (
+                "clickEvent",
+                Tag::compound([
+                    ("action", string("open_url")),
+                    ("value", string("https://example.com")),
+                ]),
+            ),
+            (
+                "hoverEvent",
+                Tag::compound([("action", string("show_text")), ("contents", string("tip"))]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn a_system_chat_keeps_the_old_event_spelling() {
+        let id = packet_ids::play::clientbound::SYSTEM_CHAT;
+        let mut w = Writer::new();
+        w.nbt(&click_new());
+        w.bool(false);
+        let down = clientbound(State::Play, id, &w.data).unwrap().unwrap();
+        let mut r = Reader::new(&down);
+        assert_eq!(r.nbt().unwrap(), click_old());
+        assert!(!r.bool().unwrap());
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn a_tab_list_and_a_disguised_chat_keep_the_old_event_spelling() {
+        let tab = packet_ids::play::clientbound::TAB_LIST;
+        let mut w = Writer::new();
+        w.nbt(&click_new());
+        w.nbt(&string("plain"));
+        let down = clientbound(State::Play, tab, &w.data).unwrap().unwrap();
+        let mut r = Reader::new(&down);
+        assert_eq!(r.nbt().unwrap(), click_old());
+        assert_eq!(r.nbt().unwrap(), string("plain"));
+        let chat = play::Clientbound::DisguisedChat(play::DisguisedChat {
+            message: click_new(),
+            chat_type: play::ChatTypeBound {
+                chat_type: 1,
+                name: click_new(),
+                target: Some(click_new()),
+            },
+        });
+        let encoded = chat.encode();
+        let mut r = Reader::new(&encoded);
+        let id = r.varint().unwrap();
+        let down = clientbound(State::Play, id, r.rest()).unwrap().unwrap();
+        match play::Clientbound::decode(id, &down).unwrap() {
+            play::Clientbound::DisguisedChat(c) => {
+                assert_eq!(c.message, click_old());
+                assert_eq!(c.chat_type.name, click_old());
+                assert_eq!(c.chat_type.target, Some(click_old()));
+            }
+            _ => panic!("disguised chat"),
+        }
+    }
+
+    #[test]
+    fn a_player_chat_loses_its_global_index_and_keeps_the_old_event_spelling() {
+        let chat = |global_index, unsigned: Tag| {
+            play::Clientbound::PlayerChat(play::PlayerChat {
+                global_index,
+                sender: 7,
+                index: 3,
+                signature: None,
+                content: "hi".into(),
+                timestamp: 100,
+                salt: 9,
+                last_seen: Vec::new(),
+                unsigned_content: Some(unsigned),
+                filter: (0, Vec::new()),
+                chat_type: play::ChatTypeBound {
+                    chat_type: 1,
+                    name: click_new(),
+                    target: None,
+                },
+            })
+            .encode()
+        };
+        let encoded = chat(5, click_new());
+        let mut r = Reader::new(&encoded);
+        let id = r.varint().unwrap();
+        let down = clientbound(State::Play, id, r.rest()).unwrap().unwrap();
+        // 1.21.4's packet is 1.21.5's without the index: put a 0 index back to read it.
+        let mut w = Writer::new();
+        w.varint(0);
+        w.bytes(&down);
+        let Ok(play::Clientbound::PlayerChat(c)) = play::Clientbound::decode(id, &w.data) else {
+            panic!("player chat");
+        };
+        assert_eq!((c.sender, c.index, c.content.as_str()), (7, 3, "hi"));
+        assert_eq!(c.unsigned_content, Some(click_old()));
+        assert_eq!(c.chat_type.name, click_old());
+    }
+
+    #[test]
+    fn a_signs_styled_line_has_the_old_event_spelling() {
+        let mut tag = Tag::compound([(
+            "front_text",
+            Tag::compound([("messages", Tag::List(vec![click_new()]))]),
+        )]);
+        block_entity_text_down(&mut tag);
+        let line = tag.get("front_text").unwrap().get("messages").unwrap();
+        assert_eq!(
+            line,
+            &Tag::List(vec![string(
+                "{\"clickEvent\":{\"action\":\"open_url\",\"value\":\"https://example.com\"},\"hoverEvent\":{\"action\":\"show_text\",\"contents\":\"tip\"},\"text\":\"link\"}"
+            )])
+        );
     }
 
     #[test]
