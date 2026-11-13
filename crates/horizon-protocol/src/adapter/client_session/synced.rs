@@ -43,8 +43,10 @@ fn releases(version: ServerVersion) -> &'static [&'static str] {
     }
 }
 
-/// The tables of the oldest release on `version`'s protocol: what it lacks, the newer patch lacks too or
-/// has (leaving out an entry a client has is harmless; sending one it lacks is not).
+/// The tables of one release on `version`'s protocol. The releases sharing a protocol have the same
+/// synchronised registries with the same entries (every `data/minecraft/<registry>/` of their server jars
+/// compared: 1.20.5/1.20.6, 1.21/1.21.1, 1.21.2/1.21.3, 1.21.7/1.21.8, 1.21.9/1.21.10, 26.1/26.1.1/26.1.2),
+/// so any one of them stands for all.
 fn table(
     version: ServerVersion,
 ) -> Option<(
