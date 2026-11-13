@@ -1494,6 +1494,92 @@ mod tests {
     }
 
     #[test]
+    fn a_26_2_clients_respawn_has_its_game_types_as_bytes() {
+        let s = in_play();
+        let mut w = Writer::new();
+        w.varint(0);
+        w.string("minecraft:overworld");
+        w.i64(42);
+        // 26.3: the game type a VarInt, the previous one as id + 1 (0 for none).
+        w.varint(1);
+        w.varint(0);
+        w.bool(false);
+        w.bool(true);
+        w.bool(false);
+        w.varint(0);
+        w.varint(63);
+        w.i8(3);
+        let sent = s
+            .clientbound(&body(packet_ids::play::clientbound::RESPAWN, &w.data))
+            .unwrap()
+            .unwrap();
+        let mut r = Reader::new(&sent);
+        r.varint().unwrap();
+        let mut e = Writer::new();
+        e.varint(0);
+        e.string("minecraft:overworld");
+        e.i64(42);
+        e.u8(1);
+        e.u8(0xff);
+        e.bool(false);
+        e.bool(true);
+        e.bool(false);
+        e.varint(0);
+        e.varint(63);
+        e.i8(3);
+        assert_eq!(r.rest(), &e.data[..]);
+    }
+
+    #[test]
+    fn a_26_2_clients_stats_and_map_decorations_take_its_registry_ids() {
+        let s = in_play();
+        // custom stat bell_ring: 71 pinned, 70 in 26.2.
+        let sent = s
+            .clientbound(&body(
+                packet_ids::play::clientbound::AWARD_STATS,
+                &[1, 8, 71, 5],
+            ))
+            .unwrap()
+            .unwrap();
+        assert_eq!(&sent[1..], &[1, 8, 70, 5]);
+        // A decoration 26.2 lacks (abandoned_camp, 35 pinned) is not drawn; banner_black (25) keeps its id.
+        let map = |kind: i32| {
+            play::Clientbound::MapItemData(play::MapItemData {
+                map_id: 1,
+                scale: 0,
+                locked: false,
+                decorations: Some(vec![play::MapDecoration {
+                    kind,
+                    x: 1,
+                    y: 2,
+                    rot: 3,
+                    name: None,
+                }]),
+                patch: None,
+            })
+            .encode()
+        };
+        let sent = s.clientbound(&map(25)).unwrap().unwrap();
+        let mut r = Reader::new(&sent);
+        r.varint().unwrap();
+        match play::MapItemData::read(&mut r) {
+            Ok(m) => assert_eq!(m.decorations.unwrap().len(), 1),
+            Err(e) => panic!("{e}"),
+        }
+        let sent = s.clientbound(&map(35)).unwrap().unwrap();
+        let mut r = Reader::new(&sent);
+        r.varint().unwrap();
+        assert_eq!(
+            play::MapItemData::read(&mut r)
+                .unwrap()
+                .decorations
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
     fn the_recipe_packets_of_a_1_21_1_client_are_not_passed_on() {
         let s = ClientSession::new(ServerVersion::V1_21_1);
         s.reading.store(to_u8(State::Play), Ordering::Release);

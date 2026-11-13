@@ -2,8 +2,10 @@
 //! mirror of `translate`'s 26.2 readers for a [`super::ClientSession`] (roadmap `older-clients`). Registry ids
 //! inside these packets are renumbered here too, since they never reach the id layer's generic rewrite.
 //!
-//! Off by default ([`set_enabled`]): until a client has played through every packet here, the id layer
-//! alone keeps the pinned layout.
+//! On by default ([`set_enabled`] switches it off): the older steps ([`super::client_session`]'s `step_26_1` and
+//! below) read these packets in 26.2's layout, and a 26.2 client reads no other (jars of 26.2 and 26.3 compared:
+//! `DisplayInfo` writes its tab position inside the display in 26.2 and `CommonPlayerSpawnInfo` its game types as
+//! bytes; the `map_decoration_type` and `custom_stat` registries differ in their numbering).
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::ids::{self, Ids, Way, down_or_substitute};
@@ -14,9 +16,9 @@ use crate::{
     packets::{configuration, play},
 };
 
-static ENABLED: AtomicBool = AtomicBool::new(false);
+static ENABLED: AtomicBool = AtomicBool::new(true);
 
-/// Whether 26.2 clients get these packets in their own layout.
+/// Whether clients through 26.2 get these packets in 26.2's layout.
 pub fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Release);
 }
