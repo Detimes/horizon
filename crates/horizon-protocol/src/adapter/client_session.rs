@@ -733,13 +733,24 @@ impl ClientSession {
                 Some(synced::core_pack_down(self.version, payload)?)
             }
             (State::Configuration, cfg::REGISTRY_DATA) => {
-                match synced::registry_data(self.version, payload)? {
+                let renumbered = synced::registry_data(self.version, payload)?;
+                let mut guard = self.synced.lock().unwrap_or_else(|e| e.into_inner());
+                match renumbered {
                     Some((p, registry, m)) => {
-                        let mut guard = self.synced.lock().unwrap_or_else(|e| e.into_inner());
                         Arc::make_mut(&mut guard).insert(registry, m);
                         Some(p)
                     }
-                    None => None,
+                    // Nothing removed this time (sent again in a later configuration): the client numbers it
+                    // as the server does, and a map from before is dropped.
+                    None => {
+                        if !guard.is_empty() {
+                            let registry = Reader::new(payload).string(32767)?;
+                            if guard.contains_key(&registry) {
+                                Arc::make_mut(&mut guard).remove(&registry);
+                            }
+                        }
+                        None
+                    }
                 }
             }
             (State::Configuration, cfg::UPDATE_TAGS) => {
@@ -1463,6 +1474,31 @@ mod tests {
             stack.component(component::ENCHANTMENTS),
             Some(&Component::Enchantments(vec![(1, 3)]))
         );
+    }
+
+    #[test]
+    fn a_registry_sent_again_without_removed_entries_is_no_longer_renumbered() {
+        use ids::SyncedIds;
+        let s = with_enchantments(ServerVersion::V1_21_1);
+        let down = |id| {
+            let maps = s.synced.lock().unwrap().clone();
+            maps.down("minecraft:enchantment", id)
+        };
+        assert_eq!(down(2), Some(1));
+        // A second configuration: the registry comes without lunge, nothing is removed from it.
+        s.writing
+            .store(to_u8(State::Configuration), Ordering::Release);
+        let again = enchantments(&["minecraft:aqua_affinity", "minecraft:mending"]);
+        let sent = s
+            .clientbound(&body(
+                packet_ids::configuration::clientbound::REGISTRY_DATA,
+                &again,
+            ))
+            .unwrap()
+            .unwrap();
+        // registry_data: 7 in 1.21.1, sent as it is.
+        assert_eq!(sent, body(7, &again));
+        assert_eq!(down(2), Some(2));
     }
 
     #[test]
