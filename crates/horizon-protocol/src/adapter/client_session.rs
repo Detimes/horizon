@@ -596,7 +596,7 @@ impl ClientSession {
         if state != State::Play
             || !matches!(
                 id,
-                cb::ADD_ENTITY | cb::REMOVE_ENTITIES | cb::SET_ENTITY_DATA
+                cb::ADD_ENTITY | cb::REMOVE_ENTITIES | cb::SET_ENTITY_DATA | cb::LOGIN
             )
         {
             return Ok(None);
@@ -611,6 +611,13 @@ impl ClientSession {
                 for id in &r.ids {
                     entities.remove(id);
                 }
+            }
+            // The local player is never sent an add_entity: its entity data still needs the player's step.
+            play::Clientbound::Login(l) => {
+                entities.insert(
+                    l.player_id,
+                    (crate::adapter::pinned_ids::entity_type::PLAYER, 0),
+                );
             }
             play::Clientbound::SetEntityData(d)
                 if self.version.at_most(ServerVersion::V1_21_11) =>
@@ -2345,6 +2352,91 @@ mod tests {
             s.clientbound(&add.encode()).unwrap().unwrap();
             let sent = s.clientbound(&data.encode()).unwrap().unwrap();
             assert!(sent.ends_with(tail), "{version:?}: {sent:?}");
+        }
+    }
+
+    /// A real 1.20.6, 1.21.4 or 1.21.8 client given an absorption effect left with "Invalid entity data item type
+    /// for field 17 ... old=0(Byte), new=4.0(Float)": 26.3's Avatar has the main hand (15) and the skin parts (16),
+    /// its Player the absorption (17), the score (18) and the shoulders (19, 20); through 1.21.8 the Player has the
+    /// absorption (15), the score (16), the skin parts (17), the main hand (18) and the shoulders (19, 20, NBTs).
+    /// The local player is never sent an add_entity, so it is told apart by the login's entity id.
+    #[test]
+    fn a_player_s_own_fields_move_back_for_clients_through_1_21_8() {
+        use crate::adapter::pinned_ids::entity_type as entity;
+        let login = play::Clientbound::Login(play::Login {
+            player_id: 7,
+            hardcore: false,
+            levels: vec!["minecraft:overworld".into()],
+            max_players: 20,
+            chunk_radius: 10,
+            simulation_distance: 8,
+            reduced_debug_info: false,
+            show_death_screen: true,
+            limited_crafting: false,
+            spawn: play::SpawnInfo {
+                dimension_type: 0,
+                dimension: "minecraft:overworld".into(),
+                seed: 42,
+                game_type: 1,
+                previous_game_type: None,
+                debug: false,
+                flat: true,
+                last_death: None,
+                portal_cooldown: 0,
+                sea_level: 63,
+            },
+            online_mode: true,
+            enforces_secure_chat: false,
+        });
+        let add = play::Clientbound::AddEntity(play::AddEntity {
+            id: 9,
+            uuid: 1,
+            kind: entity::PLAYER,
+            position: [0.0; 3],
+            velocity: [0.0; 3],
+            pitch: 0,
+            yaw: 0,
+            head_yaw: 0,
+            data: 0,
+        });
+        let data = |id| {
+            play::Clientbound::SetEntityData(play::SetEntityData {
+                id,
+                values: vec![
+                    (15, serializer::HUMANOID_ARM, Value::Id(1)),
+                    (16, serializer::BYTE, Value::Byte(0x7f)),
+                    (17, serializer::FLOAT, Value::Float(4.0)),
+                    (18, serializer::INT, Value::Int(5)),
+                    (19, serializer::OPTIONAL_UNSIGNED_INT, Value::Id(0)),
+                    (20, serializer::OPTIONAL_UNSIGNED_INT, Value::Id(0)),
+                ],
+            })
+        };
+        for version in [
+            ServerVersion::V1_21_8,
+            ServerVersion::V1_21_4,
+            ServerVersion::V1_20_6,
+        ] {
+            let s = ClientSession::new(version);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            s.clientbound(&login.encode()).unwrap();
+            s.clientbound(&add.encode()).unwrap();
+            // main hand 18 (byte), skin parts 17 (byte), absorption 15 (float 4.0), score 16 (VarInt); the
+            // shoulders (19, 20) are dropped.
+            let tail = [
+                18, 0, 1, 17, 0, 0x7f, 15, 3, 0x40, 0x80, 0, 0, 16, 1, 5, 0xff,
+            ];
+            for id in [7u8, 9] {
+                let sent = s
+                    .clientbound(&data(i32::from(id)).encode())
+                    .unwrap()
+                    .unwrap();
+                assert!(
+                    sent.ends_with(&[&[id][..], &tail[..]].concat()),
+                    "{version:?} {id}: {sent:?}"
+                );
+            }
         }
     }
 
