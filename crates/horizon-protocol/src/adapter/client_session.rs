@@ -87,9 +87,10 @@ pub struct ClientSession {
     /// Pinned ids -> the client's of the synchronised registries that lost entries its release lacks
     /// (synced.rs).
     synced: Mutex<Arc<synced::IdMaps>>,
-    /// Where the client said it is in its last `accept_teleportation`, until its next packet: an older
+    /// Where the client said it is in its last `accept_teleportation`, until its next move: an older
     /// client follows the accept with a `move_player_pos_rot` to the same place, which 26.3's accept
-    /// (it carries the place) made redundant, and which counts as the tick's move on the server.
+    /// (it carries the place) made redundant, and which counts as the tick's move on the server. Other
+    /// packets (a keep-alive answer, a swing) may come between them.
     accepted: Mutex<Option<Place>>,
     /// A packet to pass on after the one just translated ([`Self::next_serverbound`]).
     pending: Mutex<Option<(i32, Vec<u8>)>>,
@@ -287,15 +288,24 @@ impl ClientSession {
             return Ok(None);
         };
         use packet_ids::play::serverbound as sb;
-        let accepted = self
-            .accepted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-        if (state, pinned) == (State::Play, sb::MOVE_PLAYER_POS_ROT)
-            && accepted.is_some_and(|at| same_place(&payload, at))
+        // The first move after an accept is its echo or shows that none is coming (the client sends the echo
+        // before its next tick's move): either way the accepted place is done with.
+        if state == State::Play
+            && matches!(
+                pinned,
+                sb::MOVE_PLAYER_POS | sb::MOVE_PLAYER_POS_ROT | sb::MOVE_PLAYER_ROT
+            )
         {
-            return Ok(None);
+            let accepted = self
+                .accepted
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+            if pinned == sb::MOVE_PLAYER_POS_ROT
+                && accepted.is_some_and(|at| same_place(&payload, at))
+            {
+                return Ok(None);
+            }
         }
         let payload = match (state, pinned) {
             (State::Configuration, packet_ids::configuration::serverbound::SELECT_KNOWN_PACKS)
@@ -1373,6 +1383,71 @@ mod tests {
         // ...but the client's next real move is.
         assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
         assert!(s.serverbound(31, pos_rot(101.0)).unwrap().is_some());
+    }
+
+    /// A 26.2 session that sent teleport 1 to (100.5, 46, 100.5), yaw 180, and read the client's accept.
+    fn accepted_teleport() -> ClientSession {
+        let s = in_play();
+        let p = play::Clientbound::PlayerPosition(play::PlayerPosition {
+            teleport: 1,
+            position: [100.5, 46.0, 100.5],
+            delta: [0.0; 3],
+            yaw: 180.0,
+            pitch: 0.0,
+            relatives: 0,
+        });
+        s.clientbound(&p.encode()).unwrap().unwrap();
+        // accept_teleportation: 0 in both.
+        s.serverbound(0, vec![1]).unwrap().unwrap();
+        s
+    }
+
+    /// move_player_pos_rot (31 in both) to (x, 46, 100.5), yaw 180, pitch 0, on the ground.
+    fn pos_rot(x: f64) -> Vec<u8> {
+        let mut w = Writer::new();
+        for v in [x, 46.0, 100.5] {
+            w.f64(v);
+        }
+        w.f32(180.0);
+        w.f32(0.0);
+        w.u8(1);
+        w.data
+    }
+
+    #[test]
+    fn the_echo_move_is_dropped_with_other_packets_between_it_and_the_accept() {
+        let s = accepted_teleport();
+        // keep_alive (28 in both) and a main-hand swing (63 in 26.2, 26.3's punch 46) come first.
+        assert_eq!(
+            s.serverbound(28, vec![0; 8]).unwrap(),
+            Some((28, vec![0; 8]))
+        );
+        assert_eq!(s.serverbound(63, vec![0]).unwrap(), Some((46, Vec::new())));
+        assert_eq!(s.serverbound(31, pos_rot(100.5)).unwrap(), None);
+        // The echo came: the same place again is a move of its own.
+        assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_move_other_than_the_echo_goes_on_and_ends_the_wait_for_it() {
+        let s = accepted_teleport();
+        assert_eq!(
+            s.serverbound(31, pos_rot(101.0)).unwrap(),
+            Some((31, pos_rot(101.0)))
+        );
+        // Back at the accepted place a tick later: a real move, passed on.
+        assert_eq!(
+            s.serverbound(31, pos_rot(100.5)).unwrap(),
+            Some((31, pos_rot(100.5)))
+        );
+        // A turn (move_player_rot: 32 in both) ends the wait too.
+        let s = accepted_teleport();
+        let mut w = Writer::new();
+        w.f32(90.0);
+        w.f32(0.0);
+        w.u8(1);
+        assert!(s.serverbound(32, w.data).unwrap().is_some());
+        assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
     }
 
     /// A session of `version` in play, its `minecraft:enchantment` registry sent as aqua_affinity, lunge,
