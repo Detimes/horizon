@@ -1151,6 +1151,11 @@ fn entity_value(ids: &Ids, kind: i32, value: &mut Value) -> bool {
             };
             true
         }
+        // 1.21 to 1.21.4 read a wolf variant as a holder (the id plus one, 0 for an inline one); 1.21.5 made it the id.
+        Value::Id(id) if kind == serializer::WOLF_VARIANT && ids.quirks.wolf_variant_holder => {
+            *id += 1;
+            true
+        }
         Value::Particle(p) => particle(p),
         Value::Particles(list) => {
             list.retain_mut(particle);
@@ -1996,6 +2001,30 @@ mod tests {
             s.writing.store(to_u8(State::Play), Ordering::Release);
             s.clientbound(&add.encode()).unwrap().unwrap();
             let sent = s.clientbound(&data.encode()).unwrap().unwrap();
+            assert!(sent.ends_with(tail), "{version:?}: {sent:?}");
+        }
+    }
+
+    /// A wolf variant is a registry-or-inline holder (the id plus one) for 1.21 to 1.21.4 and the id for the
+    /// rest: variant 2 ends the entity data as 3 or as 2.
+    #[test]
+    fn a_wolf_variant_is_a_holder_for_a_client_through_1_21_4() {
+        let data = play::Clientbound::SetEntityData(play::SetEntityData {
+            id: 9,
+            values: vec![(22, serializer::WOLF_VARIANT, Value::Id(2))],
+        })
+        .encode();
+        for (version, tail) in [
+            (ServerVersion::V1_21_4, &[3, 0xff][..]),
+            (ServerVersion::V1_21_3, &[3, 0xff][..]),
+            (ServerVersion::V1_21_1, &[3, 0xff][..]),
+            (ServerVersion::V1_21_5, &[2, 0xff][..]),
+            (ServerVersion::V1_20_6, &[2, 0xff][..]),
+        ] {
+            let s = ClientSession::new(version);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            let sent = s.clientbound(&data).unwrap().unwrap();
             assert!(sent.ends_with(tail), "{version:?}: {sent:?}");
         }
     }
