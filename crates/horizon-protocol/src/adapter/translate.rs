@@ -2081,8 +2081,8 @@ pub(crate) mod client_layout_v1_21_8 {
 
 /// 1.20.6 to 1.21 (protocol 766 to 767): the mirror of `client_session::step_1_20_6`. Clientbound, from the two
 /// Packets pages:
-/// - `explode`'s sound is a sound event holder in 1.21 (a VarInt, 0 for an inline one, then the location and the
-///   range); 1.20.6 sends the inline one alone.
+/// - `explode`'s sound is a sound event holder in both (a VarInt, 0 for an inline one, then the location and the
+///   range; javap on both clients' `ClientboundExplodePacket`), so it is the same bytes.
 /// - `projectile_power` is one double, the power, in 1.21; 1.20.6 sends the vector.
 /// - `merchant_offers`: a trade's costs are trade items in 1.21 (an item id, a count and the components they add,
 ///   no stack flag), and the second cost is optional. The stacks are read under 1.20.6's ids and components.
@@ -2142,8 +2142,7 @@ pub(crate) mod client_layout_v1_20_6 {
         })
     }
 
-    /// explode: the sound is a holder in 1.21, and an inline one (0) here; the two explosion particles have no
-    /// data, so they are read as their ids alone.
+    /// explode: the sound is a holder in both releases; the packet is the same bytes.
     #[cfg(test)]
     fn explode(payload: &[u8]) -> Result<Vec<u8>> {
         let mut r = Reader::new(payload);
@@ -2156,7 +2155,6 @@ pub(crate) mod client_layout_v1_20_6 {
         r.varint()?; // the large explosion particle's id
         let mut w = Writer::new();
         w.bytes(r.since(0));
-        w.varint(0);
         w.bytes(r.rest());
         Ok(w.data)
     }
