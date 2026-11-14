@@ -1440,6 +1440,37 @@ mod tests {
         );
     }
 
+    /// A tag-less list of items in a display reaches 1.21.2 to 26.1 as a composite of item displays; the
+    /// item it lacks (pinned 40, cinnabar) went out as the id -1, which the client refuses ("No value with id -1").
+    #[test]
+    fn an_item_list_display_leaves_out_the_items_an_older_client_lacks() {
+        let list = |items: &[i32]| {
+            let mut w = Writer::new();
+            w.varint(1);
+            w.varint(7);
+            // stonecutter: the input is a list of items (type 6), the result planks, no station
+            w.varint(3);
+            w.varint(6);
+            w.varint(items.len() as i32 + 1);
+            items.iter().for_each(|&i| w.varint(i));
+            w.varint(4);
+            w.varint(63);
+            w.varint(0);
+            w.varint(0);
+            w.varint(0);
+            w.bool(false);
+            w.i8(0);
+            w.bool(false);
+            w.data
+        };
+        // 1.21.8: composite 7 of one item display (2): planks 36 stays, the missing item is not listed
+        let sent = book_down(ServerVersion::V1_21_8, &list(&[63, 40])).unwrap();
+        assert_eq!(sent, [1, 7, 3, 7, 1, 2, 36, 2, 36, 0, 0, 0, 0, 0, 0]);
+        // 26.1.2 (composite 9, item 4)
+        let sent = book_down(ServerVersion::V26_1, &list(&[40, 63])).unwrap();
+        assert_eq!(sent, [1, 7, 3, 10, 1, 4, 36, 4, 36, 0, 0, 0, 0, 0, 0]);
+    }
+
     /// 26.1.2 (item display type 4) numbers items as in the registry report of 26.1.2: planks 36, cinnabar absent.
     /// The ghost recipe of a missing item is not sent.
     #[test]

@@ -290,10 +290,15 @@ impl SlotDisplay {
                         w.string(name);
                     }
                     // A list of items has no such form: a composite of item displays shows the same.
-                    HolderSet::Items(items) => {
-                        Self::Composite(items.iter().map(|&item| Self::Item(item)).collect())
-                            .write(w)
-                    }
+                    // An item the client lacks would be written as the id -1 (refused): it is left out.
+                    HolderSet::Items(items) => Self::Composite(
+                        items
+                            .iter()
+                            .filter(|&&item| crate::adapter::ids::item(item) >= 0)
+                            .map(|&item| Self::Item(item))
+                            .collect(),
+                    )
+                    .write(w),
                 }
             }
             Self::Tag(set) => {
