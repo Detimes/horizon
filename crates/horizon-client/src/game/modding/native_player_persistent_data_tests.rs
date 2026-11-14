@@ -7,7 +7,11 @@ use mod_api::prelude::*;
 
 fn saved_data(game: &super::Game<'_>, conn: u32) -> Option<Tag> {
     let hub = &game.lan.as_ref().unwrap().hub;
-    hub.guest(conn)?.saved.as_ref()?.get("NeoForgeData").cloned()
+    hub.guest(conn)?
+        .saved
+        .as_ref()?
+        .get("NeoForgeData")
+        .cloned()
 }
 
 /// A chain of compounds `levels` deep, each holding the next under `k`.
@@ -58,11 +62,21 @@ fn data_too_deep_or_for_a_dead_player_is_refused() {
         let mut kept = Compound::new();
         kept.insert("kept".into(), Tag::Byte(1));
         assert!(b.set_persistent_data(game, kept.clone()));
-        assert!(b.set_persistent_data(game, nested(511)), "511 levels are written");
+        assert!(
+            b.set_persistent_data(game, nested(511)),
+            "511 levels are written"
+        );
         assert_eq!(b.persistent_data(game), Some(nested(511)));
         assert!(b.set_persistent_data(game, kept.clone()));
-        assert!(!b.set_persistent_data(game, nested(512)), "512 levels are not");
-        assert_eq!(b.persistent_data(game), Some(kept.clone()), "nothing was written");
+        assert!(
+            !b.set_persistent_data(game, nested(512)),
+            "512 levels are not"
+        );
+        assert_eq!(
+            b.persistent_data(game),
+            Some(kept.clone()),
+            "nothing was written"
+        );
         game.lan
             .as_mut()
             .unwrap()
@@ -70,6 +84,10 @@ fn data_too_deep_or_for_a_dead_player_is_refused() {
             .guests
             .update_connection(13, |g| g.dead = true);
         assert!(!b.set_persistent_data(game, Compound::new()));
-        assert_eq!(b.persistent_data(game), Some(kept), "a dead player is read, not written");
+        assert_eq!(
+            b.persistent_data(game),
+            Some(kept),
+            "a dead player is read, not written"
+        );
     });
 }

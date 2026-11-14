@@ -44,7 +44,10 @@ fn numbered(
 
 impl Game<'_> {
     /// `Inventory.getItem` for every slot that holds something.
-    pub(super) fn player_inventory_slots(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>> {
+    pub(super) fn player_inventory_slots(
+        &self,
+        player: PlayerRef,
+    ) -> Option<Vec<(u32, ItemStack)>> {
         if self.remote.is_some() {
             return None;
         }
@@ -76,4 +79,3 @@ impl Game<'_> {
         ran && set
     }
 }
-

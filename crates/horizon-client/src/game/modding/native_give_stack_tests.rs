@@ -9,7 +9,6 @@ fn api_item(game: &super::Game<'_>, snbt: &str) -> Option<ItemStack> {
     host.item_from_snbt(snbt)
 }
 
-
 /// What a mod reads from SNBT and writes back is the compound `ItemStack.CODEC` started
 /// from, through the API's own stack and back.
 #[test]
@@ -22,9 +21,15 @@ fn an_snbt_item_goes_through_the_api_unchanged() {
             r#"{id:"minecraft:potion",count:1,components:{"minecraft:potion_contents":{potion:"minecraft:strong_healing"}}}"#,
             r#"{id:"minecraft:written_book",count:1,components:{"minecraft:written_book_content":{title:{raw:"Log"},author:"guest13",pages:[{raw:"one"}]}}}"#,
         ] {
-            let engine = game.item_from_snbt(snbt).unwrap_or_else(|| panic!("{snbt}"));
+            let engine = game
+                .item_from_snbt(snbt)
+                .unwrap_or_else(|| panic!("{snbt}"));
             let api = api_item(game, snbt).unwrap();
-            assert_eq!(Some(&api), engine.clone().try_into_api().ok().as_ref(), "{snbt}");
+            assert_eq!(
+                Some(&api),
+                engine.clone().try_into_api().ok().as_ref(),
+                "{snbt}"
+            );
             let (tag, _) = parse_snbt(snbt).unwrap();
             assert_eq!(
                 horizon_items::item_nbt::item_to_nbt_with_items(&engine, game.items()),
@@ -44,7 +49,11 @@ fn item_from_snbt_refuses_what_is_not_one_item_compound() {
     with_guests(|game| {
         let host: &dyn Host = game;
         let count = |snbt: &str| host.item_from_snbt(snbt).map(|s| s.count());
-        assert_eq!(count(r#"{id:"stone"}"#), Some(1), "stone is minecraft:stone");
+        assert_eq!(
+            count(r#"{id:"stone"}"#),
+            Some(1),
+            "stone is minecraft:stone"
+        );
         assert_eq!(count(r#"{id:"minecraft:stone",count:99}"#), Some(99));
         assert_eq!(count(r#"{id:"minecraft:stone",count:100}"#), Some(1));
         assert_eq!(count(r#"{id:"minecraft:stone",count:0}"#), Some(1));
@@ -52,15 +61,26 @@ fn item_from_snbt_refuses_what_is_not_one_item_compound() {
         assert_eq!(count("stone"), None, "no compound");
         assert_eq!(count("-"), None, "no item");
         assert_eq!(count(r#"[{id:"minecraft:stone"}]"#), None);
-        assert_eq!(count(r#"{id:"minecraft:stone"} x"#), None, "text after the compound");
-        assert_eq!(count(r#"{id:"minecraft:stone"}{id:"minecraft:stone"}"#), None);
+        assert_eq!(
+            count(r#"{id:"minecraft:stone"} x"#),
+            None,
+            "text after the compound"
+        );
+        assert_eq!(
+            count(r#"{id:"minecraft:stone"}{id:"minecraft:stone"}"#),
+            None
+        );
         assert_eq!(count(r#"{id:"minecraft:air",count:1}"#), None);
         assert_eq!(count(r#"{id:"nomod:thing",count:1}"#), None);
         assert_eq!(count(r#"{count:1}"#), None);
         let item = r#"{id:"minecraft:stone"}"#;
         let padded = |len: usize| format!("{item}{}", " ".repeat(len - item.len()));
         assert_eq!(count(&padded(2 * 1024 * 1024)), Some(1), "2 MiB is read");
-        assert_eq!(count(&padded(2 * 1024 * 1024 + 1)), None, "one byte more is not");
+        assert_eq!(
+            count(&padded(2 * 1024 * 1024 + 1)),
+            None,
+            "one byte more is not"
+        );
         let nested = |levels: usize| {
             format!(
                 r#"{{id:"minecraft:stone",components:{{"minecraft:custom_data":{{a:{}0{}}}}}}}"#,

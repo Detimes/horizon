@@ -48,4 +48,3 @@ impl Game<'_> {
         ran && set
     }
 }
-
