@@ -118,6 +118,31 @@ impl SlotDisplay {
         }
     }
 
+    /// Whether this shows an item `has` rejects: a recipe holding one cannot be written for a client that
+    /// lacks the item (a list of items counts when none of them is one the client has).
+    pub fn lacks_item(&self, has: &dyn Fn(i32) -> bool) -> bool {
+        match self {
+            Self::Empty | Self::AnyFuel | Self::Tag(HolderSet::Tag(_)) => false,
+            Self::Item(id) => !has(*id),
+            Self::ItemStack(stack) => !has(stack.item),
+            Self::Tag(HolderSet::Items(items)) => {
+                !items.is_empty() && !items.iter().any(|&i| has(i))
+            }
+            Self::WithAnyPotion(d) | Self::OnlyWithComponent(d, _) => d.lacks_item(has),
+            Self::Dyed { dye: a, target: b }
+            | Self::SmithingTrim {
+                base: a,
+                material: b,
+                ..
+            }
+            | Self::WithRemainder {
+                input: a,
+                remainder: b,
+            } => a.lacks_item(has) || b.lacks_item(has),
+            Self::Composite(list) => list.iter().any(|d| d.lacks_item(has)),
+        }
+    }
+
     pub fn read(r: &mut Reader) -> Result<Self> {
         Self::read_at(r, 0)
     }
@@ -377,6 +402,42 @@ pub enum RecipeDisplay {
     },
 }
 impl RecipeDisplay {
+    /// Whether any slot of this recipe shows an item `has` rejects ([`SlotDisplay::lacks_item`]).
+    pub fn lacks_item(&self, has: &dyn Fn(i32) -> bool) -> bool {
+        let any = |list: &[&SlotDisplay]| list.iter().any(|d| d.lacks_item(has));
+        match self {
+            Self::Shapeless {
+                ingredients,
+                result,
+                station,
+            }
+            | Self::Shaped {
+                ingredients,
+                result,
+                station,
+                ..
+            } => ingredients.iter().any(|d| d.lacks_item(has)) || any(&[result, station]),
+            Self::Furnace {
+                ingredient,
+                fuel,
+                result,
+                station,
+                ..
+            } => any(&[ingredient, fuel, result, station]),
+            Self::Stonecutter {
+                input,
+                result,
+                station,
+            } => any(&[input, result, station]),
+            Self::Smithing {
+                template,
+                base,
+                addition,
+                result,
+                station,
+            } => any(&[template, base, addition, result, station]),
+        }
+    }
     pub fn result(&self) -> &SlotDisplay {
         match self {
             Self::Shapeless { result, .. }

@@ -1264,6 +1264,17 @@ fn renumber(ids: &Ids, p: &mut play::Clientbound) -> Option<()> {
                 .retain_mut(|(_, kind, value)| entity_value(ids, *kind, value));
             Some(())
         }
+        // A recipe showing an item the client lacks (and has no stand-in for) is left out: written, it would
+        // be an empty stack or an id -1, which the client refuses.
+        play::Clientbound::RecipeBookAdd(a) => {
+            let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
+            a.entries.retain(|e| !e.display.lacks_item(&has));
+            (a.replace || !a.entries.is_empty()).then_some(())
+        }
+        play::Clientbound::PlaceGhostRecipe(g) => {
+            let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
+            (!g.display.lacks_item(&has)).then_some(())
+        }
         // Item stacks and recipe displays: their writers renumber items and components (encode_down).
         _ => Some(()),
     }
@@ -1376,6 +1387,83 @@ mod tests {
         expected.extend(b"minecraft:planks");
         expected.extend([2, 38]); // item display (2 in 1.21.4): pinned 72's stand-in
         assert_eq!(r.rest(), &expected[..]);
+    }
+
+    /// A recipe book entry written for a client: the stonecutter recipe `input` -> `result` (pinned item ids),
+    /// no group, no requirements, and the flags `0`.
+    fn book_add(entries: &[(i32, i32, i32)]) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.varint(entries.len() as i32);
+        for &(id, input, result) in entries {
+            w.varint(id);
+            w.varint(3);
+            w.varint(4);
+            w.varint(input);
+            w.varint(4);
+            w.varint(result);
+            w.varint(0);
+            w.varint(0);
+            w.varint(0);
+            w.bool(false);
+            w.i8(0);
+        }
+        w.bool(false);
+        w.data
+    }
+
+    fn book_down(version: ServerVersion, payload: &[u8]) -> Option<Vec<u8>> {
+        match down(
+            version.ids().unwrap(),
+            State::Play,
+            packet_ids::play::clientbound::RECIPE_BOOK_ADD,
+            payload,
+        )
+        .unwrap()
+        {
+            Sent::Rewritten(b) => Some(b),
+            Sent::Dropped => None,
+            Sent::AsIs => panic!("untouched"),
+        }
+    }
+
+    /// 1.21.8 (item display type 2): the recipe showing cinnabar (pinned 40, no counterpart and no stand-in) is
+    /// left out and the count follows; the planks recipe keeps its own number (pinned 63, 36 there).
+    #[test]
+    fn a_recipe_with_an_item_1_21_8_lacks_is_left_out_of_the_book() {
+        let sent = book_down(ServerVersion::V1_21_8, &book_add(&[(1, 1, 40), (2, 1, 63)])).unwrap();
+        // one entry: id 2, stonecutter, item 1, item 36, no group, category 0, no requirements, flags 0, no replace
+        assert_eq!(sent, [1, 2, 3, 2, 1, 2, 36, 0, 0, 0, 0, 0, 0]);
+        // Only entries with a missing item and no replacement: nothing to send.
+        assert_eq!(
+            book_down(ServerVersion::V1_21_8, &book_add(&[(1, 40, 1)])),
+            None
+        );
+    }
+
+    /// 26.1.2 (item display type 4) numbers items as in the registry report of 26.1.2: planks 36, cinnabar absent.
+    /// The ghost recipe of a missing item is not sent.
+    #[test]
+    fn a_recipe_with_an_item_26_1_lacks_is_left_out_of_book_and_ghost() {
+        let sent = book_down(ServerVersion::V26_1, &book_add(&[(1, 40, 63), (2, 1, 63)])).unwrap();
+        assert_eq!(sent, [1, 2, 3, 4, 1, 4, 36, 0, 0, 0, 0, 0, 0]);
+        let ghost = |result: i32| {
+            let mut w = Writer::new();
+            w.varint(7);
+            w.varint(3);
+            w.varint(0);
+            w.varint(4);
+            w.varint(result);
+            w.varint(0);
+            down(
+                ServerVersion::V26_1.ids().unwrap(),
+                State::Play,
+                packet_ids::play::clientbound::PLACE_GHOST_RECIPE,
+                &w.data,
+            )
+            .unwrap()
+        };
+        assert!(matches!(ghost(40), Sent::Dropped));
+        assert!(matches!(ghost(63), Sent::Rewritten(_)));
     }
 
     /// 1.21.2 to 1.21.11 know eight slot display types, numbered otherwise than the pinned eleven: the types
