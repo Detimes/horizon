@@ -35,14 +35,8 @@ fn inventory_slots_are_read_and_written_by_vanillas_numbers() {
         let shield = stack(game, r#"{id:"minecraft:shield",count:1}"#);
         assert_eq!(b.inventory_slots(game), Some(Vec::new()));
         assert_eq!(b.set_inventory_slot(game, 8, Some(blade.clone())), Ok(()));
-        assert_eq!(
-            b.set_inventory_slot(game, 36, Some(boots.clone())),
-            Ok(())
-        );
-        assert_eq!(
-            b.set_inventory_slot(game, 40, Some(shield.clone())),
-            Ok(())
-        );
+        assert_eq!(b.set_inventory_slot(game, 36, Some(boots.clone())), Ok(()));
+        assert_eq!(b.set_inventory_slot(game, 40, Some(shield.clone())), Ok(()));
         let g = guest(game, 13);
         assert_eq!(
             g.inventory[8].as_ref().map(|s| s.item.as_ref()),
@@ -72,10 +66,7 @@ fn inventory_slots_are_read_and_written_by_vanillas_numbers() {
         );
         // In another player's turn the first one is displaced, and still reached.
         game.as_guest(12, |game| {
-            assert_eq!(
-                a.set_inventory_slot(game, 39, Some(blade.clone())),
-                Ok(())
-            );
+            assert_eq!(a.set_inventory_slot(game, 39, Some(blade.clone())), Ok(()));
             assert_eq!(a.inventory_slots(game), Some(vec![(39, blade.clone())]));
             assert_eq!(b.set_inventory_slot(game, 8, None), Ok(()));
         })
@@ -184,7 +175,11 @@ fn a_written_slot_is_what_the_open_inventory_menu_shows_and_clicks() {
             }),
         );
         let g = guest(game, 13);
-        assert_eq!(g.carried, Some(shown), "the click picked up the written stack");
+        assert_eq!(
+            g.carried,
+            Some(shown),
+            "the click picked up the written stack"
+        );
         assert_eq!(g.menu_slot(44), None);
         assert_eq!(g.inventory[8], None, "the old stack is gone");
     });

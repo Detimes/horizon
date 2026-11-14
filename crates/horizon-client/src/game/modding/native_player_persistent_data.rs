@@ -128,7 +128,10 @@ mod tests {
         let Some(Tag::Compound(root)) = &none else {
             panic!("the player file stays")
         };
-        assert!(root.get(&PERSISTENT_DATA.into()).is_none(), "nothing kept, no key");
+        assert!(
+            root.get(&PERSISTENT_DATA.into()).is_none(),
+            "nothing kept, no key"
+        );
         assert_eq!(root.get(&"Other".into()), Some(&Tag::Int(1)));
     }
 }

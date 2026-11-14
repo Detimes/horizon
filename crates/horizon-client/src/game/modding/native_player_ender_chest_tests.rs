@@ -22,10 +22,7 @@ fn ender_chest_slots_are_read_and_written() {
         let book = api_item(game, BOOK).unwrap();
         let pearls = api_item(game, r#"{id:"minecraft:ender_pearl",count:16}"#).unwrap();
         assert_eq!(b.ender_chest(game), Some(Vec::new()));
-        assert_eq!(
-            b.set_ender_chest_slot(game, 26, Some(book.clone())),
-            Ok(())
-        );
+        assert_eq!(b.set_ender_chest_slot(game, 26, Some(book.clone())), Ok(()));
         game.as_guest(12, |game| {
             assert_eq!(
                 a.set_ender_chest_slot(game, 0, Some(pearls.clone())),
@@ -144,7 +141,11 @@ fn a_written_slot_is_what_the_open_ender_chest_menu_shows_and_clicks() {
             }),
         );
         let guest = game.lan.as_ref().unwrap().hub.guest(13).unwrap();
-        assert_eq!(guest.carried, Some(shown), "the click picked up the written stack");
+        assert_eq!(
+            guest.carried,
+            Some(shown),
+            "the click picked up the written stack"
+        );
         assert_eq!(guest.ender_items[3], None, "the old stack is gone");
     });
 }
@@ -162,14 +163,15 @@ fn a_write_while_the_local_ender_chest_is_open_survives_closing_it() {
         game.ender_items = vec![None; 27];
         game.ender_items[3] = Some(old);
         game.open_ender_chest(key);
-        assert!(game.slot_set(
-            &super::commands::items::Slot::Ender(3),
-            Some(new.clone())
-        ));
+        assert!(game.slot_set(&super::commands::items::Slot::Ender(3), Some(new.clone())));
         let Some(BlockEntity::Chest(open)) = game.world.block_entities.get(&key) else {
             panic!("the open copy")
         };
-        assert_eq!(open[3], Some(new.clone()), "the menu shows the written stack");
+        assert_eq!(
+            open[3],
+            Some(new.clone()),
+            "the menu shows the written stack"
+        );
         game.close_ender_chest();
         assert_eq!(game.ender_items[3], Some(new), "closing keeps it");
     });

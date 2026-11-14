@@ -69,7 +69,11 @@ fn each_persistent_data_refusal_has_its_own_name_and_writes_nothing() {
             b.set_persistent_data(game, nested(512)),
             Err(PlayerDataRefusal::TooDeep)
         );
-        assert_eq!(b.persistent_data(game), Some(kept.clone()), "nothing was written");
+        assert_eq!(
+            b.persistent_data(game),
+            Some(kept.clone()),
+            "nothing was written"
+        );
         game.lan
             .as_mut()
             .unwrap()
@@ -80,7 +84,11 @@ fn each_persistent_data_refusal_has_its_own_name_and_writes_nothing() {
             b.set_persistent_data(game, Compound::new()),
             Err(PlayerDataRefusal::Dead)
         );
-        assert_eq!(b.persistent_data(game), Some(kept), "a dead player is read, not written");
+        assert_eq!(
+            b.persistent_data(game),
+            Some(kept),
+            "a dead player is read, not written"
+        );
         game.lan
             .as_mut()
             .unwrap()
@@ -128,7 +136,11 @@ fn a_respawn_keeps_only_player_persisted() {
         let mut after = Compound::new();
         after.insert("PlayerPersisted".into(), Tag::Compound(inside));
         assert_eq!(b.persistent_data(game), Some(after));
-        let outside = b.persistent_data(game).unwrap().get(&"outside".into()).cloned();
+        let outside = b
+            .persistent_data(game)
+            .unwrap()
+            .get(&"outside".into())
+            .cloned();
         assert_eq!(outside, None, "a key outside PlayerPersisted is lost");
     });
 }
