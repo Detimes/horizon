@@ -2,7 +2,7 @@
 //! public player handle.
 
 use super::native_guest_turn_tests::with_guests;
-use mod_api::{Host, ItemStack, StackWriteError, prelude::*};
+use mod_api::{Host, ItemStack, PlayerDataRefusal, StackWriteError, prelude::*};
 
 fn api_item(game: &super::Game<'_>, snbt: &str) -> Option<ItemStack> {
     let host: &dyn Host = game;
@@ -34,14 +34,14 @@ fn inventory_slots_are_read_and_written_by_vanillas_numbers() {
         let boots = stack(game, r#"{id:"minecraft:iron_boots",count:1}"#);
         let shield = stack(game, r#"{id:"minecraft:shield",count:1}"#);
         assert_eq!(b.inventory_slots(game), Some(Vec::new()));
-        assert_eq!(b.set_inventory_slot(game, 8, Some(blade.clone())), Ok(true));
+        assert_eq!(b.set_inventory_slot(game, 8, Some(blade.clone())), Ok(()));
         assert_eq!(
             b.set_inventory_slot(game, 36, Some(boots.clone())),
-            Ok(true)
+            Ok(())
         );
         assert_eq!(
             b.set_inventory_slot(game, 40, Some(shield.clone())),
-            Ok(true)
+            Ok(())
         );
         let g = guest(game, 13);
         assert_eq!(
@@ -74,10 +74,10 @@ fn inventory_slots_are_read_and_written_by_vanillas_numbers() {
         game.as_guest(12, |game| {
             assert_eq!(
                 a.set_inventory_slot(game, 39, Some(blade.clone())),
-                Ok(true)
+                Ok(())
             );
             assert_eq!(a.inventory_slots(game), Some(vec![(39, blade.clone())]));
-            assert_eq!(b.set_inventory_slot(game, 8, None), Ok(true));
+            assert_eq!(b.set_inventory_slot(game, 8, None), Ok(()));
         })
         .unwrap();
         assert_eq!(guest(game, 13).inventory[8], None);
@@ -89,27 +89,32 @@ fn inventory_slots_are_read_and_written_by_vanillas_numbers() {
     });
 }
 
-/// This API refuses a slot past 42, a dead player and a stack the item does not allow, and
-/// writes nothing for any of them.
+/// Each refusal has its own name and writes nothing: a slot past 42 (never a panic), a stack
+/// the item does not allow, a dead player, and a handle whose player has left.
 #[test]
 #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
-fn a_refused_inventory_write_changes_nothing() {
+fn each_inventory_refusal_has_its_own_name_and_writes_nothing() {
     with_guests(|game| {
         let b = game.players().server_players()[1];
         let rock = stack(game, r#"{id:"minecraft:stone",count:1}"#);
         assert_eq!(
             b.set_inventory_slot(game, 43, Some(rock.clone())),
-            Ok(false)
+            Err(PlayerDataRefusal::SlotOutOfRange { slot: 43, last: 42 })
         );
         assert_eq!(
-            b.set_inventory_slot(game, u32::MAX, Some(rock.clone())),
-            Ok(false)
+            b.set_inventory_slot(game, u32::MAX, None),
+            Err(PlayerDataRefusal::SlotOutOfRange {
+                slot: u32::MAX,
+                last: 42
+            })
         );
         let mut too_many = rock.clone();
         too_many.set_count(65).unwrap();
         assert_eq!(
             b.set_inventory_slot(game, 0, Some(too_many)),
-            Err(StackWriteError::CountExceeded { maximum: 64 })
+            Err(PlayerDataRefusal::Stack(StackWriteError::CountExceeded {
+                maximum: 64
+            }))
         );
         assert_eq!(b.inventory_slots(game), Some(Vec::new()));
         game.lan
@@ -118,11 +123,69 @@ fn a_refused_inventory_write_changes_nothing() {
             .hub
             .guests
             .update_connection(13, |g| g.dead = true);
-        assert_eq!(b.set_inventory_slot(game, 0, Some(rock)), Ok(false));
+        assert_eq!(
+            b.set_inventory_slot(game, 0, Some(rock.clone())),
+            Err(PlayerDataRefusal::Dead)
+        );
         assert_eq!(
             b.inventory_slots(game),
             Some(Vec::new()),
             "a dead player is read, not written"
         );
+        game.lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .guests
+            .update_connection(13, |g| g.dead = false);
+        let index = game
+            .lan
+            .as_ref()
+            .unwrap()
+            .hub
+            .guests
+            .connection_index(13)
+            .unwrap();
+        game.lan.as_mut().unwrap().hub.guests.remove(index);
+        assert_eq!(
+            b.set_inventory_slot(game, 0, Some(rock)),
+            Err(PlayerDataRefusal::Stale)
+        );
+        assert_eq!(b.inventory_slots(game), None);
+    });
+}
+
+/// A stack written to a slot the open inventory menu shows replaces the old one in that
+/// menu slot, and clicking the slot picks up the new stack: no stale copy of the old one.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_written_slot_is_what_the_open_inventory_menu_shows_and_clicks() {
+    use horizon_protocol::packets::play::{ContainerClick, Serverbound};
+    with_guests(|game| {
+        let b = game.players().server_players()[1];
+        let old = stack(game, r#"{id:"minecraft:stone",count:5}"#);
+        let new = stack(game, BLADE);
+        assert_eq!(b.set_inventory_slot(game, 8, Some(old)), Ok(()));
+        assert_eq!(b.set_inventory_slot(game, 8, Some(new)), Ok(()));
+        // The inventory menu's hotbar 8 is menu slot 44.
+        let shown = guest(game, 13).menu_slot(44).unwrap();
+        assert_eq!(shown.item.as_ref(), "minecraft:diamond_sword");
+        assert_eq!(shown.count, 1);
+        game.lan_guest_packet(
+            13,
+            Serverbound::ContainerClick(ContainerClick {
+                container: 0,
+                state: 0,
+                slot: 44,
+                button: 0,
+                input: 0,
+                changed: Vec::new(),
+                carried: None,
+            }),
+        );
+        let g = guest(game, 13);
+        assert_eq!(g.carried, Some(shown), "the click picked up the written stack");
+        assert_eq!(g.menu_slot(44), None);
+        assert_eq!(g.inventory[8], None, "the old stack is gone");
     });
 }

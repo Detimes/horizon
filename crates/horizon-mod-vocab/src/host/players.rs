@@ -326,7 +326,7 @@ pub trait PlayersBackend {
     /// chest, 39 head, 40 the off hand, 41 body and 42 saddle
     /// (`Inventory.EQUIPMENT_SLOT_MAPPING`), lowest first. The numbers
     /// `player_set_inventory_slot` takes, and for 0 to 35 the `Slot` of a saved player's
-    /// `Inventory` list. None for a stale or unavailable player and on a client.
+    /// `Inventory` list. None for a player that is not online (stale handle) and on a client.
     #[access(WorldOnly)]
     fn player_inventory_slots(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>>;
     /// Side: server.
@@ -884,48 +884,55 @@ pub trait PlayersBackendMut {
     /// empties it) goes into that slot as `/item replace entity <player> <slot>` puts it,
     /// without the slot's item check, so a worn slot takes any item; the equip sound and
     /// equipment changes follow for 36 to 42. The client is sent the slot with the tick's
-    /// inventory sync (`ContainerSetSlot`), as vanilla's `broadcastChanges`. This API refuses,
-    /// with nothing written: a slot past 42, a stale, unavailable or dead player and a client
-    /// (`Ok(false)`); a stack whose count or damage the item does not allow, or whose item
-    /// the world lacks (`Err(StackWriteError)`).
+    /// inventory sync (`ContainerSetSlot`), as vanilla's `broadcastChanges`. Each refusal
+    /// writes nothing and is named by `PlayerDataRefusal`: `Stale` (no online player behind
+    /// the handle), `Client`, `Dead`, `SlotOutOfRange` (a slot past 42, never a panic) and
+    /// `Stack` (an item the world lacks, a count or damage the item does not allow).
     #[access(WorldOnly)]
     fn player_set_inventory_slot(
         &mut self,
         player: PlayerRef,
         slot: u32,
         stack: Option<ItemStack>,
-    ) -> Result<bool, StackWriteError>;
+    ) -> Result<(), PlayerDataRefusal>;
     /// Side: server.
     /// `PlayerEnderChestContainer.setItem(slot, stack)`: `stack` (None empties it) in ender
     /// chest slot `slot` (0 to 26). A player looking into their ender chest is sent the slot
-    /// with the open menu's sync. Refuses as `player_set_inventory_slot` does, for a slot past
-    /// 26.
+    /// with the open menu's sync. Refuses as `player_set_inventory_slot` does, with
+    /// `SlotOutOfRange { last: 26 }` for a slot past 26 (never a panic).
     #[access(WorldOnly)]
     fn player_set_ender_chest_slot(
         &mut self,
         player: PlayerRef,
         slot: u32,
         stack: Option<ItemStack>,
-    ) -> Result<bool, StackWriteError>;
+    ) -> Result<(), PlayerDataRefusal>;
     /// Side: server.
     /// Gives `stack` as `/give` does, components and all: `Inventory.add` fills matching
     /// stacks, then empty slots (the selected one first); what does not fit is thrown from
     /// the player's eyes with no pickup delay and only they may pick it up; a stack that went
-    /// in whole plays the pickup sound. Refuses, with nothing given, a stale,
-    /// unavailable or dead player and a client (`Ok(false)`), and a stack the item does not
-    /// allow (`Err(StackWriteError)`).
+    /// in whole plays the pickup sound. Refuses, with nothing given, with `Stale`, `Client`,
+    /// `Dead` or `Stack`, as `player_set_inventory_slot` does.
     #[access(WorldOnly)]
     fn player_give_stack(
         &mut self,
         player: PlayerRef,
         stack: ItemStack,
-    ) -> Result<bool, StackWriteError>;
+    ) -> Result<(), PlayerDataRefusal>;
     /// Side: server.
     /// Replaces the compound mods keep on a server player (`player_persistent_data`) with
-    /// `data`; an empty compound takes it away. It is saved with the player. This API
-    /// refuses, with nothing written, data nested deeper than NBT allows (512 levels, which
-    /// the saved file could not be read back with), a stale, unavailable or dead player and a
-    /// client (false).
+    /// `data`; an empty compound takes it away. It is saved with the player and never sent to
+    /// a client; changing it raises no notification, so a mod that wants to hear of changes
+    /// keeps its own. On a death respawn and on a player's first exit from the End (before
+    /// the credits) only the `PlayerPersisted` sub-compound is carried to the new player, as
+    /// NeoForge does, and every other key is lost; dimension changes, later End exits and
+    /// teleports keep the whole compound. For ports: new mods use attachments. Refuses,
+    /// writing nothing: `Stale`, `Client`, `Dead`, and `TooDeep` for data that would sit 512
+    /// levels deep or more in the player's file.
     #[access(WorldOnly)]
-    fn player_set_persistent_data(&mut self, player: PlayerRef, data: Compound) -> bool;
+    fn player_set_persistent_data(
+        &mut self,
+        player: PlayerRef,
+        data: Compound,
+    ) -> Result<(), PlayerDataRefusal>;
 }

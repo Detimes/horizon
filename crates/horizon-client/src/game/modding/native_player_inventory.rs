@@ -3,7 +3,7 @@
 use super::{Game, commands::items::Slot, native_server::PlayerRead};
 use horizon_client::items::ItemStack;
 use horizon_items::equipment::{BODY, Equipment, SADDLE};
-use mod_api::PlayerRef;
+use mod_api::{PlayerDataRefusal, PlayerRef};
 
 /// `Inventory`'s slot numbers past the 36 main slots (`EQUIPMENT_SLOT_MAPPING`).
 const SLOTS: u32 = 43;
@@ -59,23 +59,42 @@ impl Game<'_> {
         })
     }
 
+    /// Why a write to this player's inventory, ender chest, hands or saved data is refused
+    /// before it starts: a client, a handle with no online player, a dead player.
+    pub(super) fn player_write_gate(&self, player: PlayerRef) -> Result<(), PlayerDataRefusal> {
+        if self.remote.is_some() {
+            return Err(PlayerDataRefusal::Client);
+        }
+        match self.player_handle_read(player) {
+            None => Err(PlayerDataRefusal::Stale),
+            Some(PlayerRead::Guest(g)) if g.dead => Err(PlayerDataRefusal::Dead),
+            Some(_) => Ok(()),
+        }
+    }
+
     /// `Inventory.setItem`, in the player's turn: the tick's inventory sync tells the client.
     pub(super) fn player_set_inventory_slot(
         &mut self,
         player: PlayerRef,
         slot: u32,
         stack: Option<ItemStack>,
-    ) -> bool {
-        let Some(slot) = inventory_slot(slot).filter(|_| self.remote.is_none()) else {
-            return false;
-        };
+    ) -> Result<(), PlayerDataRefusal> {
+        self.player_write_gate(player)?;
+        let target = inventory_slot(slot).ok_or(PlayerDataRefusal::SlotOutOfRange {
+            slot,
+            last: SLOTS - 1,
+        })?;
         let mut set = false;
         let ran = self.native_as_player_handle(player, |game| {
-            set = game.slot_set(&slot, stack.filter(|s| s.count > 0));
+            set = game.slot_set(&target, stack.filter(|s| s.count > 0));
             if set && game.player.is_some() {
                 game.check_inventory_trigger();
             }
         });
-        ran && set
+        if ran && set {
+            Ok(())
+        } else {
+            Err(PlayerDataRefusal::Stale)
+        }
     }
 }

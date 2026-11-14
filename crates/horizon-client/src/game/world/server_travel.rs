@@ -624,6 +624,9 @@ impl Game<'_> {
                 {
                     return;
                 }
+                // The first exit from the End keeps only `PlayerPersisted` of a mod's saved
+                // compound, as a death respawn does; later exits keep all of it.
+                self.keep_only_player_persisted(conn);
                 let Some(host) = self.lan.as_mut() else {
                     return;
                 };

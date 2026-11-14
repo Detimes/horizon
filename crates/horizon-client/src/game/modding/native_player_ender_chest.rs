@@ -2,7 +2,7 @@
 //! or edit it whole: player data sync, `/endersee`.
 use super::{Game, commands::items::Slot, native_server::PlayerRead};
 use horizon_client::items::ItemStack;
-use mod_api::PlayerRef;
+use mod_api::{PlayerDataRefusal, PlayerRef};
 
 /// `PlayerEnderChestContainer`'s size.
 const SLOTS: usize = 27;
@@ -23,7 +23,14 @@ impl Game<'_> {
             return None;
         }
         Some(match self.player_handle_read(player)? {
-            PlayerRead::Acting { .. } => numbered(&self.ender_items),
+            // An open ender chest menu holds the live copy until it closes.
+            PlayerRead::Acting { .. } => match self
+                .ender_open
+                .and_then(|key| self.world.block_entities.get(&key))
+            {
+                Some(horizon_client::containers::BlockEntity::Chest(items)) => numbered(items),
+                _ => numbered(&self.ender_items),
+            },
             PlayerRead::Guest(g) => numbered(&g.ender_items),
         })
     }
@@ -34,9 +41,13 @@ impl Game<'_> {
         player: PlayerRef,
         slot: u32,
         stack: Option<ItemStack>,
-    ) -> bool {
-        if self.remote.is_some() || slot as usize >= SLOTS {
-            return false;
+    ) -> Result<(), PlayerDataRefusal> {
+        self.player_write_gate(player)?;
+        if slot as usize >= SLOTS {
+            return Err(PlayerDataRefusal::SlotOutOfRange {
+                slot,
+                last: SLOTS as u32 - 1,
+            });
         }
         let mut set = false;
         let ran = self.native_as_player_handle(player, |game| {
@@ -45,6 +56,10 @@ impl Game<'_> {
             }
             set = game.slot_set(&Slot::Ender(slot as usize), stack.filter(|s| s.count > 0));
         });
-        ran && set
+        if ran && set {
+            Ok(())
+        } else {
+            Err(PlayerDataRefusal::Stale)
+        }
     }
 }

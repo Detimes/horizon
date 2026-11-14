@@ -2,7 +2,7 @@
 
 use super::{api_values::TryIntoApi, native_guest_turn_tests::with_guests};
 use horizon_core::nbt::parse_snbt;
-use mod_api::{Host, ItemStack, prelude::*};
+use mod_api::{Host, ItemStack, PlayerDataRefusal, prelude::*};
 
 fn api_item(game: &super::Game<'_>, snbt: &str) -> Option<ItemStack> {
     let host: &dyn Host = game;
@@ -42,7 +42,7 @@ fn an_snbt_item_goes_through_the_api_unchanged() {
 
 /// This API refuses with None: text that is not one compound, text with anything but
 /// whitespace after the compound, text over 2 MiB, nesting past 512 levels, air and an item
-/// the world lacks. A count outside 1 to 99 reads as 1.
+/// the world lacks, and a count outside 1 to 99.
 #[test]
 #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
 fn item_from_snbt_refuses_what_is_not_one_item_compound() {
@@ -55,8 +55,15 @@ fn item_from_snbt_refuses_what_is_not_one_item_compound() {
             "stone is minecraft:stone"
         );
         assert_eq!(count(r#"{id:"minecraft:stone",count:99}"#), Some(99));
-        assert_eq!(count(r#"{id:"minecraft:stone",count:100}"#), Some(1));
-        assert_eq!(count(r#"{id:"minecraft:stone",count:0}"#), Some(1));
+        assert_eq!(count(r#"{id:"minecraft:stone",count:1}"#), Some(1));
+        assert_eq!(
+            count(r#"{id:"minecraft:stone",count:100}"#),
+            None,
+            "a count past 99 is refused, not clamped"
+        );
+        assert_eq!(count(r#"{id:"minecraft:stone",count:0}"#), None);
+        assert_eq!(count(r#"{id:"minecraft:stone",count:-1}"#), None);
+        assert_eq!(count(r#"{id:"minecraft:stone",count:"5"}"#), None);
         assert_eq!(count("  {id:\"minecraft:stone\"} \n"), Some(1));
         assert_eq!(count("stone"), None, "no compound");
         assert_eq!(count("-"), None, "no item");
@@ -117,7 +124,7 @@ fn a_given_stack_fills_the_inventory_then_drops_for_its_player() {
             })
             .unwrap();
         let before = game.dropped.len();
-        assert_eq!(b.give_stack(game, named.clone()), Ok(true));
+        assert_eq!(b.give_stack(game, named.clone()), Ok(()));
         let g = game.lan.as_ref().unwrap().hub.guest(13).unwrap();
         assert_eq!(g.inventory[5].as_ref().map(|s| s.count), Some(64));
         assert_eq!(game.dropped.len(), before + 1);
@@ -136,14 +143,14 @@ fn a_given_stack_fills_the_inventory_then_drops_for_its_player() {
             .hub
             .update_guest(13, |g| g.inventory[7] = None)
             .unwrap();
-        assert_eq!(b.give_stack(game, named), Ok(true));
+        assert_eq!(b.give_stack(game, named), Ok(()));
         let g = game.lan.as_ref().unwrap().hub.guest(13).unwrap();
         assert_eq!(g.inventory[7], Some(engine));
         assert_eq!(game.dropped.len(), before + 1);
     });
 }
 
-/// This API refuses a dead player and gives nothing.
+/// This API refuses a dead player with its own name and gives nothing.
 #[test]
 #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
 fn a_dead_player_is_given_nothing() {
@@ -157,7 +164,7 @@ fn a_dead_player_is_given_nothing() {
             .guests
             .update_connection(13, |g| g.dead = true);
         let before = game.dropped.len();
-        assert_eq!(b.give_stack(game, rock), Ok(false));
+        assert_eq!(b.give_stack(game, rock), Err(PlayerDataRefusal::Dead));
         assert_eq!(b.inventory_slots(game), Some(Vec::new()));
         assert_eq!(game.dropped.len(), before);
     });
