@@ -1283,6 +1283,9 @@ fn renumber(ids: &Ids, p: &mut play::Clientbound) -> Option<()> {
 /// One entity data value renumbered for the older client: false drops it (a particle it lacks).
 fn entity_value(ids: &Ids, kind: i32, value: &mut Value) -> bool {
     let particle = |p: &mut crate::entity_data::Particle| {
+        if ids.quirks.simple_spell_particles {
+            p.without_plain_options();
+        }
         if let Some(ParticleData::State(s)) = &mut p.data {
             *s = state_down(ids, *s);
         }
@@ -2630,6 +2633,134 @@ mod tests {
             let sent = s.clientbound(&data).unwrap().unwrap();
             assert!(sent.ends_with(tail), "{version:?}: {sent:?}");
         }
+    }
+
+    /// Every particle with options, written for the clients before 1.21.2 (1.20.5 to 1.21.1 read the same bytes)
+    /// as their `ParticleTypes` read them, checked against the 1.20.6 and 1.21.1 client jars: the particle follows the
+    /// count, dust colours are three floats, `entity_effect` is one ARGB int, and `effect`, `instant_effect`,
+    /// `dragon_breath` and `flash` carry nothing. A particle they lack (`block_crumble`, `tinted_leaves`, `trail`)
+    /// is not sent. Each tail is the count (1), the particle's id and its options.
+    #[test]
+    fn particles_with_options_are_written_as_1_20_6_and_1_21_1_read_them() {
+        use crate::entity_data::{Particle, ParticleData as D};
+        let cases: [(i32, D, Option<&str>); 16] = [
+            (1, D::State(1), Some(concat!("00000001", "01", "01"))),
+            (2, D::State(1), Some(concat!("00000001", "02", "01"))),
+            (36, D::State(1), Some(concat!("00000001", "1c", "01"))),
+            (121, D::State(1), Some(concat!("00000001", "69", "01"))),
+            (125, D::State(1), None),
+            (
+                28,
+                D::Color(0x1122_3344),
+                Some(concat!("00000001", "14", "11223344")),
+            ),
+            (46, D::Color(0x1122_3344), None),
+            (52, D::Color(0x1122_3344), Some(concat!("00000001", "27"))),
+            (
+                21,
+                D::ColorScale(0x0011_2233, 1.0),
+                Some(concat!(
+                    "00000001", "0d", "3d888889", "3e088889", "3e4ccccd", "3f800000"
+                )),
+            ),
+            (
+                22,
+                D::ColorScale2(0x0011_2233, 0x0044_5566, 1.0),
+                Some(concat!(
+                    "00000001", "0e", "3d888889", "3e088889", "3e4ccccd", "3e888889", "3eaaaaab",
+                    "3ecccccd", "3f800000"
+                )),
+            ),
+            (
+                23,
+                D::ColorPower(0x1122_3344, 1.0),
+                Some(concat!("00000001", "0f")),
+            ),
+            (
+                56,
+                D::ColorPower(0x1122_3344, 1.0),
+                Some(concat!("00000001", "2b")),
+            ),
+            (15, D::Scalar(1.0), Some(concat!("00000001", "07"))),
+            (
+                48,
+                D::Scalar(0.5),
+                Some(concat!("00000001", "23", "3f000000")),
+            ),
+            (115, D::Delay(3), Some(concat!("00000001", "63", "03"))),
+            (59, D::Trail([1.0, 2.0, 3.0], 0x1122_3344, 20), None),
+        ];
+        for version in [ServerVersion::V1_20_6, ServerVersion::V1_21_1] {
+            for (id, data, tail) in &cases {
+                let packet = play::Clientbound::LevelParticles(play::LevelParticles {
+                    particle: Particle {
+                        id: *id,
+                        data: Some(data.clone()),
+                    },
+                    override_limiter: false,
+                    always_show: false,
+                    pos: [0.0; 3],
+                    dist: [0.0; 3],
+                    max_speed: [0.0; 3],
+                    count: 1,
+                    randomization: 0,
+                })
+                .encode();
+                let s = ClientSession::new(version);
+                s.reading.store(to_u8(State::Play), Ordering::Release);
+                s.writing.store(to_u8(State::Play), Ordering::Release);
+                let sent = s.clientbound(&packet).unwrap();
+                let hex = sent.map(|b| b.iter().map(|x| format!("{x:02x}")).collect::<String>());
+                match (tail, hex) {
+                    (Some(tail), Some(hex)) => {
+                        // packet id, long distance flag, 3 doubles, 4 floats: 1 + 1 + 24 + 16 bytes of 2 digits
+                        assert!(hex.starts_with("2900"), "{version:?} {id}: {hex}");
+                        assert_eq!(&hex[(1 + 1 + 24 + 16) * 2..], *tail, "{version:?} {id}");
+                    }
+                    (None, None) => {}
+                    (tail, hex) => panic!("{version:?} {id}: {hex:?}, expected {tail:?}"),
+                }
+            }
+        }
+    }
+
+    /// 1.21.9 gave `effect`, `instant_effect` and `dragon_breath` their options and `flash` its colour; 1.21.8 and
+    /// older read none (1.21.5 and 1.21.8 shown, as numbered there).
+    #[test]
+    fn effect_and_flash_options_start_with_1_21_9() {
+        use crate::entity_data::{Particle, ParticleData as D};
+        let send = |version, id, data| {
+            let packet = play::Clientbound::LevelParticles(play::LevelParticles {
+                particle: Particle {
+                    id,
+                    data: Some(data),
+                },
+                override_limiter: false,
+                always_show: false,
+                pos: [0.0; 3],
+                dist: [0.0; 3],
+                max_speed: [0.0; 3],
+                count: 1,
+                randomization: 0,
+            })
+            .encode();
+            let s = ClientSession::new(version);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            let sent = s.clientbound(&packet).unwrap().unwrap();
+            sent[sent.len() - 4..].to_vec()
+        };
+        let power = D::ColorPower(0x1122_3344, 1.0);
+        let tail = |version, id, data| {
+            let t = send(version, id, data);
+            t.iter().map(|x| format!("{x:02x}")).collect::<String>()
+        };
+        // plain: the count and the particle id are the last bytes; with options the colour and power follow
+        assert_eq!(tail(ServerVersion::V1_21_5, 23, power.clone()), "0000010f");
+        assert_eq!(tail(ServerVersion::V1_21_8, 15, D::Scalar(1.0)), "00000107");
+        assert_eq!(tail(ServerVersion::V1_21_8, 52, D::Color(7)), "00000129");
+        assert_eq!(tail(ServerVersion::V1_21_10, 23, power), "3f800000");
+        assert_eq!(tail(ServerVersion::V1_21_10, 52, D::Color(7)), "00000007");
     }
 
     /// 1.21.4 added the duration to the trail particle's options (TargetColorParticleOption, 1.21.2 and
