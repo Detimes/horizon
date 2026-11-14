@@ -901,4 +901,17 @@ pub trait PlayersBackendMut {
         slot: u32,
         stack: Option<ItemStack>,
     ) -> Result<bool, StackWriteError>;
+    /// Side: server.
+    /// Gives `stack` as `/give` does, components and all: `Inventory.add` fills matching
+    /// stacks, then empty slots (the selected one first); what does not fit is thrown from
+    /// the player's eyes with no pickup delay and only they may pick it up; a stack that went
+    /// in whole plays the pickup sound. Refuses, with nothing given, a stale,
+    /// unavailable or dead player and a client (`Ok(false)`), and a stack the item does not
+    /// allow (`Err(StackWriteError)`).
+    #[access(WorldOnly)]
+    fn player_give_stack(
+        &mut self,
+        player: PlayerRef,
+        stack: ItemStack,
+    ) -> Result<bool, StackWriteError>;
 }
