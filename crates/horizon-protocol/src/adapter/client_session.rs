@@ -87,9 +87,10 @@ pub struct ClientSession {
     /// Pinned ids -> the client's of the synchronised registries that lost entries its release lacks
     /// (synced.rs).
     synced: Mutex<Arc<synced::IdMaps>>,
-    /// Where the client said it is in its last `accept_teleportation`, until its next packet: an older
+    /// Where the client said it is in its last `accept_teleportation`, until its next move: an older
     /// client follows the accept with a `move_player_pos_rot` to the same place, which 26.3's accept
-    /// (it carries the place) made redundant, and which counts as the tick's move on the server.
+    /// (it carries the place) made redundant, and which counts as the tick's move on the server. Other
+    /// packets (a keep-alive answer, a swing) may come between them.
     accepted: Mutex<Option<Place>>,
     /// A packet to pass on after the one just translated ([`Self::next_serverbound`]).
     pending: Mutex<Option<(i32, Vec<u8>)>>,
@@ -109,6 +110,8 @@ struct Teleport {
     id: i32,
     to: Place,
     relatives: i32,
+    /// A 1.21.2/1.21.3 client's echo of it was dropped ([`ClientSession::echo_before_accept`]).
+    echoed: bool,
 }
 
 impl Teleport {
@@ -159,6 +162,8 @@ impl Drop for ClientIds {
 /// (a particle's data, say, is chosen by its pinned id).
 pub(super) fn read_in_client_ids<T>(read: impl FnOnce() -> Result<T>) -> Result<T> {
     let _guard = CLIENT_IDS.get().map(|ids| ids::renumbering(ids, Way::Up));
+    // Its synchronised registry ids too, which [`write_in_client_ids`] renumbers again.
+    let _synced = ids::synced_writing().map(ids::synced_reading);
     read()
 }
 
@@ -273,19 +278,42 @@ impl ClientSession {
             _ => state,
         };
         self.reading.store(to_u8(next), Ordering::Release);
+        // The stacks it names carry its own synchronised registry ids (enchantments, trims, banner patterns,
+        // painting variants): read as the pinned ones.
+        let maps = self
+            .synced
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let _synced = (!maps.is_empty()).then(|| ids::synced_reading(maps));
         let Some((pinned, payload)) = self.older_layout_up(state, pinned, payload)? else {
             return Ok(None);
         };
         use packet_ids::play::serverbound as sb;
-        let accepted = self
-            .accepted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
         if (state, pinned) == (State::Play, sb::MOVE_PLAYER_POS_ROT)
-            && accepted.is_some_and(|at| same_place(&payload, at))
+            && self.version == ServerVersion::V1_21_3
+            && self.echo_before_accept(&payload)
         {
             return Ok(None);
+        }
+        // The first move after an accept is its echo or shows that none is coming (the client sends the echo
+        // before its next tick's move): either way the accepted place is done with.
+        if state == State::Play
+            && matches!(
+                pinned,
+                sb::MOVE_PLAYER_POS | sb::MOVE_PLAYER_POS_ROT | sb::MOVE_PLAYER_ROT
+            )
+        {
+            let accepted = self
+                .accepted
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+            if pinned == sb::MOVE_PLAYER_POS_ROT
+                && accepted.is_some_and(|at| same_place(&payload, at))
+            {
+                return Ok(None);
+            }
         }
         let payload = match (state, pinned) {
             (State::Configuration, packet_ids::configuration::serverbound::SELECT_KNOWN_PACKS)
@@ -295,8 +323,11 @@ impl ClientSession {
             }
             (State::Play, sb::ACCEPT_TELEPORTATION) => {
                 let accept = self.accept_teleport(&payload)?;
-                *self.accepted.lock().unwrap_or_else(|e| e.into_inner()) =
-                    Some(*self.place.lock().unwrap_or_else(|e| e.into_inner()));
+                // 1.21.2/1.21.3 sent the echo before the accept (echo_before_accept).
+                if self.version != ServerVersion::V1_21_3 {
+                    *self.accepted.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some(*self.place.lock().unwrap_or_else(|e| e.into_inner()));
+                }
                 accept
             }
             // 26.3 inserted CHANGE_DESTROY_DIRECTION at 1: 26.2's actions past 0 are one up.
@@ -733,19 +764,35 @@ impl ClientSession {
             (State::Configuration, cfg::REGISTRY_DATA)
                 if synced::absent_registry(self.version, payload)? =>
             {
+                // Not sent; a registry the client has built in is still renumbered by what the server names.
+                if let Some((registry, m)) = synced::built_in(self.version, payload)? {
+                    let mut guard = self.synced.lock().unwrap_or_else(|e| e.into_inner());
+                    Arc::make_mut(&mut guard).insert(registry, m);
+                }
                 return Ok(Some(Vec::new()));
             }
             (State::Configuration, cfg::SELECT_KNOWN_PACKS) => {
                 Some(synced::core_pack_down(self.version, payload)?)
             }
             (State::Configuration, cfg::REGISTRY_DATA) => {
-                match synced::registry_data(self.version, payload)? {
+                let renumbered = synced::registry_data(self.version, payload)?;
+                let mut guard = self.synced.lock().unwrap_or_else(|e| e.into_inner());
+                match renumbered {
                     Some((p, registry, m)) => {
-                        let mut guard = self.synced.lock().unwrap_or_else(|e| e.into_inner());
                         Arc::make_mut(&mut guard).insert(registry, m);
                         Some(p)
                     }
-                    None => None,
+                    // Nothing removed this time (sent again in a later configuration): the client numbers it
+                    // as the server does, and a map from before is dropped.
+                    None => {
+                        if !guard.is_empty() {
+                            let registry = Reader::new(payload).string(32767)?;
+                            if guard.contains_key(&registry) {
+                                Arc::make_mut(&mut guard).remove(&registry);
+                            }
+                        }
+                        None
+                    }
                 }
             }
             (State::Configuration, cfg::UPDATE_TAGS) => {
@@ -793,11 +840,29 @@ impl ClientSession {
             pitch: r.f32()?,
         };
         let relatives = r.i32()?;
-        self.teleports
-            .lock()
-            .unwrap()
-            .push_back(Teleport { id, to, relatives });
+        self.teleports.lock().unwrap().push_back(Teleport {
+            id,
+            to,
+            relatives,
+            echoed: false,
+        });
         Ok(())
+    }
+
+    /// Whether a 1.21.2/1.21.3 client's `move_player_pos_rot` is the echo of a teleport: its
+    /// `ClientPacketListener.handleMovePlayer` sends the move to the teleport's place before the
+    /// `accept_teleportation` (the other releases after it). The echo names where the first teleport not yet
+    /// accepted puts the client; one is dropped per teleport, and the accept that follows states the same place.
+    fn echo_before_accept(&self, payload: &[u8]) -> bool {
+        let place = *self.place.lock().unwrap_or_else(|e| e.into_inner());
+        let mut teleports = self.teleports.lock().unwrap_or_else(|e| e.into_inner());
+        match teleports.front_mut() {
+            Some(t) if !t.echoed && same_place(payload, t.applied(place)) => {
+                t.echoed = true;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// A move the client reports (`move_player_pos`, `_pos_rot`, `_rot`): where it now is.
@@ -1051,9 +1116,15 @@ fn entity_value(ids: &Ids, kind: i32, value: &mut Value) -> bool {
             *id = state_down(ids, *id);
             true
         }
-        // A painting variant the client lacks is its stand-in (a holder: the id plus one).
+        // A painting variant the client lacks is its stand-in (a holder: the id plus one). 1.20.5/1.20.6
+        // write the registry id itself (`ByteBufCodecs.holderRegistry`), 1.21 on a holder.
         Value::Id(holder) if kind == serializer::PAINTING_VARIANT && *holder >= 1 => {
-            *holder = ids::synced_down_or_first(synced::PAINTING_VARIANT, *holder - 1) + 1;
+            let id = ids::synced_down_or_first(synced::PAINTING_VARIANT, *holder - 1);
+            *holder = if ids.quirks.components_before_1_21 {
+                id
+            } else {
+                id + 1
+            };
             true
         }
         Value::Particle(p) => particle(p),
@@ -1388,6 +1459,280 @@ mod tests {
         // ...but the client's next real move is.
         assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
         assert!(s.serverbound(31, pos_rot(101.0)).unwrap().is_some());
+    }
+
+    /// A 26.2 session that sent teleport 1 to (100.5, 46, 100.5), yaw 180, and read the client's accept.
+    fn accepted_teleport() -> ClientSession {
+        let s = in_play();
+        let p = play::Clientbound::PlayerPosition(play::PlayerPosition {
+            teleport: 1,
+            position: [100.5, 46.0, 100.5],
+            delta: [0.0; 3],
+            yaw: 180.0,
+            pitch: 0.0,
+            relatives: 0,
+        });
+        s.clientbound(&p.encode()).unwrap().unwrap();
+        // accept_teleportation: 0 in both.
+        s.serverbound(0, vec![1]).unwrap().unwrap();
+        s
+    }
+
+    /// move_player_pos_rot (31 in both) to (x, 46, 100.5), yaw 180, pitch 0, on the ground.
+    fn pos_rot(x: f64) -> Vec<u8> {
+        let mut w = Writer::new();
+        for v in [x, 46.0, 100.5] {
+            w.f64(v);
+        }
+        w.f32(180.0);
+        w.f32(0.0);
+        w.u8(1);
+        w.data
+    }
+
+    #[test]
+    fn the_echo_move_is_dropped_with_other_packets_between_it_and_the_accept() {
+        let s = accepted_teleport();
+        // keep_alive (28 in both) and a main-hand swing (63 in 26.2, 26.3's punch 46) come first.
+        assert_eq!(
+            s.serverbound(28, vec![0; 8]).unwrap(),
+            Some((28, vec![0; 8]))
+        );
+        assert_eq!(s.serverbound(63, vec![0]).unwrap(), Some((46, Vec::new())));
+        assert_eq!(s.serverbound(31, pos_rot(100.5)).unwrap(), None);
+        // The echo came: the same place again is a move of its own.
+        assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_move_other_than_the_echo_goes_on_and_ends_the_wait_for_it() {
+        let s = accepted_teleport();
+        assert_eq!(
+            s.serverbound(31, pos_rot(101.0)).unwrap(),
+            Some((31, pos_rot(101.0)))
+        );
+        // Back at the accepted place a tick later: a real move, passed on.
+        assert_eq!(
+            s.serverbound(31, pos_rot(100.5)).unwrap(),
+            Some((31, pos_rot(100.5)))
+        );
+        // A turn (move_player_rot: 32 in both) ends the wait too.
+        let s = accepted_teleport();
+        let mut w = Writer::new();
+        w.f32(90.0);
+        w.f32(0.0);
+        w.u8(1);
+        assert!(s.serverbound(32, w.data).unwrap().is_some());
+        assert!(s.serverbound(31, pos_rot(100.5)).unwrap().is_some());
+    }
+
+    /// A session of `version` in play, its `minecraft:enchantment` registry sent as aqua_affinity, lunge,
+    /// mending (pinned 0, 1, 2).
+    fn with_enchantments(version: ServerVersion) -> ClientSession {
+        let s = ClientSession::new(version);
+        s.writing
+            .store(to_u8(State::Configuration), Ordering::Release);
+        s.clientbound(&body(
+            packet_ids::configuration::clientbound::REGISTRY_DATA,
+            &enchantments(&[
+                "minecraft:aqua_affinity",
+                "minecraft:lunge",
+                "minecraft:mending",
+            ]),
+        ))
+        .unwrap()
+        .unwrap();
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        s
+    }
+
+    fn enchantments(names: &[&str]) -> Vec<u8> {
+        let mut w = Writer::new();
+        configuration::RegistryData::write(
+            &configuration::RegistryData {
+                registry: "minecraft:enchantment".into(),
+                entries: names
+                    .iter()
+                    .map(|n| configuration::RegistryEntry {
+                        id: (*n).into(),
+                        data: None,
+                    })
+                    .collect(),
+            },
+            &mut w,
+        );
+        w.data
+    }
+
+    /// 1.21.1 has no lunge: its mending is 1, 26.3's 2.
+    #[test]
+    fn a_1_21_1_creative_stack_takes_the_pinned_enchantment_after_one_it_lacks() {
+        use crate::item::{Component, component};
+        let s = with_enchantments(ServerVersion::V1_21_1);
+        // set_creative_mode_slot (50 in 1.21.1): slot 36, one diamond_sword (838 in 1.21.1) with one
+        // component, enchantments (9 in 1.21.1): mending (1) at level 3, shown in the tooltip.
+        let mut w = Writer::new();
+        w.i16(36);
+        for v in [1, 838, 1, 0, 9, 1, 1, 3] {
+            w.varint(v);
+        }
+        w.bool(true);
+        let (id, payload) = s.serverbound(50, w.data).unwrap().unwrap();
+        assert_eq!(id, 57);
+        let play::Serverbound::SetCreativeModeSlot(p) =
+            play::Serverbound::decode(id, &payload).unwrap()
+        else {
+            panic!("not a creative slot");
+        };
+        let stack = p.item.unwrap();
+        // diamond_sword: 1050 in 26.3; enchantments: component 13.
+        assert_eq!(stack.item, 1050);
+        assert_eq!(
+            stack.component(component::ENCHANTMENTS),
+            Some(&Component::Enchantments(vec![(2, 3)]))
+        );
+    }
+
+    /// set_equipment with a saddle is read back and written again in the client's ids for clients through
+    /// 1.21.6 (they have no saddle slot): its enchantments are renumbered once, not twice.
+    #[test]
+    fn a_1_21_1_client_is_sent_its_own_enchantment_once() {
+        use crate::item::{Component, Stack, component};
+        let s = with_enchantments(ServerVersion::V1_21_1);
+        let mut sword = Stack::new(1050, 1);
+        sword.added.push((
+            component::ENCHANTMENTS,
+            Component::Enchantments(vec![(2, 3)]),
+        ));
+        let p = play::Clientbound::SetEquipment(play::SetEquipment {
+            id: 4,
+            // Main hand, and the saddle slot (7) 1.21.6 lacks.
+            slots: vec![(0, Some(sword)), (7, Some(Stack::new(1050, 1)))],
+        });
+        let sent = s.clientbound(&p.encode()).unwrap().unwrap();
+        let mut r = Reader::new(&sent);
+        // set_equipment: 91 in 1.21.1; entity 4, main hand (0, the last slot: the saddle is left out).
+        assert_eq!(r.varint().unwrap(), 91);
+        assert_eq!(r.varint().unwrap(), 4);
+        assert_eq!(r.u8().unwrap(), 0);
+        let stack = {
+            let _up = ids::renumbering(ServerVersion::V1_21_1.ids().unwrap(), Way::Up);
+            crate::item::Slot::read(&mut r).unwrap().unwrap()
+        };
+        // Mending is 1 in the client's numbering (renumbered twice, it was left out).
+        assert_eq!(
+            stack.component(component::ENCHANTMENTS),
+            Some(&Component::Enchantments(vec![(1, 3)]))
+        );
+    }
+
+    #[test]
+    fn a_registry_sent_again_without_removed_entries_is_no_longer_renumbered() {
+        use ids::SyncedIds;
+        let s = with_enchantments(ServerVersion::V1_21_1);
+        let down = |id| {
+            let maps = s.synced.lock().unwrap().clone();
+            maps.down("minecraft:enchantment", id)
+        };
+        assert_eq!(down(2), Some(1));
+        // A second configuration: the registry comes without lunge, nothing is removed from it.
+        s.writing
+            .store(to_u8(State::Configuration), Ordering::Release);
+        let again = enchantments(&["minecraft:aqua_affinity", "minecraft:mending"]);
+        let sent = s
+            .clientbound(&body(
+                packet_ids::configuration::clientbound::REGISTRY_DATA,
+                &again,
+            ))
+            .unwrap()
+            .unwrap();
+        // registry_data: 7 in 1.21.1, sent as it is.
+        assert_eq!(sent, body(7, &again));
+        assert_eq!(down(2), Some(2));
+    }
+
+    /// A 1.21.3 session in play that was sent teleport 1 to (100.5, 46, 100.5), yaw 180, pitch 0.
+    fn teleported_1_21_3() -> ClientSession {
+        let s = ClientSession::new(ServerVersion::V1_21_3);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        let p = play::Clientbound::PlayerPosition(play::PlayerPosition {
+            teleport: 1,
+            position: [100.5, 46.0, 100.5],
+            delta: [0.0; 3],
+            yaw: 180.0,
+            pitch: 0.0,
+            relatives: 0,
+        });
+        s.clientbound(&p.encode()).unwrap().unwrap();
+        s
+    }
+
+    /// 1.21.2 and 1.21.3 send the echo before the accept: move_player_pos_rot (29 in 1.21.3, 31 in 26.3),
+    /// accept_teleportation (0), then the tick's own move.
+    #[test]
+    fn a_1_21_3_echo_before_its_accept_is_dropped() {
+        let s = teleported_1_21_3();
+        assert_eq!(s.serverbound(29, pos_rot(100.5)).unwrap(), None);
+        let (id, _) = s.serverbound(0, vec![1]).unwrap().unwrap();
+        assert_eq!(id, 0);
+        // The tick's move at the same place goes on: nothing waits after the accept.
+        assert_eq!(
+            s.serverbound(29, pos_rot(100.5)).unwrap(),
+            Some((31, pos_rot(100.5)))
+        );
+    }
+
+    #[test]
+    fn a_1_21_3_move_elsewhere_or_a_second_echo_before_the_accept_goes_on() {
+        let s = teleported_1_21_3();
+        // A move from before the client took the teleport.
+        assert_eq!(
+            s.serverbound(29, pos_rot(90.0)).unwrap(),
+            Some((31, pos_rot(90.0)))
+        );
+        assert_eq!(s.serverbound(29, pos_rot(100.5)).unwrap(), None);
+        // One echo per teleport.
+        assert_eq!(
+            s.serverbound(29, pos_rot(100.5)).unwrap(),
+            Some((31, pos_rot(100.5)))
+        );
+    }
+
+    /// 1.21.1 has no client_tick_end: one follows each of its moves. 26.3's client_tick_end is 13.
+    #[test]
+    fn a_1_21_1_move_is_followed_by_one_client_tick_end() {
+        let s = ClientSession::new(ServerVersion::V1_21_1);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        // move_player_pos: 26 in 1.21.1, 30 in 26.3; x, y, z and the on-ground boolean.
+        let mut w = Writer::new();
+        for v in [1.0, 64.0, 2.0] {
+            w.f64(v);
+        }
+        w.bool(true);
+        let (id, _) = s.serverbound(26, w.data).unwrap().unwrap();
+        assert_eq!(id, 30);
+        assert_eq!(s.next_serverbound(), Some((13, Vec::new())));
+        assert_eq!(s.next_serverbound(), None);
+        // A keep-alive (24 in 1.21.1) is no move: nothing follows it.
+        s.serverbound(24, vec![0; 8]).unwrap().unwrap();
+        assert_eq!(s.next_serverbound(), None);
+    }
+
+    #[test]
+    fn a_1_21_4_move_is_followed_by_nothing() {
+        let s = ClientSession::new(ServerVersion::V1_21_4);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        // move_player_pos: 28 in 1.21.4; x, y, z and the flags byte (on the ground).
+        let mut w = Writer::new();
+        for v in [1.0, 64.0, 2.0] {
+            w.f64(v);
+        }
+        w.u8(1);
+        let (id, _) = s.serverbound(28, w.data).unwrap().unwrap();
+        assert_eq!(id, 30);
+        assert_eq!(s.next_serverbound(), None);
     }
 
     #[test]

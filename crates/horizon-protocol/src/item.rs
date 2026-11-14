@@ -399,11 +399,15 @@ impl Component {
                         .collect::<Result<_>>()?,
                 )
             }
+            // An older client's enchantments in its own numbering are read as the pinned ones (ids::synced_up).
             ENCHANTMENTS | STORED_ENCHANTMENTS => {
                 let n = r.count(r.remaining())?;
                 Self::Enchantments(
                     (0..n)
-                        .map(|_| Ok((r.varint()?, r.varint()?)))
+                        .map(|_| {
+                            let e = ids::synced_up("minecraft:enchantment", r.varint()?);
+                            Ok((e, r.varint()?))
+                        })
                         .collect::<Result<_>>()?,
                 )
             }
@@ -529,9 +533,10 @@ impl Component {
                 let material = TrimHolder::read(r, TrimMaterial::read)?;
                 let pattern = TrimHolder::read(r, TrimPattern::read)?;
                 match (material, pattern) {
-                    (TrimHolder::Id(material), TrimHolder::Id(pattern)) => {
-                        Self::Trim { material, pattern }
-                    }
+                    (TrimHolder::Id(material), TrimHolder::Id(pattern)) => Self::Trim {
+                        material: ids::synced_up("minecraft:trim_material", material),
+                        pattern: ids::synced_up("minecraft:trim_pattern", pattern),
+                    },
                     (material, pattern) => Self::TrimDirect { material, pattern },
                 }
             }
@@ -555,7 +560,9 @@ impl Component {
                 let bytes = r.since(start);
                 let mut ids = Reader::new(bytes);
                 match ids.varint() {
-                    Ok(id @ 1..) if ids.remaining() == 0 => Self::PaintingVariant(id - 1),
+                    Ok(id @ 1..) if ids.remaining() == 0 => {
+                        Self::PaintingVariant(ids::synced_up("minecraft:painting_variant", id - 1))
+                    }
                     _ => Self::Raw(bytes.to_vec()),
                 }
             }
@@ -592,7 +599,10 @@ impl Component {
             if pattern < 1 {
                 return None;
             }
-            layers.push((pattern - 1, color));
+            layers.push((
+                ids::synced_up("minecraft:banner_pattern", pattern - 1),
+                color,
+            ));
         }
         (r.remaining() == 0).then_some(layers)
     }
@@ -607,6 +617,14 @@ impl Component {
                     v1_21_5::write(kind, bytes)
                 };
                 w.bytes(legacy.as_deref().unwrap_or(bytes));
+            }
+            // Nothing renumbered (a 26.3 client): written as they are, as the enchantments below.
+            Self::BannerPatterns(layers) if !ids::synced_set() => {
+                w.varint(layers.len() as i32);
+                for (pattern, color) in layers {
+                    w.varint(pattern + 1);
+                    w.varint(*color);
+                }
             }
             Self::BannerPatterns(layers) => {
                 // A pattern an older client lacks is left out (ids::synced_down).
@@ -645,10 +663,11 @@ impl Component {
                 lines.iter().for_each(|l| w.nbt(l));
             }
             Self::Enchantments(list)
-                if matches!(
-                    kind,
-                    component::ENCHANTMENTS | component::STORED_ENCHANTMENTS
-                ) =>
+                if ids::synced_set()
+                    && matches!(
+                        kind,
+                        component::ENCHANTMENTS | component::STORED_ENCHANTMENTS
+                    ) =>
             {
                 // An enchantment an older client lacks is left out (ids::synced_down).
                 let list: Vec<(i32, i32)> = list
