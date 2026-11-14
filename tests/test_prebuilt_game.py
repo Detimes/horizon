@@ -397,7 +397,8 @@ class ExecutableLinkPolicyTests(unittest.TestCase):
             # engine build script and its real shared link policy, as the SDK build does.
             stubs = {
                 "horizon_game_discovery": 'pub fn declarations(_: &std::path::Path, _: &[&str]) '
-                    '-> std::io::Result<String> { Ok(String::new()) }',
+                    '-> std::io::Result<String> { Ok(String::new()) } '
+                    'pub fn folder_modules(_: &std::path::Path)->Result<String,String>{Ok(String::new())}',
                 "horizon_mod_api_gen": 'pub enum Target { Client } '
                     'pub fn generate(_: &std::path::Path, _: &std::path::Path, _: Target) '
                     '-> std::io::Result<()> { Ok(()) }',
