@@ -85,3 +85,18 @@ Reads accept `Host`; writes accept `ServerHost`.
 | `sleep_timer(host)` / `set_sleep_timer(host, ticks)` | Reads or writes `Player.sleepCounter`, from 0 to 109; 100 means slept long enough. The write refuses larger values, fake players, guests in another level and stale players. |
 
 A second disconnect on a guest already leaving is a no-op and keeps the first reason.
+
+## Inventory, ender chest and saved data
+
+For mods that copy or edit a player whole (a player-data sync, `/invsee`, `/endersee`). Server only, online players only: a handle for an offline player, a stale one and a client answer `None` on a read and `false` on a write.
+
+| Method | Behavior |
+|---|---|
+| `inventory_slots(host)` | The non-empty slots by `Inventory`'s numbers, lowest first: 0 to 35 the main inventory (0 to 8 the hotbar), 36 feet, 37 legs, 38 chest, 39 head, 40 off hand, 41 body, 42 saddle. |
+| `set_inventory_slot(host, slot, stack)` | `Inventory.setItem`: `None` empties the slot; there is no item check, so a worn slot takes any item. The client is sent the slot with the tick's inventory sync. Refuses, writing nothing: a slot past 42, a dead player (`Ok(false)`), and a stack whose count or damage the item does not allow (`Err(StackWriteError)`). |
+| `ender_chest(host)` / `set_ender_chest_slot(host, slot, stack)` | The same pair for the 27 ender chest slots, 0 to 26; the write refuses a slot past 26 as above. |
+| `give_stack(host, stack)` | Gives one stack as `/give` does: matching stacks, then empty slots, and what does not fit is thrown from the player's eyes for that player alone, with no pickup delay. Refuses a dead player (`Ok(false)`) and a stack the item does not allow (`Err`). |
+| `persistent_data(host)` / `set_persistent_data(host, data)` | The compound mods keep on a player (NeoForge's `getPersistentData`), saved with the player under `NeoForgeData`; an empty compound removes it. The write refuses a dead player and data that would sit 512 levels deep or more in the player's file, and returns `false`, writing nothing. |
+| `host.item_from_snbt(snbt)` | The stack an SNBT item compound stands for, read as a saved item is: `{id:"minecraft:stone",count:3,components:{...}}`. Returns `None` for text that is not one compound (anything but whitespace after it included), text over 2 MiB or nested past 512 levels, air and an item the world lacks. |
+
+A stack in an inventory slot, the ender chest or `give_stack` keeps all its components. Mods that move inventories between servers can write `item_from_snbt`'s result back as it was read.
