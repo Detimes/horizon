@@ -1,0 +1,5 @@
+# The player inventory, ender chest, give_stack, item_from_snbt and persistent data tests read the prepared 26.3 data (REFERENCE is the variable); the shards without it refuse them by name.
+horizon-client game::native_player_inventory_tests::a_refused_inventory_write_changes_nothing HORIZON_TEST_RESOURCES needs
+horizon-client game::native_player_inventory_tests::inventory_slots_are_read_and_written_by_vanillas_numbers HORIZON_TEST_RESOURCES needs
+horizon-client game::native_player_ender_chest_tests::a_refused_ender_chest_write_changes_nothing HORIZON_TEST_RESOURCES needs
+horizon-client game::native_player_ender_chest_tests::ender_chest_slots_are_read_and_written HORIZON_TEST_RESOURCES needs
