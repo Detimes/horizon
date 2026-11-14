@@ -68,6 +68,38 @@ pub(super) fn boat_data(kind: Option<i32>, data: &mut play::SetEntityData) {
     }
 }
 
+/// Entity data in 1.21.1's indexes from 1.21.2's (1.21.4's layout), for an entity of `kind` (a pinned type; `None`
+/// leaves the data alone). 1.21.2 added a field to three families and the rest of each moved up:
+/// - AbstractArrow's `in_ground` boolean at 10 (arrow, spectral arrow, trident): it goes, and the arrow's colour and
+///   the trident's loyalty and foil move back down one.
+/// - AgeableWaterCreature's baby flag at 16 (squid, glow squid, dolphin): it goes, and the dolphin's fields and the
+///   glow squid's dark ticks move back down one.
+/// - The salmon's variant at 17 goes (see `step_1_21_3::entity_data` for the 1.21.2 string).
+///
+/// Boats are [`boat_data`]'s.
+pub(super) fn entity_data(kind: Option<i32>, data: &mut play::SetEntityData) {
+    use crate::adapter::pinned_ids::entity_type as entity;
+    let Some(kind) = kind else { return };
+    // The first index that is new in 1.21.2, and what stays below it.
+    let first_new = match kind {
+        entity::ARROW | entity::SPECTRAL_ARROW | entity::TRIDENT => 10,
+        entity::SQUID | entity::GLOW_SQUID | entity::DOLPHIN => 16,
+        entity::SALMON => 17,
+        _ => return,
+    };
+    let own_fields = kind != entity::SALMON;
+    data.values.retain_mut(|(index, _, _)| {
+        if *index == first_new {
+            false
+        } else {
+            if own_fields && *index > first_new {
+                *index -= 1;
+            }
+            true
+        }
+    });
+}
+
 /// The strength written for an explosion. 1.21.2's explode has no radius; `ClientSession` overwrites this with
 /// 26.3's radius, which the steps in between drop. It only chooses the blast's particles and sound volume.
 const EXPLODE_STRENGTH: f32 = 3.0;
@@ -459,6 +491,80 @@ mod tests {
     //! Each change written here is read back with `translate`'s 1.21.1 reader: 1.21.1's layout, 1.21.2's and back.
     use super::*;
     use crate::adapter::{ServerVersion, session::Session, translate};
+
+    /// 1.21.4's `set_entity_data` payload (literal bytes) through `step`, as the bytes written back.
+    fn through(
+        bytes: &[u8],
+        kind: i32,
+        step: impl Fn(Option<i32>, &mut crate::packets::play::SetEntityData),
+    ) -> Vec<u8> {
+        use crate::buf::{Codec, Reader, Writer};
+        let mut d =
+            <crate::packets::play::SetEntityData as Codec<_>>::read(&mut Reader::new(bytes))
+                .unwrap();
+        step(Some(kind), &mut d);
+        let mut w = Writer::new();
+        <crate::packets::play::SetEntityData as Codec<_>>::write(&d, &mut w);
+        w.data
+    }
+
+    /// 1.21.4's arrow (entity 5; the flags and pierce level at 8 and 9) has `in_ground` at 10 and the effect
+    /// colour (-1) at 11; 1.21.1's colour is at 10.
+    #[test]
+    fn an_arrow_loses_in_ground_and_its_colour_moves_down() {
+        use crate::adapter::pinned_ids::entity_type::ARROW;
+        let newer = [
+            5, 8, 0, 0, 9, 0, 0, 10, 8, 1, 11, 1, 255, 255, 255, 255, 15, 255,
+        ];
+        assert_eq!(
+            through(&newer, ARROW, entity_data),
+            [5, 8, 0, 0, 9, 0, 0, 10, 1, 255, 255, 255, 255, 15, 255]
+        );
+    }
+
+    #[test]
+    fn a_spectral_arrow_loses_in_ground_and_a_trident_s_fields_move_down() {
+        use crate::adapter::pinned_ids::entity_type::{SPECTRAL_ARROW, TRIDENT};
+        assert_eq!(
+            through(&[5, 8, 0, 0, 10, 8, 1, 255], SPECTRAL_ARROW, entity_data),
+            [5, 8, 0, 0, 255]
+        );
+        // in_ground, loyalty 3, foil
+        let trident = [5, 10, 8, 0, 11, 0, 3, 12, 8, 1, 255];
+        assert_eq!(
+            through(&trident, TRIDENT, entity_data),
+            [5, 10, 0, 3, 11, 8, 1, 255]
+        );
+    }
+
+    /// The baby flag at 16 goes for the squid and the glow squid (dark ticks 17 move to 16); the dolphin's
+    /// treasure position, got-fish and moistness (17 to 19) move to 16 to 18.
+    #[test]
+    fn the_baby_flag_of_the_water_animals_goes_and_what_follows_moves_down() {
+        use crate::adapter::pinned_ids::entity_type::{DOLPHIN, GLOW_SQUID, SQUID};
+        assert_eq!(through(&[5, 16, 8, 1, 255], SQUID, entity_data), [5, 255]);
+        assert_eq!(
+            through(&[5, 16, 8, 0, 17, 1, 40, 255], GLOW_SQUID, entity_data),
+            [5, 16, 1, 40, 255]
+        );
+        let dolphin = [
+            5, 16, 8, 1, 17, 10, 0, 0, 0, 0, 0, 0, 0, 0, 18, 8, 1, 19, 1, 3, 255,
+        ];
+        assert_eq!(
+            through(&dolphin, DOLPHIN, entity_data),
+            [5, 16, 10, 0, 0, 0, 0, 0, 0, 0, 0, 17, 8, 1, 18, 1, 3, 255]
+        );
+    }
+
+    /// 1.21.1 has no salmon variant: 1.21.4's at 17 goes.
+    #[test]
+    fn a_salmon_has_no_variant() {
+        use crate::adapter::pinned_ids::entity_type::SALMON;
+        assert_eq!(
+            through(&[6, 16, 8, 1, 17, 1, 2, 255], SALMON, entity_data),
+            [6, 16, 8, 1, 255]
+        );
+    }
 
     /// A 1.21.1 client's information (no particle status) reads as 1.21.2's with all particles.
     #[test]

@@ -637,8 +637,12 @@ impl ClientSession {
                 if self.version.at_most(ServerVersion::V1_21_4) {
                     step_1_21_4::entity_data(kind, d);
                 }
+                if self.version.at_most(ServerVersion::V1_21_3) {
+                    step_1_21_3::entity_data(kind, d);
+                }
                 if self.version.at_most(ServerVersion::V1_21_1) {
                     step_1_21_1::boat_data(kind, d);
+                    step_1_21_1::entity_data(kind, d);
                 }
                 return Ok(Some(strip_id(p.encode())));
             }
