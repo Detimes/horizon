@@ -335,6 +335,12 @@ pub trait PlayersBackend {
     /// a stale or unavailable player and on a client.
     #[access(WorldOnly)]
     fn player_ender_chest(&self, player: PlayerRef) -> Option<Vec<(u32, ItemStack)>>;
+    /// Side: server.
+    /// The compound mods keep on a server player (NeoForge's `Entity.getPersistentData`),
+    /// saved in their file as `NeoForgeData` beside the keys the game keeps; empty when there
+    /// is none. None for a stale or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_persistent_data(&self, player: PlayerRef) -> Option<Compound>;
     /// Side: both.
     /// `ServerPlayerGameMode.getGameModeForPlayer`; Paper `HumanEntity#getGameMode`.
     /// None for stale, offline or unavailable players (including displaced outer players).
@@ -914,4 +920,12 @@ pub trait PlayersBackendMut {
         player: PlayerRef,
         stack: ItemStack,
     ) -> Result<bool, StackWriteError>;
+    /// Side: server.
+    /// Replaces the compound mods keep on a server player (`player_persistent_data`) with
+    /// `data`; an empty compound takes it away. It is saved with the player. This API
+    /// refuses, with nothing written, data nested deeper than NBT allows (512 levels, which
+    /// the saved file could not be read back with), a stale, unavailable or dead player and a
+    /// client (false).
+    #[access(WorldOnly)]
+    fn player_set_persistent_data(&mut self, player: PlayerRef, data: Compound) -> bool;
 }
