@@ -658,6 +658,22 @@ impl Game<'_> {
                 Text::translate("entity.minecraft.falling_block_type", &[block])
             }
             Target::Mob(id) => self.mob_command_name(id),
+            // The spawner keeps its compound in `raw`, not in `persist.raw`:
+            // its CustomName is read from there (Entity.getDisplayName).
+            Target::Spawner(id) => {
+                let custom = self
+                    .ominous_spawners
+                    .iter()
+                    .find(|s| s.id == id)
+                    .and_then(|s| s.raw.as_deref())
+                    .and_then(|raw| raw.get("CustomName"));
+                if let Some(c) = custom {
+                    return horizon_client::scoreboard::comp_text(
+                        &horizon_client::scoreboard::tag_to_json(c),
+                    );
+                }
+                Text::translate("entity.minecraft.ominous_item_spawner", &[])
+            }
             other => {
                 // Entity.getDisplayName: the CustomName component, else the type.
                 let custom = super::native_entities::target_id(other)
