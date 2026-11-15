@@ -24,9 +24,11 @@ fn arrow_and_orb_keep_their_saved_ticks_frozen() {
         Some(&Tag::Int(60))
     );
     let cold = orbs_from_nbt(&parse("{Pos:[1d,200d,1d]}")).remove(0);
-    assert!(orb_to_nbt(&cold, [197, 0, 0, 1])
-        .get("TicksFrozen")
-        .is_none());
+    assert!(
+        orb_to_nbt(&cold, [197, 0, 0, 1])
+            .get("TicksFrozen")
+            .is_none()
+    );
 }
 
 /// `Entity.load` reads `Air` and `saveWithoutId` writes it back.
