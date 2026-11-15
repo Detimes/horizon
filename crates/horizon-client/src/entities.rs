@@ -1321,6 +1321,7 @@ impl ExperienceOrb {
             following: None,
             fall_distance: 0.0,
             fire_ticks: 0,
+            ticks_frozen: 0,
         }
     }
     /// `ExperienceOrb.hurtServer`: the damage comes off the health as an
