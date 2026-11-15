@@ -1880,6 +1880,9 @@ pub fn mob_from_nbt_with_random(
     let position = position(tag)?;
     let [yaw, pitch] = rotation(tag);
     let mut m = Mob::with_random(id, kind, position, yaw, random);
+    // `Entity.load` runs after the constructor, so the saved yaw wins over
+    // what a type's register does to it (a shulker's register zeroes it).
+    m.yaw = yaw;
     m.velocity = motion(tag);
     m.head_pitch = pitch;
     // LivingEntity.readAdditionalSaveData: `setSharedFlag(7, getBooleanOr(FallFlying, false))`.
@@ -3586,7 +3589,8 @@ pub fn cushion_to_nbt(c: &Cushion, uuid: [i32; 4], raw: Option<&Tag>) -> Tag {
         uuid,
         position: c.position,
         motion: Vec3::ZERO,
-        rotation: [c.yaw, 0.0],
+        // The cushion never turns: its saved pitch is the one it was loaded with.
+        rotation: [c.yaw, raw.map_or(0.0, |t| rotation(t)[1])],
         on_ground,
         fall_distance,
     };

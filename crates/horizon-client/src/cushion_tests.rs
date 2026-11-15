@@ -41,3 +41,22 @@ fn cushion_save_preserves_color_anchor_rotation_and_unknown_data() {
     assert_eq!(loaded.check_interval, 0);
     assert_eq!(loaded.bounds(), cushion.bounds());
 }
+
+#[test]
+fn a_summoned_cushion_keeps_its_yaw_and_pitch_through_a_save() {
+    // summon ... {Rotation:[75f,20f]}: the saved yaw 75 and pitch 20 come back.
+    let raw = Tag::compound([
+        ("Pos", Tag::List(vec![Tag::Double(0.5f64.to_bits()); 3])),
+        (
+            "Rotation",
+            Tag::List(vec![
+                Tag::Float(75f32.to_bits()),
+                Tag::Float(20f32.to_bits()),
+            ]),
+        ),
+    ]);
+    let cushion = cushion_from_nbt(&raw, 1).unwrap();
+    assert_eq!(cushion.yaw, 75.0);
+    let saved = cushion_to_nbt(&cushion, [1, 2, 3, 4], Some(&raw));
+    assert_eq!(rotation(&saved), [75.0, 20.0]);
+}

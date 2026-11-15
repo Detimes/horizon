@@ -818,7 +818,8 @@ impl Game<'_> {
             self.remember_uuid(self.next_entity, uuid, &tag);
             let uuid = self.uuid_for(self.next_entity);
             self.falling.push(FallingBlock {
-                rotation: [0.0, 0.0],
+                // Entity.load: the saved Rotation, as the save writes it back.
+                rotation: entity_nbt::rotation(&tag),
                 join: Default::default(),
                 id: self.next_entity,
                 state,
