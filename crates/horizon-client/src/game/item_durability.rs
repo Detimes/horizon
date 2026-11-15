@@ -14,6 +14,7 @@ impl Game<'_> {
         blocking: Option<horizon_client::health::Blocking>,
         living_cause: bool,
         causing: i32,
+        armor_weapon: Option<horizon_client::health::ArmorWeapon>,
     ) -> horizon_client::Result<(horizon_client::health::BlockOutcome, f32)> {
         let mut hit = self
             .player
@@ -27,6 +28,7 @@ impl Game<'_> {
                 blocking,
                 living_cause,
                 causing,
+                armor_weapon,
             )?;
         if let Some(damage) = hit.helmet_damage()
             && self.armor[0]
@@ -71,7 +73,10 @@ impl Game<'_> {
         let marked_before = std::mem::take(&mut p.health.sync_velocity);
         p.velocity = before.add_vector(push);
         let canceled = source
-            .and_then(|id| self.hurt_player_equipment(id, amount, None, false, 0).ok())
+            .and_then(|id| {
+                self.hurt_player_equipment(id, amount, None, false, 0, None)
+                    .ok()
+            })
             .is_some_and(|(o, _)| o.canceled);
         if let Some(p) = self.player.as_mut() {
             if !p.health.sync_velocity {
@@ -186,6 +191,14 @@ impl Game<'_> {
             amount,
             horizon_world::player_inventory::EquipmentSlot::MainHand,
         );
+    }
+    /// `InteractionHand.asEquipmentSlot`: the slot of the hand that acts, whose
+    /// break (`LivingEntity.onEquippedItemBroken`) the caller reports.
+    pub(super) fn acting_hand_slot(&self) -> horizon_world::player_inventory::EquipmentSlot {
+        match self.hand {
+            Hand::Main => horizon_world::player_inventory::EquipmentSlot::MainHand,
+            Hand::Off => horizon_world::player_inventory::EquipmentSlot::OffHand,
+        }
     }
     /// Hurt the acting hand's stack through ordinary wear/criterion/break handling,
     /// reporting its break in the caller's explicit equipment slot.

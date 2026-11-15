@@ -353,6 +353,37 @@ impl Game<'_> {
             )
         })
     }
+    /// `Explosion.getIndirectSourceEntity` as the kind that caused it: a
+    /// primed TNT's owner, the mob whose blast it is, or a projectile's owner.
+    /// An explicit crystal or cart cause has no indirect source (`Explosion`'s
+    /// switch).
+    fn blast_indirect_source(&self) -> Option<Who> {
+        if self.combat.explicit_explosion_cause.is_some() {
+            return None;
+        }
+        if let Some((id, _)) = &self.combat.blast_owner {
+            if self.combat.blast_owner_player {
+                return Some(Who::Player);
+            }
+            // `PrimedTnt.getOwner` is an `EntityReference`: a removed owner
+            // does not resolve, though the TNT still saves its UUID.
+            return self
+                .mobs
+                .iter()
+                .any(|m| m.id == *id && !m.removed)
+                .then_some(Who::Mob(*id));
+        }
+        if let Some(id) = self.combat.explosion_owner {
+            return self
+                .mobs
+                .iter()
+                .any(|m| m.id == id && !m.removed)
+                .then_some(Who::Mob(id));
+        }
+        // The exploding mob itself: `Explosion.getIndirectSourceEntity` names
+        // it directly, even after its own tick marked it removed.
+        self.combat.explosion_source.map(Who::Mob)
+    }
     /// `ServerExplosion.getSeenPercent` for an entity box.
     pub(super) fn seen_percent(&self, center: [f64; 3], min: [f64; 3], max: [f64; 3]) -> f32 {
         let xs = 1.0 / ((max[0] - min[0]) * 2.0 + 1.0);
@@ -851,13 +882,14 @@ impl Game<'_> {
         // (as `retain` does), and a destroyed boat or cart shifts its list, so
         // `gone` counts how far.
         let blast = Blast {
-            vehicles_ignore: self.combat.explicit_explosion_cause.is_none()
-                && self.combat.blast_owner.is_none()
-                && self.blast_attacker().is_some()
+            vehicles_ignore: matches!(self.blast_indirect_source(), Some(Who::Mob(_)))
                 && !self.ui.rules.bool("mob_griefing"),
             items_ignore: items_ignore_explosion(self.ui.rules.bool("mob_griefing"), interaction),
             spared: exploding.filter(|_| self.combat.explosion_source_named),
         };
+        // `VehicleEntity.hurtServer` credits its ENTITY_DAMAGE to
+        // `DamageSource.getEntity`, which for a blast is its indirect source.
+        let blast_by = self.explosion_kill_credit();
         let (items_len, orbs_len) = (self.dropped.len(), self.orbs.len());
         let (mut items_kept, mut orbs_kept) = (0, 0);
         let (mut boats_gone, mut carts_gone) = (0, 0);
@@ -977,12 +1009,15 @@ impl Game<'_> {
                             let item = &mut self.dropped[i];
                             item.health = (item.health as f32 - amount) as i32;
                             destroyed = item.health <= 0;
+                            // `ItemEntity.hurtServer`: ENTITY_DAMAGE before it is destroyed.
+                            let at = item.position;
+                            self.item_damage_event(at, self.explosion_kill_credit());
                             if destroyed {
-                                let at = item.position;
                                 // Health was already reduced above. Run the shared
                                 // onDestroyed path without applying damage twice.
                                 destroyed_contents.extend(
-                                    item.hurt(0)
+                                    self.dropped[i]
+                                        .hurt(0)
                                         .unwrap_or_default()
                                         .into_iter()
                                         .map(|stack| (stack, at)),
@@ -998,13 +1033,19 @@ impl Game<'_> {
                     // a destroyed one is gone before the push.
                     EntityHandle::Cart(i) => {
                         let len = self.carts.len();
-                        self.hurt_cart(i, amount, false, true);
+                        self.hurt_cart(
+                            i,
+                            amount,
+                            false,
+                            true,
+                            super::minecarts::CartHit::attributed(blast_by),
+                        );
                         carts_gone += len - self.carts.len();
                     }
                     // `VehicleEntity.hurtServer`: damage * 10, broken past 40.
                     EntityHandle::Boat(i) => {
                         let len = self.boats.len();
-                        self.hurt_boat(i, amount, false);
+                        self.hurt_boat_by(i, amount, false, self.explosion_kill_credit());
                         boats_gone += len - self.boats.len();
                     }
                     // `hurtServer` does nothing to the rest.
@@ -1072,13 +1113,26 @@ impl Game<'_> {
     /// cause, including a TNT igniter or the player who broke an end crystal.
     pub(super) fn explosion_kill_credit(&self) -> Option<super::commands::Target> {
         use super::commands::Target;
-        // A primed TNT's owner (a player) names the blast before any mob does.
-        if self.combat.blast_owner.is_some() {
-            return Some(
+        // An explicit crystal or cart source names its own cause.
+        if let Some(cause) = &self.combat.explicit_explosion_cause {
+            return cause.as_ref().map(|cause| {
+                if cause.player {
+                    cause.guest.map_or(Target::Player, Target::Guest)
+                } else {
+                    Target::Mob(cause.entity.0)
+                }
+            });
+        }
+        // A primed TNT's owner names the blast before any mob does; a mob's UUID
+        // in its `owner` is that mob, not the player in place.
+        if let Some((id, _)) = self.combat.blast_owner {
+            return Some(if self.combat.blast_owner_player {
                 self.combat
                     .blast_guest
-                    .map_or(Target::Player, Target::Guest),
-            );
+                    .map_or(Target::Player, Target::Guest)
+            } else {
+                Target::Mob(id)
+            });
         }
         if let Some((id, _)) = self.blast_attacker() {
             return Some(Target::Mob(id));
@@ -1161,7 +1215,7 @@ impl Game<'_> {
         while i < self.cushions.len() {
             let p = self.cushions[i].position;
             if blast_reaches(center, diameter, [p.x, p.y, p.z]) {
-                self.break_cushion_by(i, false, self.explosion_kill_credit());
+                self.break_cushion_by(i, self.explosion_kill_credit());
             } else {
                 i += 1;
             }
@@ -1277,18 +1331,6 @@ impl Game<'_> {
     ) -> Result<()> {
         if self.serving.is_some() || self.options.dedicated.is_some() {
             self.native_explosion_prime(center, radius);
-        }
-        if let Some(p) = &self.player {
-            let d = [
-                p.position.x - center[0],
-                p.position.y - center[1],
-                p.position.z - center[2],
-            ];
-            let distance = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            self.input_feedback(horizon_client::input_source::Feedback::Explosion {
-                distance,
-                radius,
-            });
         }
         // Explosion.explode: the blast is heard.
         let ctx = horizon_client::sculk::Context::default();
@@ -1480,18 +1522,12 @@ impl Game<'_> {
             let rot = r.next_double() * f64::from(std::f32::consts::TAU);
             let fuse = r.next_int_bound(20).unwrap_or(0) + 10;
             // TntBlock.wasExploded hands the new TNT the blast's indirect
-            // source, so a chain reaction keeps a primed TNT's owner, player or mob.
-            let (owner, guest) = match &self.combat.explicit_explosion_cause {
-                // A crystal/cart's explicit DamageSource does not change
-                // Explosion.getIndirectSourceEntity, which is null for them.
-                Some(_) => (None, None),
-                None => match &self.combat.blast_owner {
-                    Some(_) if self.combat.blast_owner_player => {
-                        (Some(Who::Player), self.combat.blast_guest)
-                    }
-                    Some((id, _)) => (Some(Who::Mob(*id)), None),
-                    None => (None, None),
-                },
+            // source, so a chain reaction keeps a primed TNT's owner or the
+            // mob whose blast primed it.
+            let (owner, guest) = match self.blast_indirect_source() {
+                Some(Who::Player) => (Some(Who::Player), self.combat.blast_guest),
+                Some(Who::Mob(id)) => (Some(Who::Mob(id)), None),
+                None => (None, None),
             };
             self.add_primed_tnt(
                 BlockPos::new(pos[0], pos[1], pos[2]),
@@ -2409,3 +2445,7 @@ mod shulker_lock_drop_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "explosion_mob_source_tests.rs"]
+mod explosion_mob_source_tests;

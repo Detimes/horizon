@@ -66,7 +66,7 @@ impl Game<'_> {
     /// None off a server, for a player not here (another level than the one in place, a
     /// guest out of reach inside another player's hook, where the hub is taken out), dead, a
     /// spectator or riding, an input that is not a number, and when the movement code fails.
-    /// API @API:player_bots@.
+    /// API 454.
     pub(super) fn native_simulate_player_move(
         &mut self,
         uuid: u128,
@@ -145,13 +145,13 @@ impl Game<'_> {
     }
 
     /// The block collision boxes in `aabb` (`[min_x, min_y, min_z, max_x, max_y, max_z]`) of the
-    /// level `dimension`, as `Level.getBlockCollisions(null, aabb)` gives them: each block's
+    /// level `dimension`, as `CollisionGetter.getBlockCollisions(null, aabb)` gives them: each block's
     /// collision shape that shares volume with the box, as world-space boxes (a stair gives two,
     /// a fence its post), under the empty collision context (no entity: scaffolding and powder
     /// snow as for nothing standing on them). Entities and the world border are not in it. For a
     /// bot's own collision checks and pathfinding. Empty off a server, for another level than the
     /// one in place, a box that isn't a box (not numbers, or min past max), and one over about a
-    /// million blocks. API @API:player_bots@.
+    /// million blocks. API 454.
     pub(super) fn native_collision_boxes(&self, dimension: &str, aabb: [f64; 6]) -> Vec<[f64; 6]> {
         let Some(bounds) = aabb_of(aabb) else {
             return Vec::new();

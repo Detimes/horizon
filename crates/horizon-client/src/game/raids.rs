@@ -119,14 +119,18 @@ impl RaidLevel for Lvl<'_, '_> {
             || w.block_name(x, y - 1, z) == "minecraft:snow"
                 && g.res.facts().is_air(g.world.block(x, y, z))
     }
-    fn player(&self) -> Option<RaidPlayer> {
-        // The first player in the level: a server has no player of its own.
-        let p = self.game.level_players().into_iter().next()?;
-        Some(RaidPlayer {
-            position: [p.position.x, p.position.y, p.position.z],
-            block: block_of(p.position),
-            alive: p.alive,
-        })
+    fn players(&self) -> Vec<RaidPlayer> {
+        // The players of the level in place: a server has none of its own.
+        self.game
+            .level_players()
+            .into_iter()
+            .map(|p| RaidPlayer {
+                uuid: p.uuid,
+                position: [p.position.x, p.position.y, p.position.z],
+                block: block_of(p.position),
+                alive: p.alive,
+            })
+            .collect()
     }
 }
 
@@ -461,9 +465,13 @@ impl Game<'_> {
         self.raiding.raids.nearby(at).map(|(id, _)| id)
     }
     /// `/raid start`: a raid in the local village at the given omen level.
+    /// `RaidCommand.start` reaches it through `Raids.createOrExtendRaid`, so
+    /// the player's Raid Omen is absorbed (`Raid.absorbRaidOmen`) before the
+    /// command sets the level.
     pub(super) fn raid_command_create(&mut self, at: [i32; 3], omen_level: i32) -> bool {
         self.load_raids();
-        let Some(id) = self.create_or_extend_raid(at, None) else {
+        let amplifier = self.potions.effects.amplifier("raid_omen");
+        let Some(id) = self.create_or_extend_raid(at, amplifier) else {
             return false;
         };
         if let Some(r) = self.raiding.raids.get_mut(id) {
@@ -818,7 +826,7 @@ impl Game<'_> {
             at[2].floor() as i32,
         );
         let difficulty = self.local_difficulty(at);
-        spawning::finalize(&mut mob, &facts, &difficulty);
+        spawning::finalize(&mut mob, &facts, &difficulty, &mut self.world.random);
         raider::finalize(&mut mob, reason);
         let id = mob.id;
         self.mobs.push(mob);
@@ -1188,18 +1196,25 @@ impl Game<'_> {
         self.particles_around_mob(id, "splash", horizon_client::particles::Burst::VILLAGER);
     }
 
-    /// The raid bar a living player at `at` is in (`Raid.getPlayers`): red,
-    /// notched in tens. The name is the translate component the client draws.
-    pub(super) fn raid_boss_at(&self, at: [f64; 3], alive: bool) -> Option<(i32, Tag, f32)> {
-        if !alive || self.dim != Dim::Overworld {
-            return None;
+    /// The raid bars a player `uuid` is in (`Raid.getPlayers`): red, notched
+    /// in tens. The set is the one `updatePlayers` cached on the last 20-tick
+    /// beat, so a viewer joins or leaves it up to 19 ticks late, alive or not
+    /// (`validPlayer`'s `isAlive` is only read on a beat). The name is the
+    /// translate component the client draws.
+    pub(super) fn raid_bars_at(&self, uuid: u128) -> Vec<(i32, Tag, f32)> {
+        if self.dim != Dim::Overworld {
+            return Vec::new();
         }
-        let block = block_of(Vec3::new(at[0], at[1], at[2]));
-        let (id, raid) = self.raiding.raids.nearby(block)?;
-        if !raid.bar.visible || raid.is_stopped() {
-            return None;
-        }
-        Some((id, raid_name_tag(raid.bar.name), raid.bar.progress))
+        self.raiding
+            .raids
+            .ids()
+            .into_iter()
+            .filter_map(|id| self.raiding.raids.get(id).map(|raid| (id, raid)))
+            .filter(|(_, raid)| {
+                raid.bar.players.contains(&uuid) && raid.bar.visible && !raid.is_stopped()
+            })
+            .map(|(id, raid)| (id, raid_name_tag(raid.bar.name), raid.bar.progress))
+            .collect()
     }
     /// A firework a villager launches to celebrate (`CelebrateVillagersSurvivedRaid`).
     pub(super) fn villager_firework(&mut self, at: [f64; 3], color: usize, flight: u8) {
@@ -1637,6 +1652,10 @@ impl Game<'_> {
 #[cfg(test)]
 #[path = "raids/tests/bed_loss.rs"]
 mod bed_loss_tests;
+
+#[cfg(test)]
+#[path = "raids/tests/bar_players.rs"]
+mod bar_players_tests;
 
 #[cfg(test)]
 mod entity_ticking_tests {

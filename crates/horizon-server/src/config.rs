@@ -48,7 +48,7 @@ path = ""                    # the game program; empty: the one installed beside
 resources = ""               # the prepared game files; empty: resources/ here, else the usual places
 restart_on_crash = true      # start the game again when it crashes
 low_memory = false           # true: no transparent huge pages, ~60 MB less idle for ~1 % more tick time
-parallel_tick = false        # true: the server tick shares its work among helper threads (same results)
+parallel_tick = false        # true: the server tick shares its work among helper threads (docs/hosting.md)
 
 [backups]
 every = "6h"                 # automatic backups while the server runs: 30m, 6h, 1d...; "0" turns them off
@@ -108,6 +108,15 @@ enabled = true               # false pauses it and keeps the webhook
 # Fights follow 26.3's rules. For 1.8.9's (no attack cooldown or sweep, 1.8 weapon damage; docs/pvp.md):
 # [combat]
 # legacy = true
+
+# Villagers that cannot move (a trading hall's cells, or riding) skip their brain, which cuts the lag of big halls;
+# they keep trading and restocking (docs/server.md). Not vanilla, so off. Mobs push every mob they overlap, as
+# vanilla does; a crowded pen costs the square of its crowd, and max_collisions caps it (the most other mobs one
+# mob pushes per tick, pushes it receives counted; 0 = no cap, vanilla). To turn them on:
+# [entities]
+# villager_lobotomize = true
+# villager_lobotomize_check_interval = 100   # ticks between rechecks of whether a villager can move
+# max_collisions = 8
 "##;
 
 /// Each typed setting: its section, its name, and the vanilla key it writes.
@@ -176,6 +185,57 @@ pub struct Config {
     /// The game reads this section itself (docs/pvp.md); written only when it isn't the default.
     #[serde(default, skip_serializing_if = "Combat::is_default")]
     pub combat: Combat,
+    /// `[entities]` (docs/server.md): mob settings passed to the game; written only when it isn't the default.
+    #[serde(default, skip_serializing_if = "Entities::is_default")]
+    pub entities: Entities,
+}
+
+/// `[entities]`: `villager_lobotomize = true` skips the brain of villagers that cannot move (stuck in a cell,
+/// riding something), rechecked every `villager_lobotomize_check_interval` ticks. The game reads it from the
+/// same file (game/dedicated.rs, `load_entities`).
+/// `[entities]`: `dab = true` runs a mob's AI less often the farther it is from the nearest player (Pufferfish's
+/// dynamic activation of brain; crates/horizon-client/src/mobs/dab.rs). Off by default: it is not vanilla's
+/// behaviour. A mob farther than `dab_start_distance` blocks runs its AI every
+/// `clamp(distance² >> dab_activation_dist_mod, 1, dab_max_tick_freq)` ticks. `max_collisions = N` limits how many
+/// other mobs one mob pushes in a tick (pushes it receives count too); 0 is vanilla's behaviour, no cap.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Entities {
+    pub villager_lobotomize: bool,
+    pub villager_lobotomize_check_interval: u32,
+    pub dab: bool,
+    pub dab_start_distance: u32,
+    pub dab_max_tick_freq: u32,
+    pub dab_activation_dist_mod: u32,
+    pub max_collisions: u32,
+}
+impl Default for Entities {
+    fn default() -> Self {
+        Self {
+            villager_lobotomize: false,
+            // Must match `mobs::villager::lobotomy::DEFAULT_INTERVAL` in horizon-client (this crate cannot depend on it).
+            villager_lobotomize_check_interval: 100,
+            dab: false,
+            dab_start_distance: 12,
+            dab_max_tick_freq: 20,
+            dab_activation_dist_mod: 8,
+            max_collisions: 0,
+        }
+    }
+}
+impl Entities {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    fn check(&self) -> Result<(), String> {
+        if self.dab_max_tick_freq == 0 {
+            return Err("entities.dab_max_tick_freq must be at least 1".into());
+        }
+        if self.dab_activation_dist_mod > 30 {
+            return Err("entities.dab_activation_dist_mod must be 30 or less".into());
+        }
+        Ok(())
+    }
 }
 
 /// `[combat]`: `legacy = true` resolves the players' melee hits by 1.8.9's rules (no attack cooldown or sweep,
@@ -545,12 +605,48 @@ impl Config {
         self.panel.address()?;
         self.api.check()?;
         self.transfer.check()?;
+        if self.entities.villager_lobotomize_check_interval == 0 {
+            return Err("entities.villager_lobotomize_check_interval must be above zero".into());
+        }
         self.discord.check()?;
         self.anticheat.check()?;
         self.chat_filter.check()?;
         self.prune_chunks.check()?;
+        self.entities.check()?;
+        // The game opens these as given, appending player text or rewriting them, so they stay
+        // in the server folder: not absolute, not up a level, no drive (`C:x`) on Windows.
+        for (what, path) in [
+            ("chat_filter.log", &self.chat_filter.log),
+            ("chat_filter.words_file", &self.chat_filter.words_file),
+            ("anticheat.log", &self.anticheat.log),
+            ("anticheat.strikes", &self.anticheat.strikes),
+        ] {
+            let p = Path::new(path);
+            if p.is_absolute()
+                || p.has_root()
+                || path.contains(':')
+                || path.split(['/', '\\']).any(|part| part == "..")
+            {
+                return Err(format!(
+                    "{what} {path:?} must be a path inside the server folder"
+                ));
+            }
+        }
         if self.server.port == 0 {
             return Err("server.port must be a port number from 1 to 65535".into());
+        }
+        // `config set` refuses a `backups.keep` outside this range (settings::range); a file edited by
+        // hand must not get past it with 0, which deletes every automatic backup right after it is made
+        // (`backup::prune`), the new one included. `backups.every = "0"` is how automatic backups go off.
+        if let Some(range) = crate::settings::range("backups", "keep")
+            && !range.contains(&i64::from(self.backups.keep))
+        {
+            return Err(format!(
+                "backups.keep is {}: use {} to {} (to stop automatic backups, set backups.every = \"0\")",
+                self.backups.keep,
+                range.start(),
+                range.end()
+            ));
         }
         if let Some((section, field, key)) =
             TYPED.iter().find(|t| self.properties.contains_key(t.2))
@@ -681,7 +777,13 @@ pub fn render(config: &Config) -> String {
         set(&mut doc, section, field, &table[section][field]);
     }
     let mut text = doc.to_string();
-    for section in ["anticheat", "chat_filter", "prune_chunks", "combat"] {
+    for section in [
+        "anticheat",
+        "chat_filter",
+        "prune_chunks",
+        "combat",
+        "entities",
+    ] {
         if let Some(settings) = table.get(section) {
             let mut only = toml::Table::new();
             only.insert(section.into(), settings.clone());
@@ -856,6 +958,29 @@ mod tests {
         p
     }
 
+    /// `server.toml` is checked as `config set` checks `backups.keep`: 0 would make the supervisor delete
+    /// every automatic backup (the one it just made too), so it is refused with the same range.
+    #[test]
+    fn backups_keep_is_checked_as_config_set_checks_it() {
+        let with = |keep: u32| {
+            Config::parse(&format!(
+                "[backups]
+keep = {keep}
+"
+            ))
+        };
+        let err = with(0).unwrap_err();
+        assert!(
+            err.contains("backups.keep is 0: use 1 to 1000"),
+            "got {err:?}"
+        );
+        assert!(with(1001).is_err());
+        assert!(with(1).is_ok() && with(1000).is_ok());
+        assert_eq!(Config::default().backups.keep, 12);
+        let table = toml::Table::try_from(Config::default()).unwrap();
+        assert!(crate::settings::parse_change(&table, "backups.keep=0").is_err());
+    }
+
     #[test]
     fn template_is_the_default() {
         assert_eq!(Config::parse(TEMPLATE).unwrap(), Config::default());
@@ -934,6 +1059,35 @@ mod tests {
     }
 
     #[test]
+    fn the_collision_cap_is_off_unless_its_section_sets_it() {
+        assert_eq!(Config::default().entities.max_collisions, 0);
+        assert!(!TEMPLATE.lines().any(|l| l.trim() == "[entities]"));
+        let on = Config::parse(&format!("{TEMPLATE}\n[entities]\nmax_collisions = 8\n")).unwrap();
+        assert_eq!(on.entities.max_collisions, 8);
+        assert_eq!(Config::parse(&render(&on)).unwrap(), on);
+        let off = render(&Config::default());
+        assert!(!off.lines().any(|l| l.trim() == "[entities]"), "{off}");
+        assert!(Config::parse("[entities]\nmax_collisions = -1\n").is_err());
+        assert!(Config::parse("[entities]\nmax_collision = 8\n").is_err());
+    }
+
+    #[test]
+    fn dab_is_off_unless_its_section_turns_it_on() {
+        assert!(!Config::default().entities.dab);
+        let off = render(&Config::default());
+        assert!(!off.lines().any(|l| l.trim() == "[entities]"), "{off}");
+        let on = Config::parse("[entities]\ndab = true\ndab_max_tick_freq = 10\n").unwrap();
+        assert!(on.entities.dab);
+        assert_eq!(on.entities.dab_start_distance, 12);
+        assert_eq!(on.entities.dab_activation_dist_mod, 8);
+        // Kept when the file is written again.
+        assert_eq!(Config::parse(&render(&on)).unwrap(), on);
+        assert!(Config::parse("[entities]\ndab_max_tick_freq = 0\n").is_err());
+        assert!(Config::parse("[entities]\ndab_activation_dist_mod = 99\n").is_err());
+        assert!(Config::parse("[entities]\ndap = true\n").is_err());
+    }
+
+    #[test]
     fn legacy_combat_is_off_unless_its_section_turns_it_on() {
         assert!(!Config::default().combat.legacy);
         assert!(!TEMPLATE.lines().any(|l| l.trim() == "[combat]"));
@@ -945,6 +1099,27 @@ mod tests {
         assert!(!off.lines().any(|l| l.trim() == "[combat]"), "{off}");
         assert!(Config::parse("[combat]\nlegacy = 1\n").is_err());
         assert!(Config::parse("[combat]\nlegcy = true\n").is_err());
+    }
+
+    #[test]
+    fn villager_lobotomize_is_off_unless_its_section_turns_it_on() {
+        let off = Config::default().entities;
+        assert!(!off.villager_lobotomize);
+        assert_eq!(off.villager_lobotomize_check_interval, 100);
+        assert!(!TEMPLATE.lines().any(|l| l.trim() == "[entities]"));
+        let on = Config::parse(&format!(
+            "{TEMPLATE}\n[entities]\nvillager_lobotomize = true\nvillager_lobotomize_check_interval = 40\n"
+        ))
+        .unwrap();
+        assert!(on.entities.villager_lobotomize);
+        assert_eq!(on.entities.villager_lobotomize_check_interval, 40);
+        // Kept when the file is written again, and left out while off.
+        assert_eq!(Config::parse(&render(&on)).unwrap(), on);
+        let text = render(&Config::default());
+        assert!(!text.lines().any(|l| l.trim() == "[entities]"), "{text}");
+        assert!(Config::parse("[entities]\nvillager_lobotomize = 1\n").is_err());
+        assert!(Config::parse("[entities]\nvillager_lobotomise = true\n").is_err());
+        assert!(Config::parse("[entities]\nvillager_lobotomize_check_interval = 0\n").is_err());
     }
 
     #[test]
@@ -1117,5 +1292,32 @@ mod tests {
         assert!(!back.server.whitelist);
         assert_eq!(back.properties["spawn-protection"], toml::Value::Integer(4));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn written_files_stay_in_the_server_folder() {
+        for bad in [
+            "/home/mc/.bashrc",
+            "../outside.log",
+            "logs/../../x",
+            "logs\\..\\..\\x",
+            "C:x.log",
+            "C:\\Users\\mc\\x.log",
+        ] {
+            for set in [
+                |c: &mut Config, p: &str| c.chat_filter.log = p.into(),
+                |c: &mut Config, p: &str| c.chat_filter.words_file = p.into(),
+                |c: &mut Config, p: &str| c.anticheat.log = p.into(),
+                |c: &mut Config, p: &str| c.anticheat.strikes = p.into(),
+            ] {
+                let mut c = Config::default();
+                set(&mut c, bad);
+                let e = c.check().unwrap_err();
+                assert!(e.contains("inside the server folder"), "{bad:?}: {e}");
+            }
+        }
+        let mut c = Config::default();
+        c.chat_filter.log = "logs/chat-filter.log".into();
+        c.anticheat.strikes = String::new();
+        c.check().unwrap();
     }
 }
