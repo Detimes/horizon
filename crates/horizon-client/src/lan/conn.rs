@@ -7,7 +7,7 @@
 //! thread, frame, compress and encrypt what the game queues, and keep the
 //! keep-alive schedule on their own so a long tick never times a client out.
 use super::{
-    Joined, NetEvent, Out, Shared,
+    Body, Joined, NetEvent, Out, Shared,
     data::{CORE_PACK, SyncData},
     forwarding,
     io_pool::{self, Session as _},
@@ -280,12 +280,12 @@ pub fn fake_wants_id(id: i32) -> bool {
 /// A body about to be sent to `player`, past the hooks a mod asked for ([`WATCHED`]): None
 /// when one canceled it. Bytes that don't decode, and a packet no hook changed, go out as they
 /// were; a changed one is encoded again.
-fn outgoing(player: u128, body: Vec<u8>) -> Option<Vec<u8>> {
+fn outgoing(player: u128, body: Body) -> Option<Body> {
     let watched = WATCHED.load(Ordering::Relaxed);
     if watched == 0 {
         return Some(body);
     }
-    watched_outgoing(player, body, watched)
+    watched_outgoing(player, body.into_vec(), watched).map(Body::from)
 }
 
 #[cold]
@@ -367,7 +367,7 @@ pub struct PlayerSender {
     pub undrained: Arc<Undrained>,
     /// The bytes of the bodies sent and not framed yet.
     pub pending: Arc<AtomicUsize>,
-    held: Arc<Mutex<Vec<Vec<u8>>>>,
+    held: Arc<Mutex<Vec<Body>>>,
     to: To,
     /// The connection's bytes on the wire (after compression and encryption), counted by its
     /// network thread: `horizon-report`'s network use per player. None for a test's channel.
@@ -425,10 +425,13 @@ impl PlayerSender {
             outbox.send(Vec::new(), Some(io_pool::End::Close));
         }
     }
-    fn held(&self) -> std::sync::MutexGuard<'_, Vec<Vec<u8>>> {
+    fn held(&self) -> std::sync::MutexGuard<'_, Vec<Body>> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
     pub fn send(&self, body: Vec<u8>) {
+        self.send_body(body.into());
+    }
+    fn send_body(&self, body: Body) {
         if self.fake.load(Ordering::Relaxed) && !fake_wants(&body) {
             return;
         }
@@ -441,7 +444,7 @@ impl PlayerSender {
         } else {
             self.flush();
             match &self.to {
-                To::Channel(tx) => drop(tx.send(Out::Packet(body))),
+                To::Channel(tx) => drop(tx.send(Out::Packet(body.into_vec()))),
                 To::Pool(outbox, _) => outbox.send(vec![body], None),
             }
         }
@@ -466,15 +469,18 @@ impl PlayerSender {
         self.fake.load(Ordering::Relaxed)
     }
     /// Several packets in order, as [`Self::send`] each: under one lock
-    /// while the tick holds them.
-    pub fn send_many(&self, bodies: impl IntoIterator<Item = Vec<u8>>) {
+    /// while the tick holds them. Shared bodies stay shared up to the wire.
+    pub fn send_many<B: Into<Body>>(&self, bodies: impl IntoIterator<Item = B>) {
         // A mod hearing what is sent (`outgoing`) does so outside the lock.
         if !HOLDING.get() || WATCHED.load(Ordering::Relaxed) != 0 || self.is_fake() {
-            bodies.into_iter().for_each(|body| self.send(body));
+            bodies
+                .into_iter()
+                .for_each(|body| self.send_body(body.into()));
             return;
         }
         let mut held = self.held();
         for body in bodies {
+            let body = body.into();
             self.pending.fetch_add(body.len(), Ordering::Relaxed);
             held.push(body);
         }
@@ -484,7 +490,7 @@ impl PlayerSender {
         let held = std::mem::take(&mut *self.held());
         if !held.is_empty() {
             match &self.to {
-                To::Channel(tx) => drop(tx.send(Out::Packets(held))),
+                To::Channel(tx) => drop(tx.send(unshared(held))),
                 To::Pool(outbox, _) => outbox.send(held, None),
             }
         }
@@ -498,10 +504,15 @@ impl PlayerSender {
             To::Pool(outbox, _) => {
                 let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
                 self.pending.fetch_add(body.len(), Ordering::Relaxed);
-                outbox.send(vec![body], Some(io_pool::End::Disconnect));
+                outbox.send(vec![body.into()], Some(io_pool::End::Disconnect));
             }
         }
     }
+}
+
+/// Held bodies as a test's channel gives them: each its own bytes.
+fn unshared(held: Vec<Body>) -> Out {
+    Out::Packets(held.into_iter().map(Body::into_vec).collect())
 }
 
 /// Keep (or stop keeping) every play connection's packet ids and sizes on the network threads,
@@ -527,7 +538,7 @@ pub fn flush_all<'a>(senders: impl IntoIterator<Item = &'a PlayerSender>) {
             continue;
         }
         match &s.to {
-            To::Channel(tx) => drop(tx.send(Out::Packets(held))),
+            To::Channel(tx) => drop(tx.send(unshared(held))),
             To::Pool(outbox, _) => {
                 if let Some(worker) = outbox.push(held, None)
                     && !wake.iter().any(|w| Arc::ptr_eq(w, worker))
@@ -658,7 +669,7 @@ pub fn serve_local(
 /// "Disconnected" if it is left unset), a status ping is closed unanswered. Once for each network connection, the
 /// legacy server list ping (`0xFE`) and an integrated server's own player excepted. There is no `Game` on this
 /// thread: no helper works, and the hook must not block for long (the connection waits for it). API
-/// @API:handshake@.
+/// 466.
 #[inline(never)]
 pub fn native_handshake(
     address: std::net::SocketAddr,
@@ -814,6 +825,18 @@ fn refuse(
     user: &str,
     reason: &horizon_world::nbt::Tag,
 ) -> String {
+    let text = log_disconnect(shared, thread, user, reason);
+    login_disconnect(c, reason);
+    text
+}
+
+/// The "Disconnecting" log line of a refusal; returns the reason's text.
+fn log_disconnect(
+    shared: &Shared,
+    thread: &str,
+    user: &str,
+    reason: &horizon_world::nbt::Tag,
+) -> String {
     let text = shared
         .config
         .log
@@ -823,8 +846,22 @@ fn refuse(
     if let Some(log) = &shared.config.log {
         (log.write)(thread, "INFO", &format!("Disconnecting {user}: {text}"));
     }
-    login_disconnect(c, reason);
     text
+}
+
+/// ServerCommonPacketListenerImpl.handleCookieResponse in the configuration state: this server
+/// sends no cookie request there, so an answer is unexpected (DISCONNECT_UNEXPECTED_QUERY) and
+/// ends the connection with a configuration disconnect.
+fn refuse_cookie_in_configuration(
+    c: &mut Connection,
+    shared: &Shared,
+    user: &str,
+) -> Result<Option<Parts>, String> {
+    let reason = translatable("multiplayer.disconnect.unexpected_query_response", &[]);
+    let text = log_disconnect(shared, "Server thread", user, &reason);
+    let _ = c.send(&cfg::Clientbound::Disconnect(cfg::Disconnect { reason }).encode());
+    lost(shared, user, &text);
+    Ok(None)
 }
 
 /// ServerLoginPacketListenerImpl.onDisconnect, once the server thread sees
@@ -943,7 +980,7 @@ fn authenticate(
 /// then, or whose sender is dropped, refuses them with a plain "Disconnected". Mods answer without waiting on
 /// each other, so loads run side by side. Once for each player who logs in over the network, the integrated
 /// server's own player excepted. There is no `Game` on this thread: no helper works. API
-/// @API:player_pre_login@.
+/// 487.
 #[inline(never)]
 pub fn native_player_pre_login(
     player: u128,
@@ -981,7 +1018,7 @@ fn pre_login_refusal(
 /// characters, a signature of up to 1024): the player's own client and every player list then get the new
 /// ones. Once for each player who logs in over the network, the integrated server's own player excepted.
 /// There is no `Game` on this thread: no helper works. The hook may block for a lookup (a database's); the
-/// login waits for it, but a vanilla client gives up after 30 s of silence. API @API:player_profile@.
+/// login waits for it, but a vanilla client gives up after 30 s of silence. API 488.
 #[inline(never)]
 pub fn native_player_profile(
     player: u128,
@@ -1321,6 +1358,9 @@ fn login_and_configure(
                     .unwrap_or(brand);
             }
             cfg::Serverbound::SelectKnownPacks(p) => break p.packs == vec![core.clone()],
+            cfg::Serverbound::CookieResponse(_) => {
+                return refuse_cookie_in_configuration(c, shared, user);
+            }
             _ => {}
         }
     };
@@ -1420,6 +1460,9 @@ fn login_and_configure(
                 }
                 cfg::Serverbound::Pong(p) if p.id == 1 => break,
                 cfg::Serverbound::ClientInformation(i) => info = i,
+                cfg::Serverbound::CookieResponse(_) => {
+                    return refuse_cookie_in_configuration(c, shared, user);
+                }
                 _ => {}
             }
         }
@@ -1458,6 +1501,9 @@ fn login_and_configure(
                 }
                 cfg::Serverbound::Pong(p) if p.id == 0 => break,
                 cfg::Serverbound::ClientInformation(i) => info = i,
+                cfg::Serverbound::CookieResponse(_) => {
+                    return refuse_cookie_in_configuration(c, shared, user);
+                }
                 _ => {}
             }
         }
@@ -1500,6 +1546,9 @@ fn login_and_configure(
         match packet {
             cfg::Serverbound::FinishConfiguration(_) => break,
             cfg::Serverbound::ClientInformation(i) => info = i,
+            cfg::Serverbound::CookieResponse(_) => {
+                return refuse_cookie_in_configuration(c, shared, user);
+            }
             _ => {}
         }
     }
@@ -1725,6 +1774,8 @@ fn play(
         counted,
         undrained,
     };
+    // The ServerPlayer is made with the configuration's client information (updateOptions).
+    shared.set_listed(parts.uuid, parts.info.allows_listing);
     let joined = Joined {
         conn,
         uuid: parts.uuid,
@@ -2126,6 +2177,39 @@ mod tests {
         assert!(!fake_wants_id(cb::SET_TIME));
     }
 
+    /// Bodies shared between players reach each of them as the same bytes, in the order
+    /// they were sent among the player's own.
+    #[test]
+    fn shared_bodies_reach_every_player_in_order() {
+        let shared: Vec<Body> = [vec![1, 2, 3], vec![4]]
+            .into_iter()
+            .map(Body::shared)
+            .collect();
+        let players: Vec<_> = (0..2)
+            .map(|_| {
+                let (tx, rx) = std::sync::mpsc::channel();
+                (PlayerSender::new(tx, Arc::default()), rx)
+            })
+            .collect();
+        {
+            let _holding = Holding::start();
+            for (i, (sender, _)) in players.iter().enumerate() {
+                sender.send(vec![9, i as u8]);
+                sender.send_many(shared.iter().cloned());
+                sender.send_many([vec![8]]);
+                assert_eq!(sender.pending.load(Ordering::Relaxed), 7);
+            }
+            flush_all(players.iter().map(|(sender, _)| sender));
+        }
+        for (i, (_, rx)) in players.iter().enumerate() {
+            let Ok(Out::Packets(bodies)) = rx.try_recv() else {
+                panic!("expected the held packets");
+            };
+            assert_eq!(bodies, [vec![9, i as u8], vec![1, 2, 3], vec![4], vec![8]]);
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
     #[test]
     fn undrained_packets_stop_at_twice_the_inbox() {
         let u = Undrained::default();
@@ -2391,13 +2475,10 @@ mod tests {
         assert_eq!(guest.uuid, offline_uuid("Alex"));
     }
 
-    /// Logs "Alex" in over memory up to `LoginFinished`, sends `stray` if there is one, then
-    /// `LoginAcknowledged` (so a server that lets the stray packet pass goes on to configuration
-    /// instead of waiting for the next packet), and returns the server's next packet with the lines
-    /// its log has written so far (en_us's text for the one key the refusal uses).
-    fn login_with_stray_packet(
-        stray: Option<login::Serverbound>,
-    ) -> ((i32, Vec<u8>), Arc<Mutex<Vec<String>>>) {
+    /// Logs "Alex" in over memory up to `LoginFinished`; returns the server (kept alive by the
+    /// caller), the connection and the lines the server's log writes (en_us's text for the one key
+    /// the refusals use).
+    fn alex_logged_in() -> (crate::lan::Lan, Connection, Arc<Mutex<Vec<String>>>) {
         let lines = Arc::new(Mutex::new(Vec::<String>::new()));
         let into = lines.clone();
         let mut lang = horizon_protocol::text::Language::new();
@@ -2445,12 +2526,100 @@ mod tests {
                 other => panic!("unexpected login packet {other:?}"),
             }
         }
+        (lan, c, lines)
+    }
+
+    /// `alex_logged_in`, then sends `stray` if there is one and `LoginAcknowledged` (so a server
+    /// that lets the stray packet pass goes on to configuration instead of waiting for the next
+    /// packet), and returns the server's next packet with the lines its log has written so far.
+    fn login_with_stray_packet(
+        stray: Option<login::Serverbound>,
+    ) -> ((i32, Vec<u8>), Arc<Mutex<Vec<String>>>) {
+        let (_lan, mut c, lines) = alex_logged_in();
         if let Some(stray) = stray {
             c.send(&stray.encode()).unwrap();
         }
         // A server that has already refused the login may have closed the connection.
         let _ = c.send(&login::Serverbound::LoginAcknowledged(Empty).encode());
         (c.recv().unwrap(), lines)
+    }
+
+    /// `ServerCommonPacketListenerImpl.handleCookieResponse` in the configuration state: this
+    /// server sends no cookie request there, so an answer is unexpected and ends the connection
+    /// with a configuration disconnect, before the player joins. `after` is the clientbound
+    /// packet the client waits for before it sends the cookie response (it answers the known packs
+    /// on the way).
+    fn assert_cookie_refused_in_configuration(after: i32) {
+        use horizon_protocol::ids::configuration::clientbound::{DISCONNECT, SELECT_KNOWN_PACKS};
+        let (_lan, mut c, lines) = alex_logged_in();
+        c.send(&login::Serverbound::LoginAcknowledged(Empty).encode())
+            .unwrap();
+        loop {
+            let (id, payload) = c.recv().unwrap();
+            if id == after {
+                break;
+            }
+            assert_ne!(id, DISCONNECT, "refused before the cookie response");
+            // Like a vanilla client: the known packs offered are the ones it knows.
+            if id == SELECT_KNOWN_PACKS {
+                let cfg::Clientbound::SelectKnownPacks(offer) =
+                    cfg::Clientbound::decode(id, &payload).unwrap()
+                else {
+                    panic!("not the known packs")
+                };
+                c.send(&cfg::Serverbound::SelectKnownPacks(offer).encode())
+                    .unwrap();
+            }
+        }
+        c.send(
+            &cfg::Serverbound::CookieResponse(cfg::CookieResponse {
+                key: "horizon:test".into(),
+                payload: None,
+            })
+            .encode(),
+        )
+        .unwrap();
+        loop {
+            let (id, payload) = c.recv().expect("the server closed without a disconnect");
+            if id != DISCONNECT {
+                continue;
+            }
+            let cfg::Clientbound::Disconnect(reason) =
+                cfg::Clientbound::decode(id, &payload).unwrap()
+            else {
+                panic!("not a configuration disconnect")
+            };
+            assert_eq!(
+                format!("{:?}", reason.reason),
+                format!(
+                    "{:?}",
+                    translatable("multiplayer.disconnect.unexpected_query_response", &[])
+                ),
+            );
+            break;
+        }
+        let user = "Alex (<ip address withheld>)";
+        let expected = [
+            format!("Disconnecting {user}: Unexpected custom data from client"),
+            format!("{user} lost connection: Unexpected custom data from client"),
+        ];
+        let until = Instant::now() + Duration::from_secs(10);
+        while lines.lock().unwrap().len() < expected.len() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(*lines.lock().unwrap(), expected);
+    }
+
+    #[test]
+    fn a_configuration_cookie_response_before_the_known_packs_disconnects_the_client() {
+        use horizon_protocol::ids::configuration::clientbound::SELECT_KNOWN_PACKS;
+        assert_cookie_refused_in_configuration(SELECT_KNOWN_PACKS);
+    }
+
+    #[test]
+    fn a_configuration_cookie_response_while_it_finishes_disconnects_the_client() {
+        use horizon_protocol::ids::configuration::clientbound::FINISH_CONFIGURATION;
+        assert_cookie_refused_in_configuration(FINISH_CONFIGURATION);
     }
 
     /// `ServerLoginPacketListenerImpl.handleCustomQueryPacket` and `handleCookieResponse`: this

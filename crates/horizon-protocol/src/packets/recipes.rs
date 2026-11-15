@@ -16,7 +16,7 @@ pub enum HolderSet {
 }
 impl HolderSet {
     pub fn read(r: &mut Reader) -> Result<Self> {
-        let n = r.varint()? - 1;
+        let n = r.varint()?.wrapping_sub(1);
         if n == -1 {
             return Ok(Self::Tag(r.string(32767)?));
         }
@@ -37,7 +37,7 @@ impl HolderSet {
                 w.string(name);
             }
             Self::Items(ids) => {
-                // Written for an older client, an item it lacks (no stand-in either) is left out.
+                // Written for an older client: its own item ids, without the items it lacks.
                 let ids: Vec<i32> = ids
                     .iter()
                     .map(|&id| crate::adapter::ids::item(id))
@@ -200,7 +200,7 @@ impl SlotDisplay {
                             description: r.nbt()?,
                             decal: r.bool()?,
                         },
-                        id => TrimPattern::Id(id - 1),
+                        id => TrimPattern::Id(id.wrapping_sub(1)),
                     };
                     Self::SmithingTrim {
                         base,
@@ -248,45 +248,46 @@ impl SlotDisplay {
         }
         Ok(())
     }
-    /// The type id a client of the active older version knows this display type by; `None` when it has no
-    /// such type (1.21.2 to 1.21.11 lack `with_any_potion`, `only_with_component` and `dyed`).
-    fn type_id(pinned: i32) -> Option<i32> {
-        let id = crate::adapter::ids::slot_display(pinned);
-        (id >= 0).then_some(id)
-    }
+    /// Writes this display; for an older client (while ids are renumbered down) in its own display
+    /// ids, with the kinds it lacks shown as the display they wrap.
     pub fn write(&self, w: &mut Writer) {
-        let ty = |w: &mut Writer, pinned| w.varint(Self::type_id(pinned).unwrap_or(0));
+        use crate::adapter::ids;
+        // This display kind's id on the receiving side: -1 when it has no such kind.
+        let kind = ids::slot_display;
         match self {
-            Self::Empty => ty(w, 0),
-            Self::AnyFuel => ty(w, 1),
-            // A client without the type shows what it wraps: the potions and components only narrow it.
-            Self::WithAnyPotion(d) | Self::OnlyWithComponent(d, _)
-                if Self::type_id(2).is_none() =>
+            Self::Empty => w.varint(kind(0)),
+            Self::AnyFuel => w.varint(kind(1)),
+            Self::WithAnyPotion(d) if kind(2) < 0 => d.write(w),
+            Self::WithAnyPotion(d) => {
+                w.varint(kind(2));
+                d.write(w);
+            }
+            Self::OnlyWithComponent(d, component)
+                if kind(3) < 0 || ids::component(*component) < 0 =>
             {
                 d.write(w)
             }
-            Self::WithAnyPotion(d) => {
-                ty(w, 2);
-                d.write(w);
-            }
             Self::OnlyWithComponent(d, component) => {
-                ty(w, 3);
+                w.varint(kind(3));
                 d.write(w);
-                w.varint(*component);
+                w.varint(ids::component(*component));
             }
-            Self::Item(id) => {
-                ty(w, 4);
-                w.varint(crate::adapter::ids::item(*id));
-            }
+            Self::Item(id) => match ids::item(*id) {
+                id if id < 0 => w.varint(kind(0)),
+                id => {
+                    w.varint(kind(4));
+                    w.varint(id);
+                }
+            },
             Self::ItemStack(stack) => {
-                ty(w, 5);
+                w.varint(kind(5));
                 Template::write(stack, w);
             }
-            Self::Tag(set) if crate::adapter::ids::quirks_written().tag_slot_display_is_id => {
+            Self::Tag(set) if ids::quirks_written().tag_slot_display_is_id => {
                 match set {
                     // TagSlotDisplay of 26.2: the tag's bare id.
                     HolderSet::Tag(name) => {
-                        ty(w, 6);
+                        w.varint(kind(6));
                         w.string(name);
                     }
                     // A list of items has no such form: a composite of item displays shows the same.
@@ -302,35 +303,31 @@ impl SlotDisplay {
                 }
             }
             Self::Tag(set) => {
-                ty(w, 6);
+                w.varint(kind(6));
                 set.write(w);
             }
-            // The dyed result is the target; the dye only tints it.
-            Self::Dyed { target, .. } if Self::type_id(7).is_none() => target.write(w),
+            // Without dyed displays the client shows the dyed item itself.
+            Self::Dyed { target, .. } if kind(7) < 0 => target.write(w),
             Self::Dyed { dye, target } => {
-                ty(w, 7);
+                w.varint(kind(7));
                 dye.write(w);
                 target.write(w);
+            }
+            // Before 1.21.5 a trim display named its template, not its pattern: the client is shown
+            // the item being trimmed.
+            Self::SmithingTrim { base, .. } if ids::quirks_written().components_before_1_21_5 => {
+                base.write(w)
             }
             Self::SmithingTrim {
                 base,
                 material,
                 pattern,
             } => {
-                ty(w, 8);
+                w.varint(kind(8));
                 base.write(w);
                 material.write(w);
-                if crate::adapter::ids::quirks_written().components_before_1_21_5 {
-                    // Through 1.21.4 the pattern is a display of its template item. The item behind a
-                    // pattern id is not known here, so the preview shows no template.
-                    w.varint(Self::type_id(0).unwrap_or(0));
-                    return;
-                }
                 match pattern {
-                    TrimPattern::Id(id) => w.varint(
-                        crate::adapter::ids::synced_down_or_first("minecraft:trim_pattern", *id)
-                            + 1,
-                    ),
+                    TrimPattern::Id(id) => w.varint(id.wrapping_add(1)),
                     TrimPattern::Direct {
                         asset,
                         description,
@@ -344,12 +341,12 @@ impl SlotDisplay {
                 }
             }
             Self::WithRemainder { input, remainder } => {
-                ty(w, 9);
+                w.varint(kind(9));
                 input.write(w);
                 remainder.write(w);
             }
             Self::Composite(list) => {
-                ty(w, 10);
+                w.varint(kind(10));
                 w.varint(list.len() as i32);
                 list.iter().for_each(|d| d.write(w));
             }
@@ -879,6 +876,51 @@ mod tests {
         RecipeBookAdd::write(&add, &mut w);
         let mut r = Reader::new(&w.data);
         assert_eq!(RecipeBookAdd::read(&mut r).unwrap(), add);
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn displays_written_for_a_1_21_11_client_read_back_as_that_version() {
+        use crate::adapter::{ServerVersion, ids};
+        let old = ServerVersion::V1_21_11.ids().unwrap();
+        let (stick, apple) = (ids::item(880), ids::item(900));
+        let display = SlotDisplay::Composite(vec![
+            SlotDisplay::Item(stick),
+            SlotDisplay::WithAnyPotion(Box::new(SlotDisplay::Item(apple))),
+            SlotDisplay::Dyed {
+                dye: Box::new(SlotDisplay::Item(apple)),
+                target: Box::new(SlotDisplay::Item(stick)),
+            },
+            SlotDisplay::WithRemainder {
+                input: Box::new(SlotDisplay::Item(stick)),
+                remainder: Box::new(SlotDisplay::Empty),
+            },
+        ]);
+        let mut w = Writer::new();
+        {
+            let _down = ids::renumbering(old, ids::Way::Down);
+            display.write(&mut w);
+            HolderSet::Items(vec![stick, apple]).write(&mut w);
+        }
+        // Read as a 1.21.11 server's packet is: the kinds 1.21.11 lacks show what they wrap.
+        let _up = ids::renumbering(old, ids::Way::Up);
+        let mut r = Reader::new(&w.data);
+        assert_eq!(
+            SlotDisplay::read(&mut r).unwrap(),
+            SlotDisplay::Composite(vec![
+                SlotDisplay::Item(stick),
+                SlotDisplay::Item(apple),
+                SlotDisplay::Item(stick),
+                SlotDisplay::WithRemainder {
+                    input: Box::new(SlotDisplay::Item(stick)),
+                    remainder: Box::new(SlotDisplay::Empty),
+                },
+            ])
+        );
+        assert_eq!(
+            HolderSet::read(&mut r).unwrap(),
+            HolderSet::Items(vec![stick, apple])
+        );
         assert_eq!(r.remaining(), 0);
     }
 }

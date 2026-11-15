@@ -63,6 +63,54 @@ fn namespaced(kind: &str) -> String {
     }
 }
 
+/// The synched data ids a key of the compound `native_client_entity_data`
+/// reads gives: an entity's own (`entity_data`), a display's (`display_data`)
+/// and a text, block or item display's.
+fn ids_of_key(key: &str) -> &'static [u8] {
+    match key {
+        "Invisible" | "Glowing" => &[0],
+        "CustomName" => &[2],
+        "CustomNameVisible" => &[3],
+        "Silent" => &[4],
+        "NoGravity" => &[5],
+        "start_interpolation" => &[8],
+        "interpolation_duration" => &[9],
+        "teleport_duration" => &[10],
+        "transformation" => &[11, 12, 13, 14],
+        "billboard" => &[15],
+        "brightness" => &[16],
+        "view_range" => &[17],
+        "shadow_radius" => &[18],
+        "shadow_strength" => &[19],
+        "width" => &[20],
+        "height" => &[21],
+        "glow_color_override" => &[22],
+        "text" | "block_state" | "item" => &[23],
+        "line_width" | "item_display" => &[24],
+        "background" => &[25],
+        "text_opacity" => &[26],
+        "shadow" | "see_through" | "default_background" | "alignment" => &[27],
+        _ => &[],
+    }
+}
+
+/// Of `values` (every synched entry of the entity, `nbt`'s or the default),
+/// those `nbt` names: a value equal to its default is kept when its key is
+/// there. A display also gets its `start_interpolation`, which restarts the
+/// easing of what changed.
+fn named_entries(kind: &str, nbt: &Compound, values: Vec<Entry>) -> Vec<Entry> {
+    let display = kind.ends_with("_display");
+    let named: Vec<u8> = nbt
+        .keys()
+        .flat_map(|k| ids_of_key(&k.to_string_lossy()))
+        .copied()
+        .collect();
+    values
+        .into_iter()
+        .filter(|v| named.contains(&v.0) || (display && v.0 == 8))
+        .collect()
+}
+
 // Native mods use these; nothing in Horizon does.
 #[allow(dead_code)]
 impl Game<'_> {
@@ -122,7 +170,7 @@ impl Game<'_> {
 
     /// An entity id no entity of this server will take
     /// (`Entity.nextEntityId`'s counter), for a mod's own packets to a
-    /// client. API @API:client_entities@.
+    /// client. API 519.
     pub(super) fn native_reserve_entity_id(&mut self) -> i32 {
         self.take_entity_id() as i32
     }
@@ -140,7 +188,7 @@ impl Game<'_> {
     /// `_move` and `_remove`. None when `viewer` isn't on, for an unknown
     /// type, a player, a position or yaw that isn't finite, and inside a
     /// player's hook where the server is out of reach. Bukkit has no such API
-    /// (plugins send the packets). API @API:client_entities@.
+    /// (plugins send the packets). API 519.
     pub(super) fn native_client_entity_spawn(
         &mut self,
         viewer: u128,
@@ -194,7 +242,7 @@ impl Game<'_> {
     /// display's `start_interpolation` is sent with it, so a changed
     /// transformation eases over `interpolation_duration`. False when it is
     /// not their client-side entity, and where the server is out of reach.
-    /// API @API:client_entities@.
+    /// API 519.
     pub(super) fn native_client_entity_set(
         &mut self,
         viewer: u128,
@@ -210,11 +258,36 @@ impl Game<'_> {
         self.native_send(viewer, C::SetEntityData(play::SetEntityData { id, values }))
     }
 
+    /// Gives `viewer`'s client-side entity `id` the synched data `nbt` names,
+    /// read as `native_client_entity_spawn` reads it, and nothing else: what
+    /// `nbt` leaves out keeps the value it has, unlike `native_client_entity_set`,
+    /// which sends every field of the entity. A key whose value is the default
+    /// is sent. A display's `start_interpolation` is sent with it.
+    /// False when it is not their client-side entity, and where the server is
+    /// out of reach.
+    pub(super) fn native_client_entity_update(
+        &mut self,
+        viewer: u128,
+        id: i32,
+        nbt: &Compound,
+    ) -> bool {
+        let Some(kind) = self.native_client_entity_kind(viewer, id) else {
+            return false;
+        };
+        let Some(values) = self.native_client_entity_data(&kind, nbt, true) else {
+            return false;
+        };
+        let values = named_entries(&kind, nbt, values);
+        // Nothing named, nothing to send.
+        values.is_empty()
+            || self.native_send(viewer, C::SetEntityData(play::SetEntityData { id, values }))
+    }
+
     /// Moves `viewer`'s client-side entity `id` to `pos` facing `yaw`
     /// (`ClientboundTeleportEntityPacket`, absolute; a display eases over its
     /// `teleport_duration`). False when it is not their client-side entity,
     /// for a position or yaw that isn't finite, and where the server is out
-    /// of reach. API @API:client_entities@.
+    /// of reach. API 519.
     pub(super) fn native_client_entity_move(
         &mut self,
         viewer: u128,
@@ -244,7 +317,7 @@ impl Game<'_> {
     /// (`ClientboundRemoveEntitiesPacket`); ids that are not theirs are left
     /// alone (an entity the server tracks is hidden with
     /// `native_hide_entity_from`). False when none of them was theirs, and
-    /// where the server is out of reach. API @API:client_entities@.
+    /// where the server is out of reach. API 519.
     pub(super) fn native_client_entity_remove(&mut self, viewer: u128, ids: &[i32]) -> bool {
         let Some(host) = &mut self.lan else {
             return false;
@@ -266,5 +339,58 @@ impl Game<'_> {
             return false;
         }
         self.native_send(viewer, C::RemoveEntities(play::RemoveEntities { ids }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn every_field(ids: &[u8]) -> Vec<Entry> {
+        ids.iter()
+            .map(|&i| (i, serializer::INT, Value::Int(i32::from(i))))
+            .collect()
+    }
+    fn ids(values: &[Entry]) -> Vec<u8> {
+        values.iter().map(|v| v.0).collect()
+    }
+    fn compound(keys: &[&str]) -> Compound {
+        keys.iter().map(|k| ((*k).into(), Tag::Byte(0))).collect()
+    }
+
+    #[test]
+    fn an_update_sends_only_the_fields_it_names() {
+        let all = every_field(&[0, 2, 8, 9, 11, 12, 13, 14, 15, 17, 23, 27]);
+        // A transformation: its four parts, and the start of the easing.
+        let sent = named_entries(
+            "minecraft:item_display",
+            &compound(&["transformation"]),
+            all.clone(),
+        );
+        assert_eq!(ids(&sent), [8, 11, 12, 13, 14]);
+        // A value equal to its default is sent when its key is there.
+        let sent = named_entries(
+            "minecraft:text_display",
+            &compound(&["view_range", "text"]),
+            all.clone(),
+        );
+        assert_eq!(ids(&sent), [8, 17, 23]);
+        // Another type's own data, with no easing to restart.
+        let sent = named_entries(
+            "minecraft:armor_stand",
+            &compound(&["Glowing"]),
+            all.clone(),
+        );
+        assert_eq!(ids(&sent), [0]);
+        // A key that gives no data, or nothing named, sends nothing.
+        assert!(named_entries("minecraft:armor_stand", &compound(&["id"]), all.clone()).is_empty());
+        assert_eq!(
+            ids(&named_entries(
+                "minecraft:item_display",
+                &compound(&[]),
+                all
+            )),
+            [8]
+        );
     }
 }

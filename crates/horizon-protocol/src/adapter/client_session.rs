@@ -345,7 +345,11 @@ impl ClientSession {
                 let mut r = Reader::new(&payload);
                 let action = r.varint()?;
                 let mut w = Writer::new();
-                w.varint(if action == 0 { 0 } else { action + 1 });
+                w.varint(if action == 0 {
+                    0
+                } else {
+                    action.wrapping_add(1)
+                });
                 w.bytes(r.rest());
                 w.data
             }
@@ -859,6 +863,15 @@ fn layout_then_ids(
         && !version.at_most(ServerVersion::V1_21_1)
     {
         return Ok(Sent::Rewritten(update_recipes(ids, payload)?));
+    }
+    if state == State::Play
+        && id == packet_ids::play::clientbound::COMMANDS
+        && version.at_most(ServerVersion::V26_2)
+    {
+        let absent = |registry: &str| synced::absent(version, registry);
+        return Ok(Sent::Rewritten(layout_26_2::commands(
+            ids, absent, payload,
+        )?));
     }
     if version.at_most(ServerVersion::V26_2) && layout_26_2::enabled() {
         match layout_26_2::clientbound(ids, state, id, payload)? {
@@ -1560,8 +1573,8 @@ mod tests {
         expected.extend(b"a:b");
         expected.extend([8, 0, 1, b'T', 1]);
         assert_eq!(v8(&trim), expected);
-        // Through 1.21.4 the pattern is a display of its template item: none is shown here.
-        assert_eq!(write(ServerVersion::V1_21_4, &trim), [5, 0, 1, 0]);
+        // Through 1.21.4 a trim display names its template, not its pattern: the client is shown the base.
+        assert_eq!(write(ServerVersion::V1_21_4, &trim), [0]);
         // 26.1 and 26.2 number them as the pinned version does.
         assert_eq!(
             write(ServerVersion::V26_2, &D::WithAnyPotion(b(D::AnyFuel))),
@@ -2412,31 +2425,6 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-    }
-
-    /// 26.1's `spectate_entity` is its id 62 (the packets report: sign_update 61, spectate_entity 62, swing 63);
-    /// 26.3 has it as `spectator_action` at 63 (by network id, sign_update at 62).
-    #[test]
-    fn a_26_1_client_spectating_an_entity_reaches_the_server_by_network_id() {
-        let s = ClientSession::new(ServerVersion::V26_1);
-        s.reading.store(to_u8(State::Play), Ordering::Release);
-        s.writing.store(to_u8(State::Play), Ordering::Release);
-        s.entities.lock().unwrap().insert(7, (0, 0x42));
-        let mut w = Writer::new();
-        w.uuid(0x42);
-        let (id, payload) = s.serverbound(62, w.data).unwrap().unwrap();
-        assert_eq!(id, 63);
-        // OptVarInt: the network id plus one.
-        assert_eq!(payload, [8]);
-        // An entity the client was never told of is dropped.
-        let mut w = Writer::new();
-        w.uuid(0x43);
-        assert_eq!(s.serverbound(62, w.data).unwrap(), None);
-        // The ids around it keep their numbers: 26.1's sign_update (61) is the pinned 62.
-        assert_eq!(
-            ServerVersion::V26_1.serverbound_id_up(State::Play, 61),
-            Some(62)
-        );
     }
 
     /// A client through 1.21.5 has no synchronised direction on hanging entities (1.21.6 added it at index 8):

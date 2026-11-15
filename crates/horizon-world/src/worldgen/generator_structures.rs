@@ -7,8 +7,9 @@ use super::{
         StructureResources,
         jigsaw::PoolPiece,
         start::{
-            Piece, Rings, StartContext, StructureDef, StructureRegistry, StructureStart,
-            beardifier, create_starts, create_starts_with_saved, may_start, try_generate,
+            Piece, Rings, StartContext, StructureDef, StructureKind, StructureRegistry,
+            StructureStart, beardifier, create_starts, create_starts_with_saved, may_start,
+            try_generate,
         },
         stronghold::RingSearch,
     },
@@ -449,7 +450,9 @@ impl StructureState {
     /// (`StructureStart.loadStaticStart`) so that the neighbours place the parts that cross
     /// into them and the beardifier shapes the terrain around them. A jigsaw start (villages,
     /// outposts, bastions, ancient cities, trial chambers, trail ruins) is loaded from its
-    /// saved pieces (`PoolPiece::from_saved`). Another structure's pieces have no loader yet:
+    /// saved pieces (`PoolPiece::from_saved`); a start whose pieces read their own tags (the
+    /// mineshaft, fortress and stronghold families and the swamp hut) loads them the same way
+    /// (`saved_legacy::read`). Another structure's pieces have no loader yet:
     /// it is the start this generator makes in the chunk when that one has the same name and the
     /// same pieces' box (the same layout from the same seed), else the name and box alone (found
     /// by `/locate` and maps, but not placed).
@@ -469,7 +472,7 @@ impl StructureState {
                     && let Some(pieces) = start
                         .pieces
                         .iter()
-                        .map(|piece| self.saved_pool_piece(piece))
+                        .map(|piece| self.saved_piece(piece, def))
                         .collect::<Option<Vec<_>>>()
                 {
                     return Some(Arc::new(StructureStart::new(index, def, chunk, pieces)));
@@ -520,12 +523,22 @@ impl StructureState {
             .collect();
         Arc::new(starts)
     }
-    /// A saved `minecraft:jigsaw` piece, or `None` for any other piece or one that does not decode.
-    fn saved_pool_piece(&self, piece: &crate::nbt::Tag) -> Option<Piece> {
-        saved_piece_id(piece)?;
-        PoolPiece::from_saved(&tag_json(piece), &self.resources, &self.bindings)
-            .ok()
-            .map(Piece::Pool)
+    /// A saved piece: `PoolPiece::from_saved` for the jigsaw ids,
+    /// `saved_legacy::read` for the legacy pieces that read their own tags.
+    /// `None` for any other piece or one that does not decode, which leaves
+    /// the whole start to the fallback above.
+    fn saved_piece(&self, piece: &crate::nbt::Tag, def: &StructureDef) -> Option<Piece> {
+        if saved_piece_id(piece).is_some() {
+            return PoolPiece::from_saved(&tag_json(piece), &self.resources, &self.bindings)
+                .ok()
+                .map(Piece::Pool);
+        }
+        let crate::nbt::Tag::String(id) = piece.get("id")? else {
+            return None;
+        };
+        let id = id.to_string_lossy();
+        let id = id.strip_prefix("minecraft:").unwrap_or(&id);
+        super::structure::saved_legacy::read(id, piece, def).map(Piece::Legacy)
     }
     pub(super) fn set_saved_starts(&self, source: Arc<super::generator::SavedStructureStarts>) {
         let _ = self.saved.set(source);
@@ -573,6 +586,7 @@ impl StructureState {
                     &self.registry.structures[index],
                     chunk,
                     tag,
+                    context.seed(),
                     &self.resources,
                     &self.bindings,
                 )
@@ -867,6 +881,7 @@ pub(super) fn read_saved_start(
     def: &StructureDef,
     chunk: ChunkPos,
     tag: &crate::nbt::Tag,
+    seed: i64,
     resources: &StructureResources,
     bindings: &FeatureBlockBindings<'_>,
 ) -> Option<StructureStart> {
@@ -874,10 +889,7 @@ pub(super) fn read_saved_start(
     if !matches!(tag.get("id"), Some(Tag::String(id)) if id.to_string_lossy() == def.name) {
         return None;
     }
-    let int = |key| match tag.get(key) {
-        Some(Tag::Int(i)) => *i,
-        _ => 0,
-    };
+    let int = |key| super::structure::saved_legacy::int(tag, key);
     if ChunkPos::new(int("ChunkX"), int("ChunkZ")) != chunk {
         return None;
     }
@@ -886,6 +898,20 @@ pub(super) fn read_saved_start(
     };
     if children.is_empty() {
         return None;
+    }
+    if matches!(&def.kind, StructureKind::Monument(_)) {
+        // `OceanMonumentStructure.regeneratePiecesAfterLoad` throws the saved pieces away and
+        // reads only the first one's box and orientation. A first piece that is not the
+        // building (or has no box) leaves the start to regeneration, like any other.
+        let top = children
+            .first()
+            .filter(|piece| saved_piece_name(piece).as_deref() == Some("minecraft:omb"))?;
+        let piece =
+            super::structure::monument::MonumentBuilding::regenerate_after_load(top, chunk, seed)?;
+        let mut start =
+            StructureStart::new(index, def, chunk, vec![Piece::Legacy(Box::new(piece))]);
+        start.references = int("references");
+        return Some(start);
     }
     let pieces = children
         .iter()
@@ -923,18 +949,26 @@ pub(super) fn read_saved_start(
 /// which is what vanilla's table maps them to. `None` for a piece of another type
 /// (its NBT is not a pool piece's) and for one with no id.
 fn saved_piece_id(piece: &crate::nbt::Tag) -> Option<&'static str> {
+    match saved_piece_name(piece)?.as_str() {
+        "minecraft:jigsaw"
+        | "minecraft:nvi"
+        | "minecraft:pcp"
+        | "minecraft:bastionremnant"
+        | "minecraft:runtime" => Some("minecraft:jigsaw"),
+        _ => None,
+    }
+}
+/// `PiecesContainer.load`'s piece id: lowercased, and with `minecraft:` filled in for an id
+/// with no namespace (`Identifier.parse`).
+fn saved_piece_name(piece: &crate::nbt::Tag) -> Option<String> {
     let crate::nbt::Tag::Compound(map) = piece else {
         return None;
     };
     let crate::nbt::Tag::String(id) = map.get(&"id".into())? else {
         return None;
     };
-    // `Identifier.parse`: an id with no namespace is `minecraft:`'s.
-    let id = id.to_string_lossy();
-    match id.strip_prefix("minecraft:").unwrap_or(&id) {
-        "jigsaw" | "nvi" | "pcp" | "bastionremnant" | "runtime" => Some("minecraft:jigsaw"),
-        _ => None,
-    }
+    let id = id.to_string_lossy().to_lowercase();
+    super::tags::identifier(&id).ok()
 }
 /// A saved piece's tag as the JSON `PoolPiece::from_saved` reads: compounds and lists as they
 /// are, numbers as numbers.
@@ -1048,7 +1082,7 @@ mod tests {
         let mut original = StructureStart::new(7, &def, chunk, pieces);
         original.references = 3;
         let tag = original.save().unwrap();
-        let read = |tag: &Tag| read_saved_start(7, &def, chunk, tag, &resources, &bindings);
+        let read = |tag: &Tag| read_saved_start(7, &def, chunk, tag, 1234, &resources, &bindings);
         let loaded = read(&tag).expect("complete jigsaw start");
         assert_eq!(loaded.save(), Some(tag.clone()));
         assert_eq!(

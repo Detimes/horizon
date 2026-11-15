@@ -20,9 +20,10 @@ SessionSearchTrees.updateCreativeTags	inline	crates/horizon-client/src/creative.
 SessionSearchTrees.updateCreativeTooltips	inline	crates/horizon-client/src/creative.rs::Creative::search_results	name search uses exported English lines or lazily rebuilt translated tooltip lines
 ChatAbilities.selectVisibleMessages	port	crates/horizon-client-render/src/chat.rs::ChatAbilities::shows	source filter: client lines always, player and server lines per the abilities
 ChatAbilities.Builder.build	inline	crates/horizon-client-render/src/chat.rs::ChatAbilities::new	restrictions come from the Chat option alone; new() maps the visibility to them
-ChatListener.tick	port	crates/horizon-client/src/game/remote.rs::tick_chat_queue	the queue runs down with the ticks and pauses with the game
-ChatListener.setMessageDelay	port	crates/horizon-client/src/game/remote.rs::chat_delay_ms	Chat Delay in milliseconds, as Java truncates it, read when a chat line arrives
-ChatListener.flushQueue	port	crates/horizon-client/src/game/remote.rs::Game::flush_chat_queue	each message through accept_chat, so it counts as processed
+ChatListener.tick	port	crates/horizon-client/src/game/remote_chat_queue.rs::Game::tick_chat_queue	the queue runs down with the ticks and pauses with the game
+ChatListener.setMessageDelay	port	crates/horizon-client/src/game/remote_chat_queue.rs::Game::chat_delay_ms	Chat Delay in milliseconds, as Java truncates it, read when a chat line arrives
+ChatListener.flushQueue	port	crates/horizon-client/src/game/remote_chat_queue.rs::Game::flush_chat_queue	each message through accept_chat, so it counts as processed
+ChatListener.acceptNextDelayedMessage	port	crates/horizon-client/src/game/remote_chat_queue.rs::Game::accept_next_delayed_message	the chat.queue row's click shows one held message, without moving the delay timer
 ChatListener.removeFromDelayedMessageQueue	inline	crates/horizon-client/src/game/remote.rs::Game::handle_delete_chat	
 ChatListener.handleMessage	port	crates/horizon-client/src/game/remote.rs::handle_player_chat	a line with a delay goes into remote.chat_queue instead of the chat
 ChatListener.handlePlayerChatMessage	port	crates/horizon-client/src/game/remote.rs::Game::handle_packet	gap: player: no Only Show Secure Chat filter, no server filter-mask text, no block or friend-only hiding of chat lines
@@ -81,7 +82,7 @@ SkinReport.Builder.build	skip:service		chat and player reporting
 BlockStatePredictionHandler.updateKnownServerState	port	crates/horizon-client/src/game/remote.rs::Game::server_block	a predicted block keeps its predicted state; the server state is remembered
 BlockStatePredictionHandler.startPredicting	port	crates/horizon-client/src/game/remote.rs::Game::predict_break	gap: minor: the sequence number is passed in by the caller instead of counted here
 AddressCheck.createFromService	missing		minor: no block-list suppliers are loaded, so no address is refused on connect
-ServerAddress.isValidAddress	port	crates/horizon-protocol/src/servers.rs::parse_address	gap: minor: no IDN check on the host name
+ServerAddress.isValidAddress	port	crates/horizon-protocol/src/servers.rs::is_valid_address	parse_address plus the ASCII half of IDN.toASCII (an empty label other than the last, or a label over 63 characters, is refused); gap: minor: a host with a non-ASCII character is accepted unchecked (no nameprep or punycode)
 ServerAddress.equals	skip:java		value equality; Horizon compares the strings
 ServerNameResolver.resolveAddress	port	crates/horizon-protocol/src/resolver.rs::resolve	gap: minor: no block-list check on the resolved address
 ServerRedirectHandler.createDnsSrvRedirectHandler	port	crates/horizon-protocol/src/resolver.rs::srv_redirect	SRV lookup of _minecraft._tcp on port 25565
