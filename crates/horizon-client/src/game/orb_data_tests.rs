@@ -232,3 +232,29 @@ fn the_merge_keeps_the_live_orb_and_its_portal_process() {
     assert_eq!((state.cooldown, state.process.is_none()), (120, true));
     assert_eq!(game.orbs.len(), 2);
 }
+
+/// #16909: an orb and an arrow summoned with `PortalCooldown:250` save it back
+/// as 250 (`Entity.saveWithoutId` writes the live countdown).
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_summoned_portal_cooldown_is_saved_for_an_orb_and_an_arrow() {
+    let mut game = game();
+    let orb = load(
+        &mut game,
+        "{Pos:[4.5d,100d,4.5d],Value:1s,Age:0s,Health:5s,Count:1,PortalCooldown:250}",
+        3,
+    );
+    let tag = game.entity_nbt(commands::Target::Orb(orb)).unwrap();
+    assert_eq!(tag.get("PortalCooldown"), Some(&Tag::Int(250)));
+    let tag =
+        parse_snbt("{Pos:[4.5d,100d,4.5d],Motion:[0d,0d,0d],Rotation:[0f,0f],PortalCooldown:250}")
+            .unwrap()
+            .0;
+    game.load_listed("minecraft:arrow", Some([9, 0, 0, 4]), None, tag)
+        .unwrap();
+    let arrow = game.next_entity;
+    let tag = game
+        .entity_nbt(commands::Target::Projectile(arrow))
+        .unwrap();
+    assert_eq!(tag.get("PortalCooldown"), Some(&Tag::Int(250)));
+}

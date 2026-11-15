@@ -774,16 +774,14 @@ impl Game<'_> {
             horizon_client::nether_portal::portal_cooldown(&self.portals.entities, id),
         );
     }
-    /// `Entity.saveWithoutId`: the modeled non-arrow projectile codecs
-    /// share the live cooldown between command reads and chunk writes.
+    /// `Entity.saveWithoutId`: the modeled projectile codecs (arrows
+    /// included) share the live cooldown between command reads and chunk writes.
     pub(super) fn save_projectile_portal_cooldown(
         &self,
         projectile: &horizon_client::projectiles::Projectile,
         tag: &mut Tag,
     ) {
-        if projectile.arrow.is_none()
-            && let Tag::Compound(fields) = tag
-        {
+        if let Tag::Compound(fields) = tag {
             let cooldown = self
                 .portals
                 .entities
