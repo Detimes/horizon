@@ -653,6 +653,8 @@ impl Game<'_> {
         }
         match kind {
             "minecraft:area_effect_cloud" => {
+                let mut tag = tag;
+                entity_nbt::clear_fire(&mut tag);
                 if let Some(id) = self.load_potion_cloud(&tag) {
                     self.remember(id, uuid, tag);
                 }

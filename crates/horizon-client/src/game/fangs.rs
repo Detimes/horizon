@@ -135,6 +135,10 @@ impl Game<'_> {
         horizon_threads::work::clear_work();
         let mut list = std::mem::take(&mut self.fangs.list);
         list.retain_mut(|f| {
+            // Entity.baseTick: a burning fang's loaded Fire counts down.
+            if let Some(raw) = self.persist.raw.get_mut(&f.id) {
+                horizon_client::entity_nbt::count_down_fire(raw);
+            }
             f.warmup = f.warmup.wrapping_sub(1);
             if f.warmup >= 0 {
                 return true;

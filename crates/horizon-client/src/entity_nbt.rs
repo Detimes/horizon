@@ -66,6 +66,23 @@ pub fn loaded_motion(tag: &Tag) -> Vec3 {
 pub fn rotation(tag: &Tag) -> [f32; 2] {
     read_doubles::<2>(tag.get("Rotation")).map_or([0.0; 2], |r| [r[0] as f32, r[1] as f32])
 }
+/// `Entity.baseTick` for a burning entity Horizon keeps as its loaded compound:
+/// one tick off a positive `Fire`, which an unset or spent `Fire` leaves alone.
+pub fn count_down_fire(tag: &mut Tag) {
+    let Tag::Compound(c) = tag else { return };
+    if let Some(ticks) = number(c.get(&"Fire".into())).map(|v| v as i16)
+        && ticks > 0
+    {
+        c.insert("Fire".into(), Tag::Short(ticks - 1));
+    }
+}
+/// The `Fire` an `AreaEffectCloud` loads with: vanilla clears it, so it reads 0.
+pub fn clear_fire(tag: &mut Tag) {
+    let Tag::Compound(c) = tag else { return };
+    if c.contains_key(&"Fire".into()) {
+        c.insert("Fire".into(), Tag::Short(0));
+    }
+}
 /// `TagValueInput.getBooleanOr`: a numeric tag's byteValue is nonzero, with a false default.
 pub fn flag(tag: &Tag, key: &str) -> bool {
     flag_or(tag, key, false)
@@ -6076,6 +6093,26 @@ mod tests {
         };
         map.remove(&"Fire".into());
         assert_eq!(orbs_from_nbt(&tag)[0].fire_ticks, 0);
+    }
+    /// `Entity.baseTick` takes one tick off a burning `Fire` (`Fire:300s` reads
+    /// 299 after one tick); 0 and -1 stay. An area effect cloud reads `Fire` 0.
+    #[test]
+    fn a_loaded_fire_counts_down_and_a_cloud_clears_it() {
+        let fire = |snbt: &str| {
+            let mut tag = horizon_world::nbt::parse_snbt(snbt).unwrap().0;
+            super::count_down_fire(&mut tag);
+            number(tag.get("Fire"))
+        };
+        assert_eq!(fire("{Fire:300s}"), Some(299));
+        assert_eq!(fire("{Fire:1s}"), Some(0));
+        assert_eq!(fire("{Fire:0s}"), Some(0));
+        assert_eq!(fire("{Fire:-1s}"), Some(-1));
+        let mut tag = horizon_world::nbt::parse_snbt("{Fire:300s}").unwrap().0;
+        super::clear_fire(&mut tag);
+        assert_eq!(number(tag.get("Fire")), Some(0));
+        let mut none = horizon_world::nbt::parse_snbt("{Age:5}").unwrap().0;
+        super::clear_fire(&mut none);
+        assert_eq!(none.get("Fire"), None);
     }
 }
 
