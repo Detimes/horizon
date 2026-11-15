@@ -3030,6 +3030,7 @@ pub fn arrow_to_nbt(
         fall_distance: a.fall_distance,
     };
     let mut tag = base.tag(raw);
+    projectile_fields::put_ticks_frozen(&mut tag, p.ticks_frozen);
     // `SpectralArrow.addAdditionalSaveData` always writes its integer duration.
     if base.id == "minecraft:spectral_arrow" {
         put(&mut tag, "Duration", Tag::Int(a.spectral_duration));
@@ -6062,6 +6063,7 @@ mod tests {
             air: 300,
             following: None,
             fall_distance: 0.0,
+            ticks_frozen: 0,
             fire_ticks: 0,
         };
         for (ticks, saved) in [(0, 0), (40, 40), (-1, -1), (300, 300), (40_000, -25_536)] {

@@ -270,6 +270,8 @@ pub struct Projectile {
     pub fire_ticks: i32,
     /// `Entity.DATA_AIR_SUPPLY_ID`, saved as a short but tracked as an int.
     pub air_supply: i32,
+    /// `Entity.ticksFrozen` (`TicksFrozen` in its save), kept as loaded.
+    pub ticks_frozen: i32,
     /// `Entity.hasVisualFire`: an optional saved flag independent of burning.
     pub has_visual_fire: bool,
     /// `Entity.fallDistance` (`fall_distance` in its save): a projectile sets
@@ -559,6 +561,7 @@ impl Projectile {
             on_ground: false,
             fire_ticks: 0,
             air_supply: 300,
+            ticks_frozen: 0,
             has_visual_fire: false,
             fall_distance: 0.0,
             synced_fire: false,

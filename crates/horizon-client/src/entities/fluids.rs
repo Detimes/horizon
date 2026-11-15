@@ -500,6 +500,7 @@ mod tests {
             air: 300,
             following: None,
             fire_ticks: 0,
+            ticks_frozen: 0,
         };
         let mut still = orb.clone();
         assert!(still.tick(
@@ -593,6 +594,7 @@ mod tests {
             air: 300,
             following: None,
             fire_ticks: 0,
+            ticks_frozen: 0,
         };
         assert!(orb.tick(
             &world,

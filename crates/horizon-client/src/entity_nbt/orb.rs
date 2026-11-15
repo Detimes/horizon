@@ -25,9 +25,12 @@ pub fn orb_to_nbt(o: &ExperienceOrb, uuid: [i32; 4]) -> Tag {
     ] {
         put(&mut tag, key, value);
     }
-    // Entity.saveWithoutId writes NoGravity only when set.
+    // Entity.saveWithoutId writes NoGravity and TicksFrozen only when set.
     if o.no_gravity {
         put(&mut tag, "NoGravity", Tag::Byte(1));
+    }
+    if o.ticks_frozen > 0 {
+        put(&mut tag, "TicksFrozen", Tag::Int(o.ticks_frozen));
     }
     tag
 }
@@ -58,6 +61,7 @@ pub fn orbs_from_nbt(tag: &Tag) -> Vec<ExperienceOrb> {
         // loaded orb starts without one.
         following: None,
         fire_ticks: number(tag.get("Fire")).unwrap_or(0) as i16 as i32,
+        ticks_frozen: number(tag.get("TicksFrozen")).unwrap_or(0) as i32,
     };
     vec![orb]
 }
