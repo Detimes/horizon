@@ -6528,7 +6528,7 @@ mod tests {
     #[test]
     fn a_loaded_fire_counts_down_and_a_cloud_clears_it() {
         let fire = |snbt: &str| {
-            let mut tag = horizon_world::nbt::parse_snbt(snbt).unwrap().0;
+            let mut tag = horizon_core::nbt::parse_snbt(snbt).unwrap().0;
             super::count_down_fire(&mut tag);
             number(tag.get("Fire"))
         };
@@ -6536,10 +6536,10 @@ mod tests {
         assert_eq!(fire("{Fire:1s}"), Some(0));
         assert_eq!(fire("{Fire:0s}"), Some(0));
         assert_eq!(fire("{Fire:-1s}"), Some(-1));
-        let mut tag = horizon_world::nbt::parse_snbt("{Fire:300s}").unwrap().0;
+        let mut tag = horizon_core::nbt::parse_snbt("{Fire:300s}").unwrap().0;
         super::clear_fire(&mut tag);
         assert_eq!(number(tag.get("Fire")), Some(0));
-        let mut none = horizon_world::nbt::parse_snbt("{Age:5}").unwrap().0;
+        let mut none = horizon_core::nbt::parse_snbt("{Age:5}").unwrap().0;
         super::clear_fire(&mut none);
         assert_eq!(none.get("Fire"), None);
     }
