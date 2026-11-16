@@ -1,5 +1,5 @@
 use crate::entity_nbt::{arrow_from_nbt, arrow_to_nbt, orb_to_nbt, orbs_from_nbt};
-use horizon_world::nbt::{Tag, parse_snbt};
+use horizon_core::nbt::{Tag, parse_snbt};
 
 /// `Entity.load` reads `TicksFrozen` and `saveWithoutId` writes it back while positive.
 #[test]
