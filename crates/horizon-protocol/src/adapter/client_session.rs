@@ -391,7 +391,7 @@ impl ClientSession {
         let state = self.writing();
         self.clientbound_with_extras(state, body).map_err(|e| {
             let id = Reader::new(body).varint().unwrap_or(-1);
-            crate::Error(format!(
+            crate::Error::new(format!(
                 "{e} (packet {id} in {state:?} for a {} client)",
                 self.version.name()
             ))
@@ -1564,7 +1564,7 @@ mod tests {
             material: b(D::AnyFuel),
             pattern: TrimPattern::Direct {
                 asset: "a:b".into(),
-                description: horizon_world::nbt::Tag::String("T".into()),
+                description: horizon_core::nbt::Tag::String("T".into()),
                 decal: true,
             },
         };
@@ -2357,7 +2357,7 @@ mod tests {
     #[test]
     fn equipment_with_components_reaches_every_older_client() {
         use crate::item::{Component, Stack, component};
-        use horizon_world::nbt::Tag;
+        use horizon_core::nbt::Tag;
         let mut hat = Stack::new(1012, 1);
         hat.added.push((
             component::CUSTOM_NAME,
@@ -2790,7 +2790,7 @@ mod tests {
     /// stack templates).
     #[test]
     fn a_decorated_pot_update_has_its_sherds_as_a_list_for_26_2_and_older() {
-        use horizon_world::nbt::{Compound, JavaString, Tag};
+        use horizon_core::nbt::{Compound, JavaString, Tag};
         let text = |s: &str| Tag::String(JavaString::from(s));
         let mut front = Compound::new();
         front.insert(
