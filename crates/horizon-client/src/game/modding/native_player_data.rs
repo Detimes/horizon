@@ -57,7 +57,7 @@ mod tests {
     /// Progress read as the save writes it goes back in whole; an advancement this server
     /// lacks is dropped, and the client is sent the whole tree again.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn advancements_are_read_and_replaced_whole() {
         with_guests(|game| {
             game.advancement_tree();
