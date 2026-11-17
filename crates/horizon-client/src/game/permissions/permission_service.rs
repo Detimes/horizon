@@ -53,6 +53,7 @@ pub(crate) struct PermissionService {
     factories: BTreeMap<String, HandlerFactory>,
     levels: Option<LevelSource>,
     handler: Option<Box<dyn PermissionHandler>>,
+    custom_handler: bool,
     in_query: bool,
 }
 
@@ -70,6 +71,7 @@ impl PermissionService {
             factories: BTreeMap::new(),
             levels: None,
             handler: None,
+            custom_handler: false,
             in_query: false,
         }
     }
@@ -157,6 +159,7 @@ impl PermissionService {
             },
         };
         self.factories.clear();
+        let selected_custom = selected.is_some();
         let handler: Box<dyn PermissionHandler> = match selected {
             Some(factory) => factory(&nodes),
             None => Box::new(DefaultHandler {
@@ -168,7 +171,13 @@ impl PermissionService {
                 levels: self.levels.clone(),
             }),
         };
+        self.custom_handler = selected_custom;
         self.handler = Some(handler);
+    }
+
+    /// Whether a handler other than the built-in one was selected. Side: server.
+    pub(crate) fn custom_handler_selected(&self) -> bool {
+        self.custom_handler
     }
 
     /// Answers `node` for `uuid`. `online` is the UUID when the player is on this server; an
