@@ -1314,6 +1314,12 @@ def first_hurt(guest, before, ticks):
     return health
 
 
+def nearest_mob_distance(near, kind, origin):
+    """Distance from `origin` to the closest living `kind` in a `mobs` reply's `near` list, or None."""
+    gaps = [math.dist(m['pos'], origin) for m in near if m['kind'] == kind and m['health'] > 0]
+    return min(gaps) if gaps else None
+
+
 def check_mobs(host, guest, out):
     host('command', command='gamemode creative')
     host('command', command='difficulty normal')
