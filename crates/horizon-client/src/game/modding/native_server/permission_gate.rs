@@ -34,8 +34,8 @@ pub(super) fn runnable_paths(usage: &str) -> Vec<Vec<String>> {
     let mut paths = Vec::new();
     for (index, word) in words.iter().enumerate() {
         let name = word
-            .trim_start_matches(|c: char| c == '<' || c == '[')
-            .trim_end_matches(|c: char| c == '>' || c == ']')
+            .trim_start_matches(['<', '['])
+            .trim_end_matches(['>', ']'])
             .split(':')
             .next()
             .unwrap_or_default();

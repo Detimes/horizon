@@ -170,13 +170,12 @@ impl Game<'_> {
         let lists = self.server_lists.clone();
         let levels = self.permission_query_state.level_source(move |uuid| {
             let lists = lists.as_ref()?.lock().ok()?;
-            let level = lists
+            lists
                 .ops
                 .entries()
                 .into_iter()
                 .find(|entry| entry.user.id == uuid)
-                .map(|entry| entry.level);
-            level
+                .map(|entry| entry.level)
         });
         let mut service = PermissionService::new();
         service.set_level_source(levels);
