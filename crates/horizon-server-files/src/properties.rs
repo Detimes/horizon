@@ -744,7 +744,15 @@ mod tests {
         assert!(secret.bytes().all(|b| b.is_ascii_alphanumeric()));
         assert!(stored.contains(&format!("\nmanagement-server-secret={secret}\n")));
         assert!(stored.ends_with("\nview-distance=10\nwhite-list=true\n"));
-        assert_eq!(stored.lines().count(), 71);
+        // Vanilla's 71 lines, plus Horizon's own `permission-handler` (empty selects the default handler).
+        assert!(stored.contains("\npermission-handler=\n"));
+        assert_eq!(
+            stored
+                .lines()
+                .filter(|line| !line.starts_with("permission-handler="))
+                .count(),
+            71
+        );
         assert!(p.random_seed);
         assert_eq!(p.seed, 7);
     }
