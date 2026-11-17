@@ -2976,7 +2976,11 @@ impl Hub {
         let ready = |c: &Chunk| {
             c.lit
                 && streaming.is_none_or(|streaming| {
-                    neighbours_ready(&world.chunks, |x, z| streaming.proto_sections(x, z).is_some(), c)
+                    neighbours_ready(
+                        &world.chunks,
+                        |x, z| streaming.proto_sections(x, z).is_some(),
+                        c,
+                    )
                 })
         };
         let near: Vec<_> = g
@@ -5192,8 +5196,8 @@ fn neighbours_ready(
 #[cfg(test)]
 mod tests {
     mod bundle_sound_tests;
-    mod chunk_ready_tests;
     mod cave_air_tests;
+    mod chunk_ready_tests;
     mod collision_exclusion_tests;
     mod effect_meta_tests;
     #[path = "../far_tests.rs"]
