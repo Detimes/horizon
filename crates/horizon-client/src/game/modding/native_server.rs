@@ -1751,7 +1751,7 @@ impl Game<'_> {
             .iter()
             .filter(|o| o.count > 0)
             .map(|o| mod_api::ExperienceOrb {
-                ticks_frozen: 0,
+                ticks_frozen: o.ticks_frozen,
                 id: o.id,
                 position: [o.position.x, o.position.y, o.position.z],
                 value: o.value,
