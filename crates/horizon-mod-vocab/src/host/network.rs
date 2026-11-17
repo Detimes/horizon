@@ -5,18 +5,6 @@ use crate::*;
 #[horizon_mod_api_macros::host_area]
 pub trait NetworkServerHost {
     /// Side: server.
-    /// Sends `data` on `channel` (`mod_id:name`, at most 30 000 bytes, at
-    /// most 32 a player a tick) to `player`'s client, at the tick's end, from
-    /// any server hook. Ok means accepted: a player who left or isn't on a
-    /// Horizon client doesn't get it.
-    #[access(WorldOnly)]
-    fn net_send_to_player(
-        &mut self,
-        player: u128,
-        channel: &str,
-        data: &[u8],
-    ) -> Result<(), String>;
-    /// Side: server.
     /// Sends `packet` to that player's client as it is (`ServerPlayer.connection.send`), as a
     /// Paper plugin sends a packet through ProtocolLib or PacketEvents: a team, an objective, a
     /// score, a Tab-list entry the server doesn't keep. Only that player gets it, at once, or
