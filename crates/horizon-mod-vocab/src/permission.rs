@@ -12,10 +12,10 @@ pub const MAX_CONTEXTS: usize = 32;
 pub const MAX_CONTEXT_KEY_LEN: usize = 128;
 
 /// The value types a node answers with. A node's identity is its name together with this type.
-// exhaustive: these four types are the whole set a node can answer with.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, horizon_mod_api_macros::Wire,
 )]
+// exhaustive: these four types are the whole set a node can answer with.
 pub enum PermissionValueType {
     /// A yes or no answer.
     Boolean,
@@ -75,7 +75,7 @@ impl PermissionNode {
 }
 
 /// One context a caller supplies with a query: a key the mod chose and its value.
-// exhaustive: fields are public so a caller can build a context literally.
+// exhaustive: fields are public so a caller can build a context literally; or use `PermissionContext::new`.
 #[derive(Clone, Debug, PartialEq, horizon_mod_api_macros::Wire)]
 pub struct PermissionContext {
     /// The key, a name the mod chose for what the context carries.
@@ -84,7 +84,18 @@ pub struct PermissionContext {
     pub value: PermissionValue,
 }
 
+impl PermissionContext {
+    /// A context with the key `key` and the value `value`.
+    pub fn new(key: impl Into<String>, value: PermissionValue) -> Self {
+        Self {
+            key: key.into(),
+            value,
+        }
+    }
+}
+
 /// Why a permission query or declaration was refused. A refusal never falls back to a grant.
+// exhaustive: every refusal is one of these reasons, and a caller matches them all so none turns into a grant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, horizon_mod_api_macros::Wire)]
 pub enum PermissionError {
     /// The server has not gathered its nodes yet, or has closed. Side: server.
