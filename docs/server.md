@@ -544,6 +544,10 @@ Removing the key restores the available-thread default; see the
 [wasm compilation settings](modding/src/how-to/wasm-mods.md#compilation-time-setting)
 for the exact formula and platform limitations.
 
+`permission-handler` (in `[properties]`, or `server.properties`) names the permission handler a mod
+provides for permission nodes. Empty, the default, keeps the operator-level answers. A name no mod
+provides is logged and the default answers. A handler that fails refuses the query; it never grants.
+
 ```toml
 # Horizon server settings (docs/server.md). The server writes them into server.properties before
 # every start: edit this file, not that one.

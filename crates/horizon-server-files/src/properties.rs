@@ -58,6 +58,9 @@ pub struct ServerProperties {
     pub spawn_protection: i32,
     pub op_permission_level: i32,
     pub function_permission_level: i32,
+    /// Id of the permission handler a mod provides (`permission-handler`); empty selects the
+    /// default handler. An id no mod provides selects the default, with a log line.
+    pub permission_handler: String,
     pub max_tick_time: i64,
     pub max_chained_neighbor_updates: i32,
     pub rate_limit: i32,
@@ -328,6 +331,7 @@ impl ServerProperties {
         let spawn_protection = r.int("spawn-protection", 16);
         let op_permission_level = r.permission("op-permission-level", 4);
         let function_permission_level = r.permission("function-permission-level", 2);
+        let permission_handler = r.string("permission-handler", "");
         let max_tick_time = r.long("max-tick-time", 60_000);
         let max_chained_neighbor_updates = r.int("max-chained-neighbor-updates", 1_000_000);
         let rate_limit = r.int("rate-limit", 0);
@@ -452,6 +456,7 @@ impl ServerProperties {
             spawn_protection,
             op_permission_level,
             function_permission_level,
+            permission_handler,
             max_tick_time,
             max_chained_neighbor_updates,
             rate_limit,
