@@ -52,6 +52,21 @@ pub trait PlayersServerHost {
     /// an earlier open of the world) and `NoConnection` (a fake player).
     #[access(WorldOnly)]
     fn player_resend_command_tree(&mut self, player: PlayerRef) -> Result<(), PlayerWorldRefusal>;
+
+    /// Answers the permission node `node` for the player `uuid` through the one selected handler.
+    /// The built-in handler answers from the node's default, a custom one from its own policy.
+    /// Online and offline UUIDs are both accepted. Refuses with `Unregistered` for a node that is
+    /// not declared, `NotInitialized` before the server has gathered its nodes, and `InvalidInput`
+    /// for too many contexts or a badly named one. A handler's failure is `HandlerFailed`, never a
+    /// grant. Writes nothing, changes no operator level and does not fire
+    /// `permissions_changed`.
+    #[access(WorldOnly)]
+    fn permission_query(
+        &mut self,
+        node: &PermissionNode,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<PermissionValue, PermissionError>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]

@@ -5,6 +5,7 @@ pub mod command;
 pub mod content;
 pub mod entity;
 pub mod item;
+pub mod permission;
 pub mod runtime;
 pub mod text;
 pub mod wire;
