@@ -1390,13 +1390,31 @@ def git_show(base, path):
     return result.stdout if result.returncode == 0 else None
 
 
+def strip_toml_comment(line):
+    """line without its trailing # comment; a # inside a quoted value is kept."""
+    quote, escaped = None, False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+        elif quote:
+            if char == "\\" and quote == '"':
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char == "#":
+            return line[:index]
+    return line
+
+
 def manifest_lines(text):
     """A Cargo.toml's lines that decide what is built: (section, line) pairs, without its package's identity and
     targets, comments, or workspace crates (whose code counts through its own sources)."""
     lines, section = set(), ""
     name = re.search(r'^\[package\][^\[]*?^name\s*=\s*"([^"]+)"', text or "", re.M | re.S)
     for raw in (text or "").splitlines():
-        line = re.sub(r"\s+", " ", raw.split("#", 1)[0]).strip()
+        line = re.sub(r"\s+", " ", strip_toml_comment(raw)).strip()
         if not line:
             continue
         if line.startswith("["):
