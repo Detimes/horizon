@@ -398,7 +398,7 @@ fn another_guests_menu_and_push_work_during_a_turn() {
 /// `player_set_velocity` replaces a guest's velocity (where `entity_push`
 /// adds), for the acting guest and another one, and refuses what it can't set.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn player_set_velocity_replaces_a_guests_motion() {
     with_guests(|game| {
         for conn in [12, 13] {
