@@ -1,0 +1,1 @@
+horizon-client game::rotation_kept_tests::a_summoned_falling_block_shulker_and_cloud_keep_their_rotation lib daily resources
