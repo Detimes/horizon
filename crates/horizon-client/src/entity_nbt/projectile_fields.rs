@@ -19,7 +19,6 @@ pub(super) fn keeps_entity_fields(p: &Projectile) -> bool {
 pub(super) fn load_projectile_entity_fields(p: &mut Projectile, tag: &Tag) {
     p.fire_ticks = i32::from(tag.get("Fire").and_then(int_value).unwrap_or(0) as i16);
     p.air_supply = tag.get("Air").and_then(int_value).unwrap_or(p.air_supply);
-    p.ticks_frozen = tag.get("TicksFrozen").and_then(int_value).unwrap_or(0);
     p.has_visual_fire = flag(tag, "HasVisualFire");
     // Entity.load: getDoubleOr, any number widened.
     p.fall_distance = float(tag.get("fall_distance")).unwrap_or(0.0);
@@ -30,21 +29,11 @@ pub(super) fn load_projectile_entity_fields(p: &mut Projectile, tag: &Tag) {
 pub(super) fn put_projectile_entity_fields(tag: &mut Tag, p: &Projectile) {
     put(tag, "Fire", Tag::Short(p.fire_ticks as i16));
     put(tag, "Air", Tag::Short(p.air_supply as i16));
-    put_ticks_frozen(tag, p.ticks_frozen);
     if let Tag::Compound(map) = tag {
         map.remove(&"HasVisualFire".into());
     }
     if p.has_visual_fire {
         put(tag, "HasVisualFire", Tag::Byte(1));
-    }
-}
-
-/// `Entity.saveWithoutId` writes `TicksFrozen` (an int) only while it is positive.
-pub(super) fn put_ticks_frozen(tag: &mut Tag, ticks: i32) {
-    if ticks > 0 {
-        put(tag, "TicksFrozen", Tag::Int(ticks));
-    } else if let Tag::Compound(map) = tag {
-        map.remove(&"TicksFrozen".into());
     }
 }
 
@@ -61,7 +50,6 @@ pub(super) fn load_projectile_flags_and_entity_fields(p: &mut Projectile, tag: &
 /// air on the projectile and defaults to the 300 of `getMaxAirSupply`.
 pub(super) fn load_arrow_entity_fields(p: &mut Projectile, tag: &Tag) {
     p.air_supply = tag.get("Air").and_then(int_value).unwrap_or(300);
-    p.ticks_frozen = tag.get("TicksFrozen").and_then(int_value).unwrap_or(0);
     if let Some(a) = p.arrow.as_mut() {
         a.fire_ticks = i32::from(tag.get("Fire").and_then(int_value).unwrap_or(0) as i16);
         a.fall_distance = float(tag.get("fall_distance")).unwrap_or(0.0);

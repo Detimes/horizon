@@ -578,7 +578,6 @@ impl Game<'_> {
             air: 300,
             following: None,
             fire_ticks: 0,
-            ticks_frozen: 0,
         });
         // ServerLevel.addFreshEntity.
         self.native_joins_flush(false, 0);
@@ -1056,7 +1055,8 @@ mod escape_tests {
         let stack = ItemStack::new("minecraft:stone", 2);
         game.spawn_item(stack, [8.5, 64.4, 8.5], [0.0, 0.0, 0.0], 10);
         let item = game.dropped.last_mut().unwrap();
-        item.random = horizon_core::random::EntityRandom::own(horizon_core::random::LegacyRandom::new(12345));
+        item.random =
+            horizon_core::random::EntityRandom::own(horizon_core::random::LegacyRandom::new(12345));
         let mut level = game.world.random.clone();
         game.ticked_entities_through = u32::MAX;
         game.tick_items();

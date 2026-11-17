@@ -193,7 +193,6 @@ mod tests {
             air: 300,
             following: None,
             fire_ticks: 0,
-            ticks_frozen: 0,
         }))
     }
 

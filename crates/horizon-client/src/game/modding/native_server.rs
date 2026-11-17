@@ -2310,7 +2310,6 @@ mod tests {
         game.options.dedicated = Some(Vec::new());
         let at = horizon_core::geometry::Vec3::new(1.0, 70.0, 1.0);
         game.orbs.push(horizon_client::entities::ExperienceOrb {
-            ticks_frozen: 0,
             attachment_lifetime: Default::default(),
             fall_distance: 0.0,
             rotation: [0.0, 0.0],

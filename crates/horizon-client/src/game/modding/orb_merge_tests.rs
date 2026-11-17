@@ -8,7 +8,6 @@ use horizon_core::geometry::Vec3;
 fn orb(id: u32, value: i32, count: u32) -> ExperienceOrb {
     let at = Vec3::new(0.5, 70.0, 0.5);
     ExperienceOrb {
-        ticks_frozen: 0,
         attachment_lifetime: Default::default(),
         fall_distance: 0.0,
         rotation: [0.0, 0.0],

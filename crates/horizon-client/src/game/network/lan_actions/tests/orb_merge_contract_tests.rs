@@ -10,7 +10,6 @@ use mod_api::{ExperienceOrbCanMergeEvent, ExperienceOrbMergeEvent, Flow, Hooks, 
 fn orb(id: u32, x: f64, value: i32, count: u32) -> ExperienceOrb {
     let at = Vec3::new(x, 70.0, 0.5);
     ExperienceOrb {
-        ticks_frozen: 0,
         attachment_lifetime: Default::default(),
         fall_distance: 0.0,
         rotation: [0.0, 0.0],

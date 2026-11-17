@@ -888,8 +888,6 @@ pub struct ExperienceOrb {
     /// `Entity.remainingFireTicks`: saved as `Fire`, burnt down by
     /// `Entity.baseTick`, which hurts the orb once every 20 ticks.
     pub fire_ticks: i32,
-    /// `Entity.ticksFrozen` (`TicksFrozen` in its save), kept as loaded.
-    pub ticks_frozen: i32,
     /// `Entity.fallDistance` (`fall_distance` in its save).
     pub fall_distance: f64,
 }
@@ -925,7 +923,6 @@ impl ExperienceOrb {
             following: None,
             fall_distance: 0.0,
             fire_ticks: 0,
-            ticks_frozen: 0,
         }
     }
     /// `ExperienceOrb.hurtServer`: the damage comes off the health as an
@@ -3333,7 +3330,6 @@ mod world_border_tests {
                 ticks: 0,
                 health: 5,
                 air: 300,
-                ticks_frozen: 0,
                 following: None,
                 fire_ticks: 0,
             };
@@ -4720,7 +4716,6 @@ mod orb_underwater_tests {
                     ticks: 0,
                     health: 5,
                     air: 300,
-                    ticks_frozen: 0,
                     following: None,
                     fire_ticks: 0,
                 };
@@ -4759,7 +4754,6 @@ mod render_light_tests {
             ticks: 0,
             health: 5,
             air: 300,
-            ticks_frozen: 0,
             following: None,
             fire_ticks: 0,
         }
@@ -4981,7 +4975,6 @@ mod orb_lava_tests {
             ticks: 0,
             health,
             air: 300,
-            ticks_frozen: 0,
             following: None,
             fire_ticks: 0,
         }

@@ -363,8 +363,6 @@ pub struct Projectile {
     /// `Entity.random` of a projectile.
     pub random: OwnRandom,
     pub air_supply: i32,
-    /// `Entity.ticksFrozen` (`TicksFrozen` in its save), kept as loaded.
-    pub ticks_frozen: i32,
     pub has_visual_fire: bool,
     /// `Entity.fallDistance` (`fall_distance` in its save): a projectile sets
     /// its position without `Entity.move`, so it keeps what it was given.
@@ -658,7 +656,6 @@ impl Projectile {
             // Entity.random: seeded unpredictably, the position stands in.
             random: OwnRandom(random),
             air_supply: 300,
-            ticks_frozen: 0,
             has_visual_fire: false,
             fall_distance: 0.0,
             synced_fire: false,

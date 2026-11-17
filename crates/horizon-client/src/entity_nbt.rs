@@ -2886,12 +2886,9 @@ pub fn orb_to_nbt(o: &ExperienceOrb, uuid: [i32; 4]) -> Tag {
     ] {
         put(&mut tag, key, value);
     }
-    // Entity.saveWithoutId writes NoGravity and TicksFrozen only when set.
+    // Entity.saveWithoutId writes NoGravity only when set.
     if o.no_gravity {
         put(&mut tag, "NoGravity", Tag::Byte(1));
-    }
-    if o.ticks_frozen > 0 {
-        put(&mut tag, "TicksFrozen", Tag::Int(o.ticks_frozen));
     }
     tag
 }
@@ -2903,7 +2900,6 @@ pub fn orbs_from_nbt(tag: &Tag) -> Vec<ExperienceOrb> {
     let count = number(tag.get("Count")).unwrap_or(1).max(1) as u32;
     let orb = ExperienceOrb {
         fire_ticks: number(tag.get("Fire")).unwrap_or(0) as i16 as i32,
-        ticks_frozen: number(tag.get("TicksFrozen")).unwrap_or(0) as i32,
         attachment_lifetime: Default::default(),
         fall_distance: float(tag.get("fall_distance")).unwrap_or(0.0),
         rotation: rotation(tag),
@@ -2961,7 +2957,6 @@ pub fn arrow_to_nbt(
         fall_distance: a.fall_distance,
     };
     let mut tag = base.tag(raw);
-    projectile_fields::put_ticks_frozen(&mut tag, p.ticks_frozen);
     // `SpectralArrow.addAdditionalSaveData` always writes its integer duration.
     if base.id == "minecraft:spectral_arrow" {
         put(&mut tag, "Duration", Tag::Int(a.spectral_duration));
@@ -6496,7 +6491,6 @@ mod tests {
             air: 300,
             following: None,
             fall_distance: 0.0,
-            ticks_frozen: 0,
             fire_ticks: 0,
         };
         for (ticks, saved) in [(0, 0), (40, 40), (-1, -1), (300, 300), (40_000, -25_536)] {

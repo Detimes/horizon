@@ -19,13 +19,13 @@ mod anger_tests;
 #[cfg(test)]
 #[path = "persist/completion_tests.rs"]
 mod completion_tests;
-#[path = "persist/passenger_graph.rs"]
-mod passenger_graph;
 #[path = "persist/hurt_by_refs.rs"]
 mod hurt_by_refs;
 #[cfg(test)]
 #[path = "persist/lookup_order_tests.rs"]
 mod lookup_order_tests;
+#[path = "persist/passenger_graph.rs"]
+mod passenger_graph;
 
 use super::{FallingBlock, Game};
 use horizon_client::{
@@ -1646,6 +1646,13 @@ impl Game<'_> {
             if let Some(v) = tag.get(key) {
                 map.insert(key.into(), v.clone());
             }
+        }
+        // `Entity.saveWithoutId` writes `TicksFrozen` only while it is positive,
+        // and only a `LivingEntity` thaws, so these entities keep it unchanged.
+        if let Some(v) = tag.get("TicksFrozen")
+            && horizon_client::save::number(Some(v)).is_some_and(|ticks| ticks > 0)
+        {
+            map.insert("TicksFrozen".into(), v.clone());
         }
         if !map.is_empty() {
             self.persist.raw.insert(id, Tag::Compound(map));
