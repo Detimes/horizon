@@ -22,7 +22,7 @@ mod tests {
 
     /// What `player_set_nickname` sets reads back for that player only.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn player_nickname_reads_back_the_set_nickname() {
         with_guests(|game| {
             let a = game.player(12).unwrap();

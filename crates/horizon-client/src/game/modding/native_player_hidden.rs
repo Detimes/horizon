@@ -20,7 +20,7 @@ mod tests {
 
     /// What `player_hide` sets reads back, by UUID, until it is shown again.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn player_hidden_reads_back_the_hide_level() {
         with_guests(|game| {
             let a = game.player(12).unwrap();

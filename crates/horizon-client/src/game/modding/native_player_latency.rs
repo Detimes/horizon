@@ -22,7 +22,7 @@ mod tests {
 
     /// The latency is the one the connection's keep-alives measure, per player.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn player_latency_reads_the_connections_keep_alive_average() {
         with_guests(|game| {
             let a = game.player(12).unwrap();
