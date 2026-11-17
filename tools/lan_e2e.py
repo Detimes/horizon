@@ -1327,6 +1327,7 @@ def check_mobs(host, guest, out):
     guest('command', command='gamemode survival')
     guest.wait(10)
     hurt = {}
+    gap = {}
     try:
         for mob, distance in (('zombie', 3), ('skeleton', 7)):
             x, y, z = pos_of(guest)
@@ -1335,13 +1336,17 @@ def check_mobs(host, guest, out):
             low = first_hurt(guest, before, 300)
             guest.shot(out, f'mobs-{mob}')
             host.shot(out, f'mobs-{mob}')
+            # Where the mob stands now, for the report if it never hurt the guest.
+            near = host.raw('mobs', 16).get('near', [])
+            gap[mob] = nearest_mob_distance(near, f'minecraft:{mob}', pos_of(guest))
             host('command', command=f'kill @e[type=minecraft:{mob}]')
             hurt[mob] = (before, low)
     finally:
         host('command', command='gamemode survival')
         host('command', command='time set day')
     for mob, (before, low) in hurt.items():
-        assert low < before, f'the {mob} never hurt the guest: health {before} -> {low} (all: {hurt})'
+        assert low < before, (f'the {mob} never hurt the guest: health {before} -> {low}, '
+                              f'the {mob} stood {gap[mob]} blocks from the guest (all: {hurt})')
     return hurt
 
 
