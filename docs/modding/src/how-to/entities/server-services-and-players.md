@@ -192,3 +192,12 @@ The inventory menu has no slot for body or saddle. All four player data writes
 (`set_inventory_slot`, `set_ender_chest_slot`, `give_stack`, `set_persistent_data`)
 are undone by an open transaction abort; equipment effects and overflow drops
 wait for the outermost commit.
+
+## Scoreboard teams
+
+`host.team_set(name, color)` makes a team when it is missing and sets its color to one of the sixteen chat color
+names (`red`, `dark_aqua`...), or `None` for no color, as `/team` does. `host.team_join(team, holder)` moves a player
+name, or an entity's UUID as the scoreboard keeps it, into a team; `host.team_leave(holder)` takes it out, and
+`host.team_remove(name)` deletes a team and leaves its members with none. Teams are kept in the world's scoreboard,
+which the server saves, and members take the color in every client from the next tick's sync. Server only: each call
+returns `bool`, and `false` (for a refused name, color, team or holder) changes nothing.
