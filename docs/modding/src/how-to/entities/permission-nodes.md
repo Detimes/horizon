@@ -15,16 +15,20 @@ no late registration: a node added after that is refused.
 - Identity is the node's case-sensitive dot-separated name plus its value type. Boolean, integer, string and
   text-component nodes are distinct nodes even under one name.
 - Adding the same typed node twice is a registration error, and no partial service is published.
-- A Boolean node's default is the operator level that grants it by default. Other types take a default value.
-- The default is a resolver the mod writes. It runs at query time, not at gathering time, and receives the
-  online player when there is one, the player's UUID and the contexts the caller supplied. A declared context
-  key the caller leaves out is allowed; an undeclared key is ignored.
+- A Boolean node's default is the operator level that grants it by default (`NodeDefault::Level`). Other types
+  take a default value of their own type (`NodeDefault::Value`). A default is data, not a function: there is no
+  mod-written resolver yet, so a policy that depends on the player or on contexts belongs in a handler.
+- The built-in handler reads the player's operator level when the query runs: an online player's live level, else
+  the dedicated server's operator list by UUID, else level 0. It ignores the contexts. A caller may leave out
+  any context key; the service refuses only too many contexts or an empty or over-long key.
 
 ## Handlers
 
 Exactly one handler answers every node on a server. The built-in default handler answers from each node's
-default. A mod can add its own handler with `permission_gather_handler`, which adds a factory under an id
-(`factories.add(id, ...)`). Duplicate handler ids are registration errors.
+default. A mod can provide its own handler with `permission_gather_handler`, which pushes the handler's id. The server
+then asks that mod through `permission_handler_query` for each query, and only the mod that provided the id may
+answer: no answer, an answer from another mod or an answer of the wrong type is an error. Duplicate or empty
+handler ids are registration errors, and the server then answers no permission query.
 
 The dedicated server's `permission-handler` setting names the handler to use. With no setting, or an unknown id,
 the default handler is used, and the log names the unknown id; startup does not fail.
@@ -43,7 +47,8 @@ string and component errors must not be read as a Boolean denial.
 `PermissionError` names each refusal: `NotInitialized` (a query before the service is ready), `Unregistered`
 (an unknown node, never an implicit registration), `DuplicateNode`, `DuplicateHandler`, `WrongType`,
 `UnknownPlayer`, `HandlerFailed`, `Recursive` (a handler that queries inside its own query fails both queries)
-and `InvalidInput`. A failed query changes nothing and grants nothing.
+and `InvalidInput`. In `permission_handler_query`, `online` is the player's UUID when the player is on this
+server and `None` for an offline UUID; ask `host.player(uuid)` for the handle. A failed query changes nothing and grants nothing.
 
 Queries take no cache and write nothing. A node decision does not fire `permissions_changed`, and that hook
 does not report node decisions. There are no wildcards, no hierarchy and no namespace ownership: a node name
