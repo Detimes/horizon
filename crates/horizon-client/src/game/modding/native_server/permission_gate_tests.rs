@@ -1,6 +1,7 @@
 //! Unit tests of the command paths a permission node decides (`permission_gate`).
 
 use super::permission_gate::{NodeAnswers, NodeGate, refuses, runnable_paths, split_usages};
+use super::{command_arguments, command_tree_accepting};
 use mod_api::{
     Command, CommandSource, PermissionError, PermissionLevel, PermissionNode, PermissionValueType,
 };
@@ -149,4 +150,43 @@ fn an_empty_gate_denies_nothing() {
     let gate = NodeGate::default();
     assert!(gate.denied_for(&mut Answers, 2).is_empty());
     assert!(gate.node(&words(&["warp"])).is_none());
+}
+
+#[test]
+fn a_usage_the_tree_leaves_out_leaves_no_gated_path() {
+    // `give` is a vanilla command, so the tree refuses the first usage after the gate took it.
+    let usages = [
+        Command::new("give <amount:integer>").with_node(&boolean("shop.give")),
+        Command::new("warp set <amount:integer>").with_node(&boolean("warp.set")),
+    ];
+    let (out, mut gate, problems) = split_usages(&usages, true);
+    assert!(problems.is_empty());
+    assert!(gate.node(&words(&["give", "amount"])).is_some());
+    let (_, _, tree_problems, rejected) =
+        command_tree_accepting(&out, |name| name == "give", &command_arguments());
+    assert_eq!(rejected, vec![0]);
+    assert_eq!(tree_problems.len(), 1);
+    gate.without_usages(&rejected);
+    assert!(gate.node(&words(&["give", "amount"])).is_none());
+    assert_eq!(
+        gate.node(&words(&["warp", "set", "amount"]))
+            .map(|node| node.name.as_str()),
+        Some("warp.set")
+    );
+}
+
+#[test]
+fn a_path_two_usages_name_stays_gated_until_both_are_left_out() {
+    let usages = [
+        Command::new("warp set <amount:integer>").with_node(&boolean("warp.set")),
+        Command::new("warp set <amount:integer>").with_node(&boolean("warp.set")),
+    ];
+    let (_, mut gate, problems) = split_usages(&usages, true);
+    assert!(problems.is_empty());
+    let path = words(&["warp", "set", "amount"]);
+    gate.without_usages(&[0]);
+    assert!(gate.node(&path).is_some());
+    gate.without_usages(&[1]);
+    assert!(gate.node(&path).is_none());
+    assert!(gate.is_empty());
 }

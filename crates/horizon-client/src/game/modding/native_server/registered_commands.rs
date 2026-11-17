@@ -4,7 +4,10 @@
 //! line naming a mod command parses with no hub; a hub, once there is one, takes that same tree.
 
 use super::permission_gate::{self, NodeGate};
-use super::{CommandArguments, Game, command_arguments, command_tree, register_dispatcher};
+use super::{
+    CommandArguments, Game, command_arguments, command_tree, command_tree_accepting,
+    register_dispatcher,
+};
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
 
@@ -53,7 +56,7 @@ impl Game<'_> {
         let mut registered = Vec::new();
         self.native_register_commands(&mut registered);
         let custom_handler = self.permission_service.custom_handler_selected();
-        let (usages, gate, gate_problems) =
+        let (usages, mut gate, gate_problems) =
             permission_gate::split_usages(&registered, custom_handler);
         for p in gate_problems {
             log::warn!("Horizon: a native mod's command was left out: {p}");
@@ -64,7 +67,7 @@ impl Game<'_> {
         );
         let arguments = command_arguments();
         let hub = self.lan.as_ref().map(|host| &host.hub);
-        let (tree, levels, problems) = command_tree(
+        let (tree, levels, problems, rejected) = command_tree_accepting(
             &usages,
             |name| hub.is_some_and(|hub| hub.vanilla_command(name)) || vanilla.find(name).is_some(),
             &arguments,
@@ -72,6 +75,9 @@ impl Game<'_> {
         for p in problems {
             log::warn!("Horizon: a native mod's command was left out: {p}");
         }
+        // A usage the tree refused (a vanilla name, another kind, a usage that does not parse)
+        // must not leave its paths gated or hidden.
+        gate.without_usages(&rejected);
         let state = &mut self.native_commands;
         state.generation = state.generation.wrapping_add(1);
         state.registered = Some(NativeCommands {

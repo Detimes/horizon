@@ -53,8 +53,9 @@ pub(super) fn runnable_paths(usage: &str) -> Vec<Vec<String>> {
 /// The usages a tree is built from, and the paths a node decides.
 #[derive(Clone, Default)]
 pub(super) struct NodeGate {
-    /// Each gated runnable path and the node that answers it.
-    paths: Vec<(Vec<String>, PermissionNode)>,
+    /// Each gated runnable path, the node that answers it, and the indexes (in the usages
+    /// [`split_usages`] returns) of the usages that name the path.
+    paths: Vec<(Vec<String>, PermissionNode, Vec<usize>)>,
 }
 
 impl NodeGate {
@@ -67,8 +68,18 @@ impl NodeGate {
     pub(super) fn node(&self, path: &[String]) -> Option<&PermissionNode> {
         self.paths
             .iter()
-            .find(|(gated, _)| gated.as_slice() == path)
-            .map(|(_, node)| node)
+            .find(|(gated, _, _)| gated.as_slice() == path)
+            .map(|(_, node, _)| node)
+    }
+
+    /// Drops the paths of usages the tree left out (`command_tree_accepting`'s rejected
+    /// indexes), so a refused usage's path stays ungated and unhidden. A path another accepted
+    /// usage also names stays.
+    pub(super) fn without_usages(&mut self, rejected: &[usize]) {
+        for (_, _, usages) in &mut self.paths {
+            usages.retain(|usage| !rejected.contains(usage));
+        }
+        self.paths.retain(|(_, _, usages)| !usages.is_empty());
     }
 
     /// The gated paths the node refuses `uuid` for, which the player's tree leaves out. An
@@ -80,8 +91,8 @@ impl NodeGate {
     ) -> Vec<Vec<String>> {
         self.paths
             .iter()
-            .filter(|(_, node)| !allowed(answers, node, uuid))
-            .map(|(path, _)| path.clone())
+            .filter(|(_, node, _)| !allowed(answers, node, uuid))
+            .map(|(path, _, _)| path.clone())
             .collect()
     }
 }
@@ -175,7 +186,7 @@ pub(super) fn split_usages(
         if let Some(path) = paths.iter().find(|path| {
             gate.paths
                 .iter()
-                .any(|(gated, other)| gated == *path && other.name != node.name)
+                .any(|(gated, other, _)| gated == *path && other.name != node.name)
         }) {
             problems.push(format!(
                 "`{}`: its path `{}` is gated by another permission node, so it is left out",
@@ -184,9 +195,11 @@ pub(super) fn split_usages(
             ));
             continue;
         }
+        let index = out.len();
         for path in paths {
-            if !gate.paths.iter().any(|(gated, _)| *gated == path) {
-                gate.paths.push((path, node.clone()));
+            match gate.paths.iter_mut().find(|(gated, _, _)| *gated == path) {
+                Some((_, _, usages)) => usages.push(index),
+                None => gate.paths.push((path, node.clone(), vec![index])),
             }
         }
         out.push(Command::new(&command.usage));

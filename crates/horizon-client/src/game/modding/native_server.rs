@@ -170,19 +170,32 @@ pub(super) fn command_tree(
     vanilla: impl Fn(&str) -> bool,
     custom: &CommandArguments,
 ) -> (Value, HashMap<String, u8>, Vec<String>) {
+    let (tree, levels, problems, _) = command_tree_accepting(commands, vanilla, custom);
+    (tree, levels, problems)
+}
+
+/// [`command_tree`], and the indexes in `commands` of the usages it left out.
+pub(super) fn command_tree_accepting(
+    commands: &[mod_api::Command],
+    vanilla: impl Fn(&str) -> bool,
+    custom: &CommandArguments,
+) -> (Value, HashMap<String, u8>, Vec<String>, Vec<usize>) {
     let mut root: Map<String, Value> = Map::new();
     let mut levels: HashMap<String, u8> = HashMap::new();
     let mut problems = Vec::new();
-    for command in commands {
+    let mut rejected = Vec::new();
+    for (index, command) in commands.iter().enumerate() {
         let nodes = match usage_nodes(&command.usage, custom) {
             Ok(n) => n,
             Err(e) => {
                 problems.push(e);
+                rejected.push(index);
                 continue;
             }
         };
         if vanilla(&nodes[0].0) {
             problems.push(format!("`{}`: vanilla has /{}", command.usage, nodes[0].0));
+            rejected.push(index);
             continue;
         }
         // A rejected usage must not open an earlier executable prefix or lower its level.
@@ -212,6 +225,7 @@ pub(super) fn command_tree(
                 "`{}`: `{name}` is another kind in an earlier usage",
                 command.usage
             ));
+            rejected.push(index);
             continue;
         }
         let mut children = &mut root;
@@ -251,7 +265,7 @@ pub(super) fn command_tree(
     } else {
         json!({"type": "root", "children": root})
     };
-    (tree, levels, problems)
+    (tree, levels, problems, rejected)
 }
 
 /// Turns the working `level` into the report's `permissions`, and drops
