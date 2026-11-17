@@ -1,6 +1,6 @@
 # Permission nodes and handlers: proposed design
 
-**Status: the approved design for arismoko/horizon#1034 (merged in arismoko/horizon#2876); the build is arismoko/horizon#1034 and is not done.** The two gather hooks and the query API described here do not exist yet; the build follows this document. It does not change sound hooks or existing permissions.
+**Status: the approved design for arismoko/horizon#1034 (merged in arismoko/horizon#2876); layer 1-4 implemented in #PR.** The two gather hooks, the query API, handler selection, the command-path requirement and the player command-tree resend described here are implemented by #PR. It does not change sound hooks or existing permissions.
 
 ## Boundary and existing contracts
 
