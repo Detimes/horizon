@@ -729,6 +729,12 @@ fn sign_update_up(payload: &[u8]) -> Result<Vec<u8>> {
     for _ in 0..4 {
         w.string(&r.string(384)?);
     }
+    // 26.3's decoder refuses trailing bytes, so an older client's packet must not reach it with any.
+    if r.remaining() != 0 {
+        return Err(crate::Error::new(
+            "sign_update with bytes after its four lines",
+        ));
+    }
     w.varint(i32::from(front));
     Ok(w.data)
 }
@@ -1175,6 +1181,32 @@ mod tests {
         assert!(r.rest().is_empty());
         let packet = play::Serverbound::decode(packet_ids::play::serverbound::SIGN_UPDATE, &up);
         assert!(packet.is_ok(), "{packet:?}");
+    }
+
+    #[test]
+    fn a_1_21_4_clients_sign_update_goes_through_the_session_into_26_3s_layout() {
+        let s = ClientSession::new(ServerVersion::V1_21_4);
+        s.reading.store(to_u8(State::Play), Ordering::Release);
+        let old_id = ServerVersion::V1_21_4
+            .serverbound_id(State::Play, packet_ids::play::serverbound::SIGN_UPDATE)
+            .unwrap();
+        let mut w = Writer::new();
+        w.i64(0x1234);
+        w.bool(false); // back side
+        for line in ["a", "bb", "", "dddd"] {
+            w.string(line);
+        }
+        let (id, payload) = s.serverbound(old_id, w.data.clone()).unwrap().unwrap();
+        assert_eq!(id, packet_ids::play::serverbound::SIGN_UPDATE);
+        let play::Serverbound::SignUpdate(sign) = play::Serverbound::decode(id, &payload).unwrap()
+        else {
+            panic!("not a sign_update");
+        };
+        assert_eq!(sign.lines, ["a", "bb", "", "dddd"].map(String::from));
+        assert!(!sign.front);
+        // 26.3 refuses bytes after the lines, so the session refuses them too.
+        w.data.push(0);
+        assert!(s.serverbound(old_id, w.data).is_err());
     }
 
     fn body(id: i32, payload: &[u8]) -> Vec<u8> {
