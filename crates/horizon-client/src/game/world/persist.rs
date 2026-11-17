@@ -19,13 +19,13 @@ mod anger_tests;
 #[cfg(test)]
 #[path = "persist/completion_tests.rs"]
 mod completion_tests;
-#[path = "persist/passenger_graph.rs"]
-mod passenger_graph;
 #[path = "persist/hurt_by_refs.rs"]
 mod hurt_by_refs;
 #[cfg(test)]
 #[path = "persist/lookup_order_tests.rs"]
 mod lookup_order_tests;
+#[path = "persist/passenger_graph.rs"]
+mod passenger_graph;
 
 use super::{FallingBlock, Game};
 use horizon_client::{
@@ -2223,7 +2223,7 @@ impl Game<'_> {
         if let (Some(shot), Tag::Compound(map)) = (shot, &mut tag) {
             map.insert("HasBeenShot".into(), shot);
         }
-        self.save_projectile_portal_cooldown(p, &mut tag);
+        self.save_portal_cooldown(p.id, &mut tag);
         Some((chunk_of(p.position), tag))
     }
     /// The UUID a save writes for a reference to `who`, as `mob_to_nbt`'s

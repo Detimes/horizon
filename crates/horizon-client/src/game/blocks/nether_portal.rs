@@ -817,22 +817,6 @@ impl Game<'_> {
             horizon_client::nether_portal::portal_cooldown(&self.portals.entities, id),
         );
     }
-    /// `Entity.saveWithoutId`: the modeled projectile codecs (arrows
-    /// included) share the live cooldown between command reads and chunk writes.
-    pub(super) fn save_projectile_portal_cooldown(
-        &self,
-        projectile: &horizon_client::projectiles::Projectile,
-        tag: &mut Tag,
-    ) {
-        if let Tag::Compound(fields) = tag {
-            let cooldown = self
-                .portals
-                .entities
-                .get(&projectile.id)
-                .map_or(0, |portal| portal.cooldown);
-            fields.insert("PortalCooldown".into(), Tag::Int(cooldown));
-        }
-    }
     /// `Entity.getDimensionChangingDelay`, by class: boats and minecarts
     /// (`VehicleEntity`) always 10, projectiles (`Projectile`) 2; any other
     /// entity takes its first passenger's delay when that is a server player
