@@ -1,6 +1,6 @@
 # Permission nodes and handlers: proposed design
 
-**Status: the approved design for arismoko/horizon#1034 (merged in arismoko/horizon#2876); layer 1-4 implemented in #17831.** The two gather hooks, the query API, handler selection, the command-path requirement and the player command-tree resend described here are implemented by #17831. It does not change sound hooks or existing permissions.
+**Status: the approved design for arismoko/horizon#1034 (merged in arismoko/horizon#2876); layer 1-4 implemented in #17831.** Implemented by #17831: the two gather hooks, the query API, handler selection, the command-path requirement and the player command-tree resend. Not implemented yet, and described below as the design's contract only: mod-written default resolvers (a node's default is `NodeDefault` data, an operator level for a Boolean node or a value for any other, not code) and declared typed contexts with serialization contracts (a query checks only the number of contexts and the length of their keys). It does not change sound hooks or existing permissions.
 
 ## Boundary and existing contracts
 
