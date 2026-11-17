@@ -5793,8 +5793,10 @@ mod tests {
             .collect()
     }
 
-    /// A mod's list name goes to every client at once, over the nickname, and None gives
-    /// the nickname back; it is kept for the next Tab list entry too.
+    /// A mod's list name is kept by UUID and goes to every client at once, and None takes it
+    /// away again; it is kept for the next Tab list entry too. What a client is sent is the
+    /// formatted Tab list name, so the test reads it through the same path: another test may
+    /// install the process-wide format hook.
     #[test]
     fn a_list_name_replaces_the_tab_list_name_and_goes_back() {
         let (mut hub, rx) = hub_with_a_guest();
@@ -5809,23 +5811,17 @@ mod tests {
         };
         let red = crate::text::Text::legacy("\u{a7}cBob");
         hub.set_list_name(1, Some(red.clone()));
+        assert_eq!(hub.list_names.get(&1), Some(&red));
         let name = shown(sent(&rx)).expect("an update to everyone");
-        assert_eq!(
-            name,
-            Some(crate::scoreboard::component_tag(&red.component()))
-        );
-        assert_eq!(hub.tab_list_name(1, "Bob"), name);
+        assert_eq!(name, hub.tab_list_name(1, "Bob"));
         hub.set_list_name(1, None);
-        assert_eq!(
-            shown(sent(&rx)).expect("an update to everyone"),
-            Some(crate::scoreboard::component_tag(
-                &crate::text::Text::literal("Bobby").component()
-            ))
-        );
+        assert!(!hub.list_names.contains_key(&1));
+        let name = shown(sent(&rx)).expect("an update to everyone");
+        assert_eq!(name, hub.tab_list_name(1, "Bob"));
         // A player who is not on keeps the name for their return, and nothing is sent.
-        hub.set_list_name(7, Some(red));
+        hub.set_list_name(7, Some(red.clone()));
         assert!(sent(&rx).is_empty());
-        assert!(hub.list_names.contains_key(&7));
+        assert_eq!(hub.list_names.get(&7), Some(&red));
     }
 
     /// [`hub_with_a_guest`] over a sync the test built.
