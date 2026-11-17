@@ -3,9 +3,9 @@
 
 use super::Game;
 use super::handler::gather_handlers;
-use super::permission_service::{LevelSource, ModAnswers, PermissionService};
+use super::permission_service::{LevelSource, ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
-    Answered, PermissionContext, PermissionError, PermissionLevel, PermissionNode, PermissionValue,
+    PermissionContext, PermissionError, PermissionLevel, PermissionNode, PermissionValue,
     PermissionValueType,
 };
 use std::{
@@ -46,6 +46,25 @@ impl QueryState {
             return Err(PermissionError::Recursive);
         }
         result
+    }
+
+    /// The built-in handler's operator levels: an online player's live level first, then
+    /// `listed` (the dedicated server's operator list by UUID), else level 0. An integrated or LAN
+    /// server has no list, so its players' levels exist only as their live level.
+    pub(crate) fn level_source(
+        &self,
+        listed: impl Fn(u128) -> Option<i32> + Send + Sync + 'static,
+    ) -> LevelSource {
+        let live = Arc::clone(&self.live_levels);
+        Arc::new(move |online, uuid| {
+            let live_level = online
+                .and_then(|_| live.lock().ok())
+                .and_then(|levels| levels.get(&uuid).copied())
+                .map(i32::from);
+            live_level
+                .or_else(|| listed(uuid))
+                .map_or(PermissionLevel::All, PermissionLevel::from_level)
+        })
     }
 
     fn set_live_level(&self, uuid: u128, level: Option<u8>) {
@@ -113,16 +132,22 @@ impl ModAnswers for Game<'_> {
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
-    ) -> Option<Answered<Result<PermissionValue, PermissionError>>> {
+    ) -> Option<ModAnswer> {
         let mut answer = None;
         self.native_permission_handler_query(handler, node, online, uuid, contexts, &mut answer);
-        answer
+        answer.map(|answered| ModAnswer {
+            mod_id: answered.mod_id.to_owned(),
+            answer: answered.answer,
+        })
     }
 }
 
 impl PermissionHost for Game<'_> {
     fn permission_parts(&mut self) -> (&mut PermissionService, &mut QueryState) {
-        (&mut self.permission_service, &mut self.permission_query_state)
+        (
+            &mut self.permission_service,
+            &mut self.permission_query_state,
+        )
     }
 
     fn online_level(&self, uuid: u128) -> Option<u8> {
@@ -143,30 +168,29 @@ impl Game<'_> {
     /// UUID. Side: server.
     pub(super) fn gather_permission_nodes(&mut self, configured_handler: &str) {
         let lists = self.server_lists.clone();
-        let live = Arc::clone(&self.permission_query_state.live_levels);
-        let levels: LevelSource = Arc::new(move |online, uuid| {
-            let live_level = online
-                .and_then(|_| live.lock().ok())
-                .and_then(|levels| levels.get(&uuid).copied())
-                .map(i32::from);
-            let level = live_level.or_else(|| {
-                let lists = lists.as_ref()?.lock().ok()?;
-                lists
-                    .ops
-                    .entries()
-                    .into_iter()
-                    .find(|entry| entry.user.id == uuid)
-                    .map(|entry| entry.level)
-            });
-            level.map_or(PermissionLevel::All, PermissionLevel::from_level)
+        let levels = self.permission_query_state.level_source(move |uuid| {
+            let lists = lists.as_ref()?.lock().ok()?;
+            let level = lists
+                .ops
+                .entries()
+                .into_iter()
+                .find(|entry| entry.user.id == uuid)
+                .map(|entry| entry.level);
+            level
         });
         let mut service = PermissionService::new();
         service.set_level_source(levels);
         Self::native_permission_gather_nodes(&mut service);
         let mut handlers = Vec::new();
         self.native_permission_gather_handler(&mut handlers);
-        if let Err(error) = gather_handlers(&mut service, &handlers, configured_handler) {
-            log::error!("permission handlers were not gathered ({error}): no permission query is answered");
+        let gathered: Vec<(&str, &str)> = handlers
+            .iter()
+            .map(|handler| (handler.answer.as_str(), handler.mod_id))
+            .collect();
+        if let Err(error) = gather_handlers(&mut service, &gathered, configured_handler) {
+            log::error!(
+                "permission handlers were not gathered ({error}): no permission query is answered"
+            );
         }
         self.permission_service = service;
     }

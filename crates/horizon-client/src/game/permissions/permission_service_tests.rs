@@ -587,3 +587,66 @@ fn the_collector_declares_nodes_like_register_node() {
         Ok(true)
     );
 }
+
+#[test]
+fn a_custom_handler_is_reported_only_when_its_factory_was_selected() {
+    let built_in = ready(vec![(
+        boolean("a.flag"),
+        NodeDefault::Level(PermissionLevel::All),
+    )]);
+    assert!(!built_in.custom_handler_selected());
+
+    let mut unknown = PermissionService::new();
+    unknown
+        .register_handler_factory(
+            "policy",
+            fixed(
+                Ok(PermissionValue::Boolean(true)),
+                Arc::new(AtomicU32::new(0)),
+            ),
+        )
+        .unwrap();
+    unknown.finish_gathering(Some("missing"));
+    assert!(!unknown.custom_handler_selected());
+
+    let mut selected = PermissionService::new();
+    selected
+        .register_handler_factory(
+            "policy",
+            fixed(
+                Ok(PermissionValue::Boolean(true)),
+                Arc::new(AtomicU32::new(0)),
+            ),
+        )
+        .unwrap();
+    selected.finish_gathering(Some("policy"));
+    assert!(selected.custom_handler_selected());
+}
+
+#[test]
+fn a_second_gathering_changes_nothing() {
+    let calls = Arc::new(AtomicU32::new(0));
+    let mut service = ready(vec![(
+        boolean("a.flag"),
+        NodeDefault::Level(PermissionLevel::All),
+    )]);
+    // A join or a resource reload must not select a handler or declare a node afterwards.
+    service.finish_gathering(Some("policy"));
+    assert!(!service.custom_handler_selected());
+    assert_eq!(
+        service.register_handler_factory(
+            "policy",
+            fixed(Ok(PermissionValue::Boolean(false)), calls.clone()),
+        ),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        service.register_node(boolean("a.late"), NodeDefault::Level(PermissionLevel::All)),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("a.flag"), None, CAROL),
+        Ok(true)
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}

@@ -7,8 +7,7 @@
 
 use super::permission_service::{ModAnswers, PermissionHandler, PermissionService};
 use mod_api::{
-    Answered, PermissionContext, PermissionError, PermissionNode, PermissionValue,
-    PermissionValueType,
+    PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
 
 /// A handler a mod provided. Every query goes to that mod. Side: server.
@@ -51,7 +50,7 @@ impl PermissionHandler for ModPermissionHandler {
             );
             return Err(PermissionError::HandlerFailed);
         };
-        if answered.mod_id != self.owner.as_str() {
+        if answered.mod_id != self.owner {
             log::warn!(
                 "permission node \"{}\": handler \"{}\" was answered by mod \"{}\", not by its provider \"{}\"",
                 node.name,
@@ -97,11 +96,11 @@ fn value_matches(value: &PermissionValue, ty: &PermissionValueType) -> bool {
 
 /// The handler `permission-handler` selects. An empty setting selects none. A name no mod
 /// gathered is logged, naming the id, and selects none: the default handler answers. Side: server.
-pub(crate) fn configured_handler(configured: &str, gathered: &[Answered<String>]) -> Option<String> {
+pub(crate) fn configured_handler(configured: &str, gathered: &[(&str, &str)]) -> Option<String> {
     if configured.is_empty() {
         return None;
     }
-    if gathered.iter().any(|handler| handler.answer == configured) {
+    if gathered.iter().any(|(id, _)| *id == configured) {
         return Some(configured.to_owned());
     }
     log::warn!(
@@ -110,25 +109,27 @@ pub(crate) fn configured_handler(configured: &str, gathered: &[Answered<String>]
     None
 }
 
-/// Registers each gathered handler factory, selects one and publishes the service through
+/// Registers each gathered handler factory (`(id, providing mod)` pairs), selects one and publishes the service through
 /// `finish_gathering`. A duplicate or empty id returns its error before anything is selected, so
-/// the service stays uninitialized and refuses every query. The node set must already be gathered
-/// (L1). Side: server.
+/// the service stays uninitialized and refuses every query. The node set must already be gathered.
+/// Side: server.
 pub(crate) fn gather_handlers(
     service: &mut PermissionService,
-    gathered: &[Answered<String>],
+    gathered: &[(&str, &str)],
     configured: &str,
 ) -> Result<(), PermissionError> {
-    for entry in gathered {
-        if entry.answer.is_empty() {
+    for (id, owner) in gathered {
+        if id.is_empty() {
             return Err(PermissionError::InvalidInput);
         }
-        let handler = ModPermissionHandler::new(&entry.answer, entry.mod_id);
+        let handler = ModPermissionHandler::new(id, owner);
         service.register_handler_factory(
-            &entry.answer,
-            Box::new(move |_nodes: &[PermissionNode]| -> Box<dyn PermissionHandler> {
-                Box::new(handler)
-            }),
+            id,
+            Box::new(
+                move |_nodes: &[PermissionNode]| -> Box<dyn PermissionHandler> {
+                    Box::new(handler)
+                },
+            ),
         )?;
     }
     let selected = configured_handler(configured, gathered);

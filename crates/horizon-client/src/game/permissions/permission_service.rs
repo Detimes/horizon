@@ -3,7 +3,7 @@
 //! explicit refusal, and no refusal falls back to a grant.
 
 use mod_api::{
-    Answered, NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
+    NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
     PermissionNodes, PermissionValue, PermissionValueType, check_contexts, check_node_name,
 };
 use std::{
@@ -27,6 +27,15 @@ pub(crate) type LevelSource = Arc<dyn Fn(Option<u128>, u128) -> PermissionLevel 
 pub(crate) type HandlerFactory =
     Box<dyn FnOnce(&[PermissionNode]) -> Box<dyn PermissionHandler> + Send>;
 
+/// What a mod answered to one handler query, and the mod that gave the answer.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ModAnswer {
+    /// The `[mod] id` of the mod that answered.
+    pub(crate) mod_id: String,
+    /// Its answer: the node's typed value, or the explicit error it chose.
+    pub(crate) answer: Result<PermissionValue, PermissionError>,
+}
+
 /// Asks the mods for one query of a handler they provide. The answer names the mod that gave
 /// it; `None` means no mod answered. The game implements it by firing `permission_handler_query`,
 /// which hands the mod the game's own server host, so the service never holds the game.
@@ -41,7 +50,7 @@ pub(crate) trait ModAnswers {
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
-    ) -> Option<Answered<Result<PermissionValue, PermissionError>>>;
+    ) -> Option<ModAnswer>;
 }
 
 /// The one policy that answers every node of a server. It is `Send` because the service that
@@ -284,7 +293,7 @@ impl ModAnswers for NoMods {
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
-    ) -> Option<Answered<Result<PermissionValue, PermissionError>>> {
+    ) -> Option<ModAnswer> {
         None
     }
 }

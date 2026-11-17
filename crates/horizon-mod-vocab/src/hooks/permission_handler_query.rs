@@ -6,8 +6,10 @@ pub trait Hooks {
     /// other mods leave it unanswered. Answer with the node's typed value, or with the explicit
     /// error the handler chooses. The game refuses an answer from a mod other than the one that
     /// provided the handler, and treats an unanswered query as a handler failure: the query never
-    /// falls back to a grant. `online` is the online player's handle, `None` for an offline UUID,
-    /// and `contexts` holds only the context keys the node declares. Side: server.
+    /// falls back to a grant. `online` is the player's UUID when the player is on this server (ask
+    /// `host.player(uuid)` for the handle) and `None` for an offline UUID, and `contexts` holds the
+    /// contexts the caller supplied. A query this handler asks again from inside its answer fails
+    /// both queries with `Recursive`. Side: server.
     #[hook(
         side = "server",
         contract = "replace",

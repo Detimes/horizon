@@ -1,10 +1,9 @@
 //! Tests for gathering, selection and the mod-backed handler. Expected values are literals.
 
 use super::handler::{ModPermissionHandler, configured_handler, gather_handlers};
-use super::permission_service::{ModAnswers, PermissionHandler, PermissionService};
+use super::permission_service::{ModAnswer, ModAnswers, PermissionHandler, PermissionService};
 use mod_api::{
-    Answered, PermissionContext, PermissionError, PermissionNode, PermissionValue,
-    PermissionValueType,
+    PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
 
 /// A mod's answer as the test double gives it: the mod that answers and a non-capturing
@@ -22,11 +21,11 @@ impl ModAnswers for Reply {
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
-    ) -> Option<Answered<Result<PermissionValue, PermissionError>>> {
+    ) -> Option<ModAnswer> {
         let make = self.value?;
-        Some(Answered {
+        Some(ModAnswer {
+            mod_id: self.mod_id.to_owned(),
             answer: make(),
-            mod_id: self.mod_id,
         })
     }
 }
@@ -48,13 +47,9 @@ fn ask(
     handler.query(node, Some(7), 7, &[], &mut Reply { mod_id, value })
 }
 
-fn gathered(ids: &[(&str, &'static str)]) -> Vec<Answered<String>> {
-    ids.iter()
-        .map(|(id, mod_id)| Answered {
-            answer: (*id).to_owned(),
-            mod_id: *mod_id,
-        })
-        .collect()
+/// `(id, providing mod)` pairs as `permission_gather_handler` gathered them.
+fn gathered<'a>(ids: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
+    ids.to_vec()
 }
 
 #[test]
