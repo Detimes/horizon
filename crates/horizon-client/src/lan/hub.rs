@@ -1431,7 +1431,6 @@ impl Hub {
             show_hat: Some(guest.is_none_or(|g| g.info.model_customisation & 0x40 != 0)),
         }
     }
-    /// ServerPlayer.getTabListDisplayName: the nickname, if any, as mods format it.
     /// ServerPlayer.getTabListDisplayName: a mod's list name, else the nickname, if any, as
     /// mods format it.
     fn tab_list_name(&self, uuid: u128, name: &str) -> Option<Tag> {
