@@ -40,7 +40,7 @@ mod tests {
     /// The sidebar reaches only that player: its objective, the sidebar slot and one score a
     /// line with the right-hand text as a fixed number format; None removes it.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn player_set_sidebar_sends_the_objective_and_its_lines() {
         with_guests(|game| {
             let (tx, rx) = std::sync::mpsc::channel();

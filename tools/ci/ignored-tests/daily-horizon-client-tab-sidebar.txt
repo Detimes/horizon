@@ -1,0 +1,2 @@
+# horizon-rust/horizon#17844: these mod-API tests read the prepared 26.3 data.
+horizon-client game::native_player_sidebar::tests::player_set_sidebar_sends_the_objective_and_its_lines lib daily resources
