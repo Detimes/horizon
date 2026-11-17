@@ -74,7 +74,15 @@ mod tests {
         with_guests(|game| {
             let b = game.player(13).unwrap();
             assert!(game.count_packets(true));
-            let sender = game.lan.as_ref().unwrap().hub.guest(13).unwrap().sender.clone();
+            let sender = game
+                .lan
+                .as_ref()
+                .unwrap()
+                .hub
+                .guest(13)
+                .unwrap()
+                .sender
+                .clone();
             sender.send(vec![0x2b, 1, 2]);
             sender.send(vec![0x2b]);
             let counts = game.player_take_packet_counts(b).unwrap();

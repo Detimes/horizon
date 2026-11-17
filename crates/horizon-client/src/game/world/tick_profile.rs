@@ -274,7 +274,11 @@ mod tests {
         let pig = "minecraft:pig";
         set_sampling(false);
         set_mod_sampling(true);
-        add("minecraft:overworld", pig, start().expect("sampled for the mod"));
+        add(
+            "minecraft:overworld",
+            pig,
+            start().expect("sampled for the mod"),
+        );
         assert!(take().is_empty(), "the report sampled nothing");
         set_sampling(true);
         add("minecraft:overworld", pig, Instant::now());
