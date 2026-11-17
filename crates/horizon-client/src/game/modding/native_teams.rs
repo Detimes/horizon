@@ -59,7 +59,7 @@ mod tests {
     /// Teams are made, coloured, joined, left and removed in the world's scoreboard, which
     /// the next tick's sync sends to the players; refused input changes nothing.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn teams_are_kept_in_the_worlds_scoreboard() {
         with_guests(|game| {
             assert!(game.team_set("red", Some("red")));
