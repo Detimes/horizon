@@ -42,6 +42,16 @@ pub trait PlayersServerHost {
     /// taken: it lets nobody else on.
     #[access(WorldOnly)]
     fn server_set_max_players(&mut self, max_players: u32) -> Result<(), PlayerLimitRefusal>;
+    /// Side: server.
+    /// Sends `player` their command tree again, as vanilla does on join, respawn, dimension
+    /// change and an operator change: the tree their permission level may use, with the mods' say
+    /// on it (a command whose check fails for them is left out). Only that player's client is sent
+    /// a packet. Call it when a mod's answers for that player change; the server checks every run
+    /// anyway, so a stale tree affects suggestions only. Refuses, sending nothing, with
+    /// `PlayerWorldRefusal`: `Client`, `Stale` (no such player in the server's list, or a handle of
+    /// an earlier open of the world) and `NoConnection` (a fake player).
+    #[access(WorldOnly)]
+    fn player_resend_command_tree(&mut self, player: PlayerRef) -> Result<(), PlayerWorldRefusal>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
