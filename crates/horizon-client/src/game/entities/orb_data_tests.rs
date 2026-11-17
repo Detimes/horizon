@@ -212,7 +212,7 @@ fn the_merge_keeps_the_live_orb_and_its_portal_process() {
 /// #16909: an orb and an arrow summoned with `PortalCooldown:250` save it back
 /// as 250 (`Entity.saveWithoutId` writes the live countdown).
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_summoned_portal_cooldown_is_saved_for_an_orb_and_an_arrow() {
     game(|game| {
         let orb = load(
