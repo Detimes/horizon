@@ -1,7 +1,9 @@
 //! Unit tests of the command paths a permission node decides (`permission_gate`).
 
 use super::permission_gate::{NodeAnswers, NodeGate, refuses, runnable_paths, split_usages};
-use mod_api::{Command, CommandSource, PermissionError, PermissionLevel, PermissionNode, PermissionValueType};
+use mod_api::{
+    Command, CommandSource, PermissionError, PermissionLevel, PermissionNode, PermissionValueType,
+};
 
 fn boolean(name: &str) -> PermissionNode {
     PermissionNode {
@@ -73,7 +75,10 @@ fn with_a_custom_handler_a_gated_usage_has_no_level_and_its_path_is_gated() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].level, 0);
     let path = words(&["warp", "set", "amount"]);
-    assert_eq!(gate.node(&path).map(|node| node.name.as_str()), Some("warp.set"));
+    assert_eq!(
+        gate.node(&path).map(|node| node.name.as_str()),
+        Some("warp.set")
+    );
     assert!(gate.node(&words(&["warp"])).is_none());
 }
 
@@ -108,7 +113,8 @@ fn a_gated_path_already_gated_by_another_node_is_left_out() {
     let (out, gate, problems) = split_usages(&usages, true);
     assert_eq!(out.len(), 1);
     assert_eq!(
-        gate.node(&words(&["warp", "set", "amount"])).map(|node| node.name.as_str()),
+        gate.node(&words(&["warp", "set", "amount"]))
+            .map(|node| node.name.as_str()),
         Some("warp.first")
     );
     assert_eq!(problems.len(), 1);
@@ -116,9 +122,7 @@ fn a_gated_path_already_gated_by_another_node_is_left_out() {
 
 #[test]
 fn denied_paths_are_the_ones_the_answer_refuses_or_fails() {
-    let usages = [
-        Command::new("warp set <amount:integer>").with_node(&boolean("warp.set")),
-    ];
+    let usages = [Command::new("warp set <amount:integer>").with_node(&boolean("warp.set"))];
     let (_, gate, _) = split_usages(&usages, true);
     // Uuid 1 is allowed and keeps the path; uuid 2 and an uuid that fails both lose it.
     assert_eq!(gate.denied_for(&mut Answers, 1), Vec::<Vec<String>>::new());

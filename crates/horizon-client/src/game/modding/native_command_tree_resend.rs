@@ -20,7 +20,11 @@ impl Game<'_> {
         }
         self.native_filter_commands(Some(conn));
         let host = self.lan.as_ref().ok_or(Refusal::Stale)?;
-        let index = host.hub.guests.connection_index(conn).ok_or(Refusal::Stale)?;
+        let index = host
+            .hub
+            .guests
+            .connection_index(conn)
+            .ok_or(Refusal::Stale)?;
         host.hub.send_commands(index);
         Ok(())
     }

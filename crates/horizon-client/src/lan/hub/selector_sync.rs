@@ -51,17 +51,14 @@ fn hide_command_paths(packet: &mut play::Commands, paths: &[Vec<String>]) {
         let mut chain: Vec<(usize, usize)> = Vec::new();
         let mut current = packet.root as usize;
         for name in path {
-            let next = packet
-                .nodes
-                .get(current)
-                .and_then(|node| {
-                    node.children.iter().copied().find(|&child| {
-                        packet
-                            .nodes
-                            .get(child as usize)
-                            .is_some_and(|candidate| candidate.name == *name)
-                    })
-                });
+            let next = packet.nodes.get(current).and_then(|node| {
+                node.children.iter().copied().find(|&child| {
+                    packet
+                        .nodes
+                        .get(child as usize)
+                        .is_some_and(|candidate| candidate.name == *name)
+                })
+            });
             let Some(next) = next else {
                 chain.clear();
                 break;
@@ -77,7 +74,9 @@ fn hide_command_paths(packet: &mut play::Commands, paths: &[Vec<String>]) {
             if !packet.nodes[child].children.is_empty() || packet.nodes[child].executable {
                 break;
             }
-            packet.nodes[parent].children.retain(|&c| c as usize != child);
+            packet.nodes[parent]
+                .children
+                .retain(|&c| c as usize != child);
         }
     }
 }
@@ -132,7 +131,11 @@ mod hide_command_paths_tests {
         let mut packet = tree();
         hide_command_paths(
             &mut packet,
-            &[vec!["warp".to_owned(), "set".to_owned(), "amount".to_owned()]],
+            &[vec![
+                "warp".to_owned(),
+                "set".to_owned(),
+                "amount".to_owned(),
+            ]],
         );
         assert!(packet.nodes[1].executable);
         assert!(packet.nodes[2].executable);
@@ -143,10 +146,7 @@ mod hide_command_paths_tests {
     #[test]
     fn hiding_a_prefix_end_keeps_the_arguments_below_it() {
         let mut packet = tree();
-        hide_command_paths(
-            &mut packet,
-            &[vec!["warp".to_owned(), "set".to_owned()]],
-        );
+        hide_command_paths(&mut packet, &[vec!["warp".to_owned(), "set".to_owned()]]);
         assert!(packet.nodes[1].executable);
         assert!(!packet.nodes[2].executable);
         // `set` stays as the parent of `amount`, so the branch is kept but not runnable at `set`.

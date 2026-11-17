@@ -73,7 +73,11 @@ impl NodeGate {
 
     /// The gated paths the node refuses `uuid` for, which the player's tree leaves out. An
     /// error refuses the path too, and is logged.
-    pub(super) fn denied_for<A: NodeAnswers>(&self, answers: &mut A, uuid: u128) -> Vec<Vec<String>> {
+    pub(super) fn denied_for<A: NodeAnswers>(
+        &self,
+        answers: &mut A,
+        uuid: u128,
+    ) -> Vec<Vec<String>> {
         self.paths
             .iter()
             .filter(|(_, node)| !allowed(answers, node, uuid))
@@ -98,7 +102,11 @@ fn allowed<A: NodeAnswers>(answers: &mut A, node: &PermissionNode, uuid: u128) -
 
 /// Whether a run of a gated path is refused for `origin`. Only a player has a UUID to ask about;
 /// any other origin (console, command block, function) is refused, and the refusal is logged.
-pub(super) fn refuses<A: NodeAnswers>(answers: &mut A, node: &PermissionNode, origin: &CommandSource) -> bool {
+pub(super) fn refuses<A: NodeAnswers>(
+    answers: &mut A,
+    node: &PermissionNode,
+    origin: &CommandSource,
+) -> bool {
     let CommandSource::Player { player, .. } = origin else {
         log::warn!(
             "Horizon: permission node `{}` needs a player; a command from this source is refused",
@@ -127,7 +135,10 @@ pub(super) fn path_names<R>(
 /// a usage with a node goes on at level 0 and its runnable paths are gated. Refused usages (a
 /// node that is not Boolean, a path it shares with an ungated usage, or a path another node
 /// gates) are left out and named in the returned problems.
-pub(super) fn split_usages(usages: &[Command], custom_handler: bool) -> (Vec<Command>, NodeGate, Vec<String>) {
+pub(super) fn split_usages(
+    usages: &[Command],
+    custom_handler: bool,
+) -> (Vec<Command>, NodeGate, Vec<String>) {
     let mut out = Vec::with_capacity(usages.len());
     let mut gate = NodeGate::default();
     let mut problems = Vec::new();

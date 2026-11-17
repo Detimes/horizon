@@ -79,10 +79,19 @@ fn each_resend_refusal_has_its_own_name_and_sends_nothing() {
         let b = game.player(13).unwrap();
         let rx = listen(game, 13);
         let unknown = mod_api::__private::game::player_ref(b.entity(), 77);
-        assert_eq!(game.player_resend_command_tree(unknown), Err(Refusal::Stale));
-        assert_eq!(game.player_resend_command_tree(stale(b)), Err(Refusal::Stale));
+        assert_eq!(
+            game.player_resend_command_tree(unknown),
+            Err(Refusal::Stale)
+        );
+        assert_eq!(
+            game.player_resend_command_tree(stale(b)),
+            Err(Refusal::Stale)
+        );
         let machine = fake(game);
-        assert_eq!(game.player_resend_command_tree(machine), Err(Refusal::NoConnection));
+        assert_eq!(
+            game.player_resend_command_tree(machine),
+            Err(Refusal::NoConnection)
+        );
         assert_eq!(trees(&rx), 0, "a refused resend sends nothing");
     });
 }
