@@ -192,3 +192,12 @@ The inventory menu has no slot for body or saddle. All four player data writes
 (`set_inventory_slot`, `set_ender_chest_slot`, `give_stack`, `set_persistent_data`)
 are undone by an open transaction abort; equipment effects and overflow drops
 wait for the outermost commit.
+
+## Advancement progress
+
+For mods that carry a player's advancements between servers. Server only. `player.advancements(host)` returns
+the progress as the JSON text `PlayerAdvancements.save` writes (each started advancement's `criteria`, with grant
+dates, and `done`, plus `DataVersion`), or `None` for a stale or unavailable player and on a client.
+`player.set_advancements(host, json)` replaces the whole progress from a JSON object, as a loaded file does:
+advancements this server lacks are dropped, nothing is awarded (no toast, chat line or reward), and the client
+receives the full tree with its next update. It returns `false`, changing nothing, for other input.
