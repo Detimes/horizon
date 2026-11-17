@@ -1341,7 +1341,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires prepared resources"]
+    #[ignore = "daily"]
     fn loaded_rotation_survives_a_shulker_tick() {
         assert!(crate::mobs::world::with_test_world(&[], |world, _| {
             let mut m = shulker();
