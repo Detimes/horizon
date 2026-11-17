@@ -107,7 +107,7 @@ fn a_summoned_orb_keeps_the_position_it_was_asked_for() {
 /// `Entity.getDisplayName` of an ominous item spawner: its CustomName from the
 /// compound it keeps (`OminousItemSpawner.raw`), else the entity type's name.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_ominous_item_spawner_is_named_by_its_custom_name() {
     with_game(|game| {
         assert!(
