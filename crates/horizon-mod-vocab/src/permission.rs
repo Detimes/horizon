@@ -197,7 +197,9 @@ impl PlayerRef {
         if node.value_type != PermissionValueType::Boolean {
             return Err(PermissionError::WrongType);
         }
-        if host.player(self.uuid()).is_none() {
+        // The server's player of this UUID must be this very handle: a handle kept from an earlier
+        // open of the world names the same UUID and is stale. A respawn keeps the handle equal.
+        if host.player(self.uuid()) != Some(self) {
             return Err(PermissionError::UnknownPlayer);
         }
         match host.permission_query(node, self.uuid(), &[])? {
