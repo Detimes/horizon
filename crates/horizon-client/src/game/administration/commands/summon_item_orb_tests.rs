@@ -112,7 +112,7 @@ fn an_ominous_item_spawner_is_named_by_its_custom_name() {
     with_game(|game| {
         assert!(
             game.run_command(
-                r#"summon minecraft:ominous_item_spawner 4.5 200 4.5 {CustomName:'"sw"'}"#
+                r#"summon minecraft:ominous_item_spawner 4.5 200 4.5 {CustomName:"sw"}"#
             ),
             "{:?}",
             game.ui.chat.recent_lines(3)
