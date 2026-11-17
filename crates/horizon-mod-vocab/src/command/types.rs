@@ -1,5 +1,7 @@
 //! Commands and their authority.
 
+use crate::permission::PermissionNode;
+
 /// Literal words use lowercase letters, digits, `_` and `-`. Only the first word may
 /// additionally begin with one `/`: register `/set <x:word>` and type `//set stone` in chat.
 /// The command's literals retain `/set`. A slash alone, repeated leading slashes and
@@ -34,7 +36,11 @@ pub struct Command {
     pub usage: String,
     /// The operator level a player needs to run this usage (0: everyone).
     /// Shared prefixes stay visible when needed to reach a lower-level usage.
+    /// Side: server. Not used while a usage has a `node` and a custom permission
+    /// handler is selected; see [`Self::with_node`].
     pub level: u8,
+    /// The Boolean permission node this usage asks, set by [`Self::with_node`]. Side: server.
+    pub node: Option<PermissionNode>,
 }
 
 impl Command {
@@ -43,6 +49,7 @@ impl Command {
         Self {
             usage: usage.to_owned(),
             level: 0,
+            node: None,
         }
     }
     /// The same, for operators of `level` and above.
@@ -50,7 +57,16 @@ impl Command {
         Self {
             usage: usage.to_owned(),
             level: level.min(4),
+            node: None,
         }
+    }
+    /// The same usage, asking a Boolean permission node instead of its level when a custom
+    /// permission handler is selected: the handler's answer decides who sees and runs it, and a
+    /// handler error refuses the command without falling back to `level`. With no custom
+    /// handler the usage keeps its level. A node that is not Boolean refuses the usage. Side: server.
+    pub fn with_node(mut self, node: &PermissionNode) -> Self {
+        self.node = Some(node.clone());
+        self
     }
 }
 

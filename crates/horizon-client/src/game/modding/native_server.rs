@@ -9,8 +9,13 @@
 //! server thread's), never on a client's.
 #[path = "native_server/argument_kinds.rs"]
 mod argument_kinds;
+#[path = "native_server/permission_gate.rs"]
+mod permission_gate;
 #[path = "native_server/registered_commands.rs"]
 mod registered_commands;
+#[cfg(test)]
+#[path = "native_server/permission_gate_tests.rs"]
+mod permission_gate_tests;
 #[cfg(test)]
 #[path = "native_server/selector_tests.rs"]
 mod selector_tests;
@@ -1881,6 +1886,7 @@ impl Game<'_> {
             .map(|g| (g.conn, g.uuid, g.name.clone()))
             .collect();
         for (conn, uuid, name) in players {
+            let hidden_paths = self.node_hidden_paths(uuid);
             let Some(host) = self.lan.as_ref() else {
                 return;
             };
@@ -1900,9 +1906,38 @@ impl Game<'_> {
             if let Some(host) = self.lan.as_mut() {
                 let _ = host.hub.update_guest(conn, |g| {
                     g.hidden_commands = names.into_iter().filter(|n| !kept.contains(n)).collect();
+                    g.hidden_command_paths = hidden_paths;
                 });
             }
         }
+    }
+
+    /// The gated command paths a permission node refuses this player (empty without a custom
+    /// permission handler): their tree leaves them out.
+    fn node_hidden_paths(&mut self, uuid: u128) -> Vec<Vec<String>> {
+        let Some(registered) = self.native_commands.registered.as_ref() else {
+            return Vec::new();
+        };
+        if registered.gate.is_empty() {
+            return Vec::new();
+        }
+        registered
+            .gate
+            .denied_for(&mut self.permission_service, uuid)
+    }
+
+    /// Whether a gated command path refuses the run. Its node is asked for the acting player; an
+    /// error or a non-player origin refuses it (`permission_gate::refuses`).
+    fn native_gate_refuses(&mut self, path: &[String], origin: &mod_api::CommandSource) -> bool {
+        let Some(node) = self
+            .native_commands
+            .registered
+            .as_ref()
+            .and_then(|registered| registered.gate.node(path))
+        else {
+            return false;
+        };
+        permission_gate::refuses(&mut self.permission_service, node, origin)
     }
 
     /// `Hub::resend_commands` with the mods' say on each tree.
@@ -1962,8 +1997,13 @@ impl Game<'_> {
     /// The shared command-node executor, also reached by functions and `execute`.
     pub(super) fn run_native_command(&mut self, context: Context) -> super::commands::R<i32> {
         use super::commands::err;
+        let path = permission_gate::path_names(&self.ui.dispatcher.0, &context.nodes);
         let command = self.resolve_native_command(context)?;
         let origin = self.native_command_origin(self.ui.registries.permission)?;
+        // A refused gated path answers as an unknown command, as its tree leaves it out.
+        if self.native_gate_refuses(&path, &origin) {
+            return Err(err("command.unknown.command", &[]));
+        }
         let mut ran = false;
         self.native_run_mod_command(&origin, &command, &mut ran);
         if ran {

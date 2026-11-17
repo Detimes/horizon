@@ -3,6 +3,7 @@
 //! before its functions load, and on each `/reload`. The tree lives on `Game`, so a function
 //! line naming a mod command parses with no hub; a hub, once there is one, takes that same tree.
 
+use super::permission_gate::{self, NodeGate};
 use super::{CommandArguments, Game, command_arguments, command_tree, register_dispatcher};
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
@@ -16,6 +17,9 @@ pub(in crate::game) struct NativeCommands {
     pub(super) arguments: CommandArguments,
     /// The usages the mods registered, for the hub's tree with the moderation commands.
     usages: Vec<mod_api::Command>,
+    /// The command paths a permission node decides for each player (empty without a custom
+    /// permission handler).
+    pub(super) gate: NodeGate,
 }
 
 /// The session's state of the mods' commands.
@@ -46,8 +50,14 @@ impl Game<'_> {
         if !self.is_logical_server() {
             return;
         }
-        let mut usages = Vec::new();
-        self.native_register_commands(&mut usages);
+        let mut registered = Vec::new();
+        self.native_register_commands(&mut registered);
+        let custom_handler = self.permission_service.custom_handler_selected();
+        let (usages, gate, gate_problems) =
+            permission_gate::split_usages(&registered, custom_handler);
+        for p in gate_problems {
+            log::warn!("Horizon: a native mod's command was left out: {p}");
+        }
         let vanilla = horizon_client::command::vanilla::session_dispatcher(
             &self.level.rule_registry,
             features,
@@ -69,6 +79,7 @@ impl Game<'_> {
             tree,
             arguments,
             usages,
+            gate,
         });
         self.ui.dispatcher.0 = Arc::new(vanilla);
         self.restore_native_commands();
