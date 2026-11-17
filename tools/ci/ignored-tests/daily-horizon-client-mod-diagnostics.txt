@@ -1,0 +1,2 @@
+# A mod's mob cost sampling and per-player packet counts (mob_cost_sampling, take_mob_costs, count_packets, player_take_packet_counts).
+horizon-client game::native_diagnostics::tests::a_players_packets_are_counted_while_asked lib daily resources
