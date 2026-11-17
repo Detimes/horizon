@@ -2,38 +2,29 @@
 //! `permission-handler`, and the handler that asks the providing mod through
 //! `permission_handler_query`. A failed answer is an explicit error, never a grant. Side: server.
 //!
-//! L1 provides (in `permissions/mod.rs`): `PermissionHandler`, `PermissionService`, the
-//! `register_handler_factory` / `finish_gathering` / `query` contract, and the `mod handler;`
-//! line that includes this file.
+//! The permission service (`permission_service.rs`) provides `PermissionHandler`,
+//! `register_handler_factory`, `finish_gathering` and `query`.
 
-use super::{PermissionHandler, PermissionService};
+use super::permission_service::{ModAnswers, PermissionHandler, PermissionService};
 use mod_api::{
     Answered, PermissionContext, PermissionError, PermissionNode, PermissionValue,
     PermissionValueType,
 };
-use std::rc::Rc;
-
-/// Asks the mods for one query of a handler they provide. The answer names the mod that gave
-/// it. `None` means no mod answered. The game implements it by firing `permission_handler_query`.
-/// Side: server.
-pub(crate) trait ModAnswers {
-    /// Asks for `node` of handler `handler`, for the online player `online` (`None` when the
-    /// UUID is offline) with the declared `contexts`.
-    fn answer(
-        &self,
-        handler: &str,
-        node: &PermissionNode,
-        online: Option<u128>,
-        uuid: u128,
-        contexts: &[PermissionContext],
-    ) -> Option<Answered<Result<PermissionValue, PermissionError>>>;
-}
 
 /// A handler a mod provided. Every query goes to that mod. Side: server.
 pub(crate) struct ModPermissionHandler {
     id: String,
     owner: String,
-    answers: Rc<dyn ModAnswers>,
+}
+
+impl ModPermissionHandler {
+    /// The handler `id` that the mod `owner` provides.
+    pub(crate) fn new(id: &str, owner: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            owner: owner.to_owned(),
+        }
+    }
 }
 
 impl PermissionHandler for ModPermissionHandler {
@@ -49,8 +40,9 @@ impl PermissionHandler for ModPermissionHandler {
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
+        answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
-        let Some(answered) = self.answers.answer(&self.id, node, online, uuid, contexts) else {
+        let Some(answered) = answers.answer(&self.id, node, online, uuid, contexts) else {
             log::warn!(
                 "permission node \"{}\": handler \"{}\" got no answer from mod \"{}\"",
                 node.name,
@@ -125,25 +117,17 @@ pub(crate) fn configured_handler(configured: &str, gathered: &[Answered<String>]
 pub(crate) fn gather_handlers(
     service: &mut PermissionService,
     gathered: &[Answered<String>],
-    answers: &Rc<dyn ModAnswers>,
     configured: &str,
 ) -> Result<(), PermissionError> {
     for entry in gathered {
         if entry.answer.is_empty() {
             return Err(PermissionError::InvalidInput);
         }
-        let id = entry.answer.clone();
-        let owner = entry.mod_id.to_owned();
-        let answers = Rc::clone(answers);
-        let handler_id = id.clone();
+        let handler = ModPermissionHandler::new(&entry.answer, entry.mod_id);
         service.register_handler_factory(
-            &id,
+            &entry.answer,
             Box::new(move |_nodes: &[PermissionNode]| -> Box<dyn PermissionHandler> {
-                Box::new(ModPermissionHandler {
-                    id: handler_id,
-                    owner,
-                    answers,
-                })
+                Box::new(handler)
             }),
         )?;
     }
@@ -151,7 +135,3 @@ pub(crate) fn gather_handlers(
     service.finish_gathering(selected.as_deref());
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "handler_tests.rs"]
-mod tests;

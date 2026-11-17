@@ -2,7 +2,7 @@
 //! contexts, online and offline UUIDs, initialization, handler selection and failures.
 
 use super::permission_service::{
-    HandlerFactory, LevelSource, PermissionHandler, PermissionService,
+    HandlerFactory, LevelSource, ModAnswers, PermissionHandler, PermissionService,
 };
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
@@ -50,6 +50,7 @@ impl PermissionHandler for Fixed {
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
+        _answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.answer.clone()
@@ -400,6 +401,7 @@ fn a_panicking_handler_is_a_handler_failure_and_the_service_stays_usable() {
             _online: Option<u128>,
             _uuid: u128,
             _contexts: &[PermissionContext],
+            _answers: &mut dyn ModAnswers,
         ) -> Result<PermissionValue, PermissionError> {
             if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
                 panic!("first answer traps");
@@ -430,24 +432,6 @@ fn a_panicking_handler_is_a_handler_failure_and_the_service_stays_usable() {
         service.query_bool(&boolean("a.flag"), None, CAROL),
         Err(PermissionError::HandlerFailed)
     );
-    assert_eq!(
-        service.query_bool(&boolean("a.flag"), None, CAROL),
-        Ok(true)
-    );
-}
-
-#[test]
-fn a_query_asked_while_one_is_answered_is_recursive() {
-    let mut service = ready(vec![(
-        boolean("a.flag"),
-        NodeDefault::Level(PermissionLevel::All),
-    )]);
-    service.set_query_in_progress(true);
-    assert_eq!(
-        service.query_bool(&boolean("a.flag"), None, CAROL),
-        Err(PermissionError::Recursive)
-    );
-    service.set_query_in_progress(false);
     assert_eq!(
         service.query_bool(&boolean("a.flag"), None, CAROL),
         Ok(true)

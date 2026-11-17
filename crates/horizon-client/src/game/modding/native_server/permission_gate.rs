@@ -15,9 +15,12 @@ pub(super) trait NodeAnswers {
     fn answer(&mut self, node: &PermissionNode, uuid: u128) -> Result<bool, PermissionError>;
 }
 
-impl NodeAnswers for crate::game::permissions::PermissionService {
+/// The game as the answerer of nodes: each answer goes through its selected handler.
+pub(super) struct GameNodes<'a, 'g>(pub(super) &'a mut crate::game::Game<'g>);
+
+impl NodeAnswers for GameNodes<'_, '_> {
     fn answer(&mut self, node: &PermissionNode, uuid: u128) -> Result<bool, PermissionError> {
-        self.query_bool(node, Some(uuid), uuid)
+        self.0.permission_query_bool(node, uuid)
     }
 }
 
@@ -48,7 +51,7 @@ pub(super) fn runnable_paths(usage: &str) -> Vec<Vec<String>> {
 }
 
 /// The usages a tree is built from, and the paths a node decides.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct NodeGate {
     /// Each gated runnable path and the node that answers it.
     paths: Vec<(Vec<String>, PermissionNode)>,

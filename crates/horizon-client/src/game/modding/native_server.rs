@@ -1921,9 +1921,8 @@ impl Game<'_> {
         if registered.gate.is_empty() {
             return Vec::new();
         }
-        registered
-            .gate
-            .denied_for(&mut self.permission_service, uuid)
+        let gate = registered.gate.clone();
+        gate.denied_for(&mut permission_gate::GameNodes(self), uuid)
     }
 
     /// Whether a gated command path refuses the run. Its node is asked for the acting player; an
@@ -1934,10 +1933,11 @@ impl Game<'_> {
             .registered
             .as_ref()
             .and_then(|registered| registered.gate.node(path))
+            .cloned()
         else {
             return false;
         };
-        permission_gate::refuses(&mut self.permission_service, node, origin)
+        permission_gate::refuses(&mut permission_gate::GameNodes(self), &node, origin)
     }
 
     /// `Hub::resend_commands` with the mods' say on each tree.

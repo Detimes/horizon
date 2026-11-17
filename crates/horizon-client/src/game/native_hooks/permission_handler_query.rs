@@ -5,7 +5,7 @@ impl Game<'_> {
     /// The selected permission handler is asked to answer one node query; only the mod that
     /// provided `handler` answers. The first mod to answer ends the query. Side: server.
     pub(in crate::game) fn native_permission_handler_query(
-        &self,
+        &mut self,
         handler: &str,
         node: &mod_api::PermissionNode,
         online: Option<u128>,

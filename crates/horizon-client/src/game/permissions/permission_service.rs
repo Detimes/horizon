@@ -3,7 +3,7 @@
 //! explicit refusal, and no refusal falls back to a grant.
 
 use mod_api::{
-    NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
+    Answered, NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
     PermissionNodes, PermissionValue, PermissionValueType, check_contexts, check_node_name,
 };
 use std::{
@@ -20,12 +20,29 @@ pub(crate) const DEFAULT_HANDLER_ID: &str = "default";
 const MAX_HANDLER_ID_LEN: usize = 128;
 
 /// The operator level of a player, asked by UUID. `online` is the UUID when the player is on this
-/// server. The game supplies it when the server starts.
+/// server. The game supplies it when the server starts; it reads an online player's live level.
 pub(crate) type LevelSource = Arc<dyn Fn(Option<u128>, u128) -> PermissionLevel + Send + Sync>;
 
 /// Builds a handler from the complete, validated set of declared nodes.
 pub(crate) type HandlerFactory =
     Box<dyn FnOnce(&[PermissionNode]) -> Box<dyn PermissionHandler> + Send>;
+
+/// Asks the mods for one query of a handler they provide. The answer names the mod that gave
+/// it; `None` means no mod answered. The game implements it by firing `permission_handler_query`,
+/// which hands the mod the game's own server host, so the service never holds the game.
+/// Side: server.
+pub(crate) trait ModAnswers {
+    /// Asks for `node` of handler `handler`, for the player `uuid` (`online` is the same UUID
+    /// when the player is on this server, `None` when offline) with the supplied `contexts`.
+    fn answer(
+        &mut self,
+        handler: &str,
+        node: &PermissionNode,
+        online: Option<u128>,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Option<Answered<Result<PermissionValue, PermissionError>>>;
+}
 
 /// The one policy that answers every node of a server. It is `Send` because the service that
 /// holds it lives in the game.
@@ -34,13 +51,15 @@ pub(crate) trait PermissionHandler: Send {
     fn id(&self) -> &str;
 
     /// Answers `node` for `uuid` (and `online` when the player is on this server). Returns the
-    /// node's declared type or an explicit error. Side: server.
+    /// node's declared type or an explicit error. A handler a mod provides asks `answers`.
+    /// Side: server.
     fn query(
         &mut self,
         node: &PermissionNode,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
+        answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError>;
 }
 
@@ -54,7 +73,6 @@ pub(crate) struct PermissionService {
     levels: Option<LevelSource>,
     handler: Option<Box<dyn PermissionHandler>>,
     custom_handler: bool,
-    in_query: bool,
 }
 
 impl Default for PermissionService {
@@ -72,19 +90,12 @@ impl PermissionService {
             levels: None,
             handler: None,
             custom_handler: false,
-            in_query: false,
         }
     }
 
     /// Whether gathering has finished, so queries are answered.
     pub(crate) fn is_initialized(&self) -> bool {
         self.handler.is_some()
-    }
-
-    /// Marks a query as being answered, so a nested one is refused as recursive.
-    #[cfg(test)]
-    pub(crate) fn set_query_in_progress(&mut self, in_progress: bool) {
-        self.in_query = in_progress;
     }
 
     /// The operator level source the built-in handler reads. Set it before `finish_gathering`.
@@ -116,10 +127,6 @@ impl PermissionService {
     /// Gathers a handler factory under `id`. Refused after gathering has finished, for an empty or
     /// over-long id, and for an id already gathered or reserved for the built-in handler.
     /// Side: server.
-    #[allow(
-        dead_code,
-        reason = "the handler selection layer gathers its factories through this"
-    )]
     pub(crate) fn register_handler_factory(
         &mut self,
         id: &str,
@@ -181,22 +188,21 @@ impl PermissionService {
     }
 
     /// Answers `node` for `uuid`. `online` is the UUID when the player is on this server; an
-    /// offline UUID is answered too. Refused before initialization, while a query is already being
-    /// answered, for unregistered nodes (before the handler runs), for bad contexts, and for an
-    /// answer of another type than the node's. A handler's failure or panic is `HandlerFailed`.
+    /// offline UUID is answered too. Refused before initialization, for unregistered nodes
+    /// (before the handler runs), for bad contexts, and for an answer of another type than the
+    /// node's. A handler's failure or panic is `HandlerFailed`. A query asked again while one is
+    /// answered never reaches this method: the game refuses it (`native_permissions::run_query`).
     /// Side: server.
-    pub(crate) fn query(
+    pub(crate) fn query_with(
         &mut self,
         node: &PermissionNode,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
+        answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
         if !self.is_initialized() {
             return Err(PermissionError::NotInitialized);
-        }
-        if self.in_query {
-            return Err(PermissionError::Recursive);
         }
         check_contexts(contexts)?;
         if !self
@@ -208,12 +214,10 @@ impl PermissionService {
         let Some(handler) = self.handler.as_mut() else {
             return Err(PermissionError::NotInitialized);
         };
-        self.in_query = true;
         let answer = catch_unwind(AssertUnwindSafe(|| {
-            handler.query(node, online, uuid, contexts)
+            handler.query(node, online, uuid, contexts, answers)
         }))
         .unwrap_or(Err(PermissionError::HandlerFailed));
-        self.in_query = false;
         let value = match answer {
             Ok(value) => value,
             Err(error) => {
@@ -236,12 +240,21 @@ impl PermissionService {
         Ok(value)
     }
 
-    /// `query` for a node that answers Boolean. Refused with `WrongType` for any other node, before
-    /// the handler runs. Side: server.
-    #[allow(
-        dead_code,
-        reason = "the command layer asks Boolean nodes through this"
-    )]
+    /// `query_with` for a service whose handler asks no mod, as in the tests.
+    #[cfg(test)]
+    pub(crate) fn query(
+        &mut self,
+        node: &PermissionNode,
+        online: Option<u128>,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<PermissionValue, PermissionError> {
+        self.query_with(node, online, uuid, contexts, &mut NoMods)
+    }
+
+    /// `query` for a node that answers Boolean, refused with `WrongType` for any other node before
+    /// the handler runs, as in the tests.
+    #[cfg(test)]
     pub(crate) fn query_bool(
         &mut self,
         node: &PermissionNode,
@@ -255,6 +268,24 @@ impl PermissionService {
             PermissionValue::Boolean(answer) => Ok(answer),
             _ => Err(PermissionError::WrongType),
         }
+    }
+}
+
+/// Answers nothing, for tests of handlers that never ask a mod.
+#[cfg(test)]
+pub(crate) struct NoMods;
+
+#[cfg(test)]
+impl ModAnswers for NoMods {
+    fn answer(
+        &mut self,
+        _handler: &str,
+        _node: &PermissionNode,
+        _online: Option<u128>,
+        _uuid: u128,
+        _contexts: &[PermissionContext],
+    ) -> Option<Answered<Result<PermissionValue, PermissionError>>> {
+        None
     }
 }
 
@@ -300,6 +331,7 @@ impl PermissionHandler for DefaultHandler {
         online: Option<u128>,
         uuid: u128,
         _contexts: &[PermissionContext],
+        _answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
         let default = self
             .defaults

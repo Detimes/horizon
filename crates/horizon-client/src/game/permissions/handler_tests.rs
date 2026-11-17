@@ -1,6 +1,11 @@
 //! Tests for gathering, selection and the mod-backed handler. Expected values are literals.
 
-use super::*;
+use super::handler::{ModPermissionHandler, configured_handler, gather_handlers};
+use super::permission_service::{ModAnswers, PermissionHandler, PermissionService};
+use mod_api::{
+    Answered, PermissionContext, PermissionError, PermissionNode, PermissionValue,
+    PermissionValueType,
+};
 
 /// A mod's answer as the test double gives it: the mod that answers and a non-capturing
 /// function producing the answer. `None` answers nothing.
@@ -11,7 +16,7 @@ struct Reply {
 
 impl ModAnswers for Reply {
     fn answer(
-        &self,
+        &mut self,
         _handler: &str,
         _node: &PermissionNode,
         _online: Option<u128>,
@@ -33,12 +38,14 @@ fn node(value_type: PermissionValueType) -> PermissionNode {
     }
 }
 
-fn handler(mod_id: &'static str, value: Option<fn() -> Result<PermissionValue, PermissionError>>) -> ModPermissionHandler {
-    ModPermissionHandler {
-        id: "garden.policy".to_owned(),
-        owner: "garden".to_owned(),
-        answers: Rc::new(Reply { mod_id, value }),
-    }
+/// The answer of `garden.policy` (provided by the mod `garden`) when `mod_id` answers `value`.
+fn ask(
+    mod_id: &'static str,
+    value: Option<fn() -> Result<PermissionValue, PermissionError>>,
+    node: &PermissionNode,
+) -> Result<PermissionValue, PermissionError> {
+    let mut handler = ModPermissionHandler::new("garden.policy", "garden");
+    handler.query(node, Some(7), 7, &[], &mut Reply { mod_id, value })
 }
 
 fn gathered(ids: &[(&str, &'static str)]) -> Vec<Answered<String>> {
@@ -48,13 +55,6 @@ fn gathered(ids: &[(&str, &'static str)]) -> Vec<Answered<String>> {
             mod_id: *mod_id,
         })
         .collect()
-}
-
-fn no_answers() -> Rc<dyn ModAnswers> {
-    Rc::new(Reply {
-        mod_id: "garden",
-        value: None,
-    })
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn unknown_setting_selects_no_handler() {
 fn duplicate_handler_ids_fail_and_publish_nothing() {
     let mut service = PermissionService::new();
     let ids = gathered(&[("garden.policy", "garden"), ("garden.policy", "shop")]);
-    let result = gather_handlers(&mut service, &ids, &no_answers(), "");
+    let result = gather_handlers(&mut service, &ids, "");
     assert!(matches!(result, Err(PermissionError::DuplicateHandler)));
     let query = service.query(&node(PermissionValueType::Boolean), None, 1, &[]);
     assert!(matches!(query, Err(PermissionError::NotInitialized)));
@@ -92,7 +92,7 @@ fn duplicate_handler_ids_fail_and_publish_nothing() {
 fn empty_handler_id_is_invalid_input() {
     let mut service = PermissionService::new();
     let ids = gathered(&[("", "garden")]);
-    let result = gather_handlers(&mut service, &ids, &no_answers(), "");
+    let result = gather_handlers(&mut service, &ids, "");
     assert!(matches!(result, Err(PermissionError::InvalidInput)));
 }
 
@@ -100,42 +100,53 @@ fn empty_handler_id_is_invalid_input() {
 fn reopened_server_gathers_afresh() {
     let ids = gathered(&[("garden.policy", "garden")]);
     let mut first = PermissionService::new();
-    assert!(gather_handlers(&mut first, &ids, &no_answers(), "garden.policy").is_ok());
+    assert!(gather_handlers(&mut first, &ids, "garden.policy").is_ok());
     let mut second = PermissionService::new();
-    assert!(gather_handlers(&mut second, &ids, &no_answers(), "garden.policy").is_ok());
+    assert!(gather_handlers(&mut second, &ids, "garden.policy").is_ok());
 }
 
 #[test]
 fn provider_answer_is_returned() {
-    let mut handler = handler("garden", Some(|| Ok(PermissionValue::Boolean(true))));
-    let answer = handler.query(&node(PermissionValueType::Boolean), Some(7), 7, &[]);
-    assert!(matches!(answer, Ok(PermissionValue::Boolean(true))));
+    let answer = ask(
+        "garden",
+        Some(|| Ok(PermissionValue::Boolean(true))),
+        &node(PermissionValueType::Boolean),
+    );
+    assert_eq!(answer, Ok(PermissionValue::Boolean(true)));
 }
 
 #[test]
 fn no_answer_is_a_handler_failure() {
-    let mut handler = handler("garden", None);
-    let answer = handler.query(&node(PermissionValueType::Boolean), None, 7, &[]);
-    assert!(matches!(answer, Err(PermissionError::HandlerFailed)));
+    let answer = ask("garden", None, &node(PermissionValueType::Boolean));
+    assert_eq!(answer, Err(PermissionError::HandlerFailed));
 }
 
 #[test]
 fn answer_from_another_mod_is_a_handler_failure() {
-    let mut handler = handler("shop", Some(|| Ok(PermissionValue::Boolean(true))));
-    let answer = handler.query(&node(PermissionValueType::Boolean), None, 7, &[]);
-    assert!(matches!(answer, Err(PermissionError::HandlerFailed)));
+    let answer = ask(
+        "shop",
+        Some(|| Ok(PermissionValue::Boolean(true))),
+        &node(PermissionValueType::Boolean),
+    );
+    assert_eq!(answer, Err(PermissionError::HandlerFailed));
 }
 
 #[test]
 fn failed_answer_is_the_error_and_never_a_grant() {
-    let mut handler = handler("garden", Some(|| Err(PermissionError::Recursive)));
-    let answer = handler.query(&node(PermissionValueType::Boolean), None, 7, &[]);
-    assert!(matches!(answer, Err(PermissionError::Recursive)));
+    let answer = ask(
+        "garden",
+        Some(|| Err(PermissionError::Recursive)),
+        &node(PermissionValueType::Boolean),
+    );
+    assert_eq!(answer, Err(PermissionError::Recursive));
 }
 
 #[test]
 fn value_of_another_type_is_wrong_type() {
-    let mut handler = handler("garden", Some(|| Ok(PermissionValue::Integer(2))));
-    let answer = handler.query(&node(PermissionValueType::Boolean), None, 7, &[]);
-    assert!(matches!(answer, Err(PermissionError::WrongType)));
+    let answer = ask(
+        "garden",
+        Some(|| Ok(PermissionValue::Integer(2))),
+        &node(PermissionValueType::Boolean),
+    );
+    assert_eq!(answer, Err(PermissionError::WrongType));
 }
