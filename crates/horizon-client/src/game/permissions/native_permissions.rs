@@ -5,8 +5,8 @@ use super::Game;
 use super::handler::gather_handlers;
 use super::permission_service::{LevelSource, ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
-    PermissionContext, PermissionError, PermissionLevel, PermissionNode, PermissionValue,
-    PermissionValueType,
+    NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
+    PermissionNodes, PermissionValue, PermissionValueType,
 };
 use std::{
     collections::HashMap,
@@ -124,6 +124,41 @@ pub(crate) fn run_query_bool<H: PermissionHost>(
     }
 }
 
+/// The collector the mods' `permission_gather_nodes` fills. It declares into the service and
+/// remembers a node declared twice, so the gather as a whole can fail, not only that `add`.
+struct NodeCollector {
+    service: PermissionService,
+    duplicate: bool,
+}
+
+impl PermissionNodes for NodeCollector {
+    fn add(&mut self, node: PermissionNode, default: NodeDefault) -> Result<(), PermissionError> {
+        let result = self.service.register_node(node, default);
+        if result == Err(PermissionError::DuplicateNode) {
+            self.duplicate = true;
+        }
+        result
+    }
+}
+
+/// Runs `gather` (the mods' hook) over `service` and returns the service with the declared
+/// nodes, or `DuplicateNode` when any mod declared a node another had declared. A failed gather
+/// returns no service, so nothing half-registered can be kept. Side: server.
+pub(super) fn gathered_nodes(
+    service: PermissionService,
+    gather: impl FnOnce(&mut dyn PermissionNodes),
+) -> Result<PermissionService, PermissionError> {
+    let mut collector = NodeCollector {
+        service,
+        duplicate: false,
+    };
+    gather(&mut collector);
+    if collector.duplicate {
+        return Err(PermissionError::DuplicateNode);
+    }
+    Ok(collector.service)
+}
+
 impl ModAnswers for Game<'_> {
     fn answer(
         &mut self,
@@ -179,7 +214,18 @@ impl Game<'_> {
         });
         let mut service = PermissionService::new();
         service.set_level_source(levels);
-        Self::native_permission_gather_nodes(&mut service);
+        let mut service = match gathered_nodes(service, Self::native_permission_gather_nodes) {
+            Ok(service) => service,
+            Err(error) => {
+                // Two mods declared the same node: the gather failed as a whole, so no handler is
+                // selected and the service stays empty and uninitialized, refusing every query.
+                log::error!(
+                    "permission nodes were not gathered ({error}): no permission query is answered"
+                );
+                self.permission_service = PermissionService::new();
+                return;
+            }
+        };
         let mut handlers = Vec::new();
         self.native_permission_gather_handler(&mut handlers);
         let gathered: Vec<(&str, &str)> = handlers

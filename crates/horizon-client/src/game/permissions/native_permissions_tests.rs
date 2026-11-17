@@ -2,7 +2,9 @@
 //! mod handler is asked with. A fake host stands in for the game; expected values are literals.
 
 use super::handler::gather_handlers;
-use super::native_permissions::{PermissionHost, QueryState, run_query, run_query_bool};
+use super::native_permissions::{
+    PermissionHost, QueryState, gathered_nodes, run_query, run_query_bool,
+};
 use super::permission_service::{ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
@@ -234,4 +236,38 @@ fn a_live_level_wins_over_a_listed_one() {
         run_query_bool(&mut host, &boolean("a.staff"), BOB),
         Ok(true)
     );
+}
+
+#[test]
+fn a_node_two_mods_declare_fails_the_whole_gather_and_keeps_no_service() {
+    let result = gathered_nodes(PermissionService::new(), |nodes| {
+        assert_eq!(
+            nodes.add(
+                boolean("a.flag"),
+                NodeDefault::Level(PermissionLevel::Admins)
+            ),
+            Ok(())
+        );
+        // The second mod's own call still gets the refusal.
+        assert_eq!(
+            nodes.add(boolean("a.flag"), NodeDefault::Level(PermissionLevel::All)),
+            Err(PermissionError::DuplicateNode)
+        );
+    });
+    assert!(matches!(result, Err(PermissionError::DuplicateNode)));
+}
+
+#[test]
+fn distinct_nodes_gather_into_an_uninitialized_service() {
+    let service = gathered_nodes(PermissionService::new(), |nodes| {
+        for name in ["a.one", "a.two"] {
+            assert_eq!(
+                nodes.add(boolean(name), NodeDefault::Level(PermissionLevel::All)),
+                Ok(())
+            );
+        }
+    })
+    .unwrap();
+    // Not published until `finish_gathering`: it answers nothing yet.
+    assert!(!service.is_initialized());
 }
