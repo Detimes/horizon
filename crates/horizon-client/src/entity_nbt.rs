@@ -118,10 +118,13 @@ pub fn count_down_fire(tag: &mut Tag) {
         c.insert("Fire".into(), Tag::Short(ticks - 1));
     }
 }
-/// The `Fire` an `AreaEffectCloud` loads with: vanilla clears it, so it reads 0.
-pub fn clear_fire(tag: &mut Tag) {
+/// `Entity.baseTick` of a fire-immune entity (an `AreaEffectCloud`): a positive
+/// `Fire` is cleared on its tick, while a loaded 0 or negative value stays.
+pub fn clear_positive_fire(tag: &mut Tag) {
     let Tag::Compound(c) = tag else { return };
-    if c.contains_key(&"Fire".into()) {
+    if let Some(ticks) = number(c.get(&"Fire".into())).map(|v| v as i16)
+        && ticks > 0
+    {
         c.insert("Fire".into(), Tag::Short(0));
     }
 }
@@ -6524,7 +6527,8 @@ mod tests {
         assert_eq!(orbs_from_nbt(&tag)[0].fire_ticks, 0);
     }
     /// `Entity.baseTick` takes one tick off a burning `Fire` (`Fire:300s` reads
-    /// 299 after one tick); 0 and -1 stay. An area effect cloud reads `Fire` 0.
+    /// 299 after one tick); 0 and -1 stay. A fire-immune cloud clears only a
+    /// positive `Fire` on its tick.
     #[test]
     fn a_loaded_fire_counts_down_and_a_cloud_clears_it() {
         let fire = |snbt: &str| {
@@ -6536,12 +6540,15 @@ mod tests {
         assert_eq!(fire("{Fire:1s}"), Some(0));
         assert_eq!(fire("{Fire:0s}"), Some(0));
         assert_eq!(fire("{Fire:-1s}"), Some(-1));
-        let mut tag = horizon_core::nbt::parse_snbt("{Fire:300s}").unwrap().0;
-        super::clear_fire(&mut tag);
-        assert_eq!(number(tag.get("Fire")), Some(0));
-        let mut none = horizon_core::nbt::parse_snbt("{Age:5}").unwrap().0;
-        super::clear_fire(&mut none);
-        assert_eq!(none.get("Fire"), None);
+        let cleared = |snbt: &str| {
+            let mut tag = horizon_core::nbt::parse_snbt(snbt).unwrap().0;
+            super::clear_positive_fire(&mut tag);
+            number(tag.get("Fire"))
+        };
+        assert_eq!(cleared("{Fire:300s}"), Some(0));
+        assert_eq!(cleared("{Fire:-5s}"), Some(-5));
+        assert_eq!(cleared("{Fire:0s}"), Some(0));
+        assert_eq!(cleared("{Age:5}"), None);
     }
 }
 
