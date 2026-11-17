@@ -1912,6 +1912,21 @@ impl Game<'_> {
         if let Some(raw) = self.persist.raw.get_mut(&c.id) {
             horizon_client::entity_nbt::clear_positive_fire(raw);
         }
+        // `Entity.baseTick` -> `updateFluidInteraction`: a cloud whose box (`radius * 2`
+        // wide, 0.5 high) is in water resets the fall distance it was loaded with.
+        if c.potion.is_some() {
+            let r = f64::from(c.radius);
+            let bounds = Aabb::new(
+                Vec3::new(c.at[0] - r, c.at[1], c.at[2] - r),
+                Vec3::new(c.at[0] + r, c.at[1] + 0.5, c.at[2] + r),
+            );
+            if self.bounds_in_water(bounds)
+                && let Some(Tag::Compound(raw)) = self.persist.raw.get_mut(&c.id)
+                && raw.contains_key(&"fall_distance".into())
+            {
+                raw.insert("fall_distance".into(), Tag::Double(0.0_f64.to_bits()));
+            }
+        }
         c.age = c.age.wrapping_add(1);
         let Some(potion) = c.potion.as_mut() else {
             return true;
