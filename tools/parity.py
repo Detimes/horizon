@@ -271,7 +271,9 @@ def artifacts_of(arguments):
     index = 1
     while index < len(arguments):
         argument = arguments[index]
-        flag, _, value = argument.partition("=")
+        flag, sep, value = argument.partition("=")
+        if not sep and flag[:2] in ("-p", "-F") and len(flag) > 2:
+            flag, value = flag[:2], flag[2:]
         if flag in SELECTION_FLAGS | {"--profile", "--example", "--bin"} and not value and index + 1 < len(arguments):
             value = arguments[index + 1]
             index += 1
@@ -1390,13 +1392,17 @@ def git_show(base, path):
     return result.stdout if result.returncode == 0 else None
 
 
+# A TOML line up to its comment: a "#" inside a basic ("...", with escapes) or literal ('...') string is kept.
+MANIFEST_COMMENT = re.compile(r'''^((?:[^#"']|"(?:[^"\\]|\\.)*"|'[^']*')*).*$''')
+
+
 def manifest_lines(text):
     """A Cargo.toml's lines that decide what is built: (section, line) pairs, without its package's identity and
     targets, comments, or workspace crates (whose code counts through its own sources)."""
     lines, section = set(), ""
     name = re.search(r'^\[package\][^\[]*?^name\s*=\s*"([^"]+)"', text or "", re.M | re.S)
     for raw in (text or "").splitlines():
-        line = re.sub(r"\s+", " ", raw.split("#", 1)[0]).strip()
+        line = re.sub(r"\s+", " ", MANIFEST_COMMENT.sub(r"\1", raw) if "#" in raw else raw).strip()
         if not line:
             continue
         if line.startswith("["):
@@ -1698,7 +1704,11 @@ def main():
         chosen = [name for name in found if records.get(name, {}).get("status") == "fail"]
     elif args.changed or args.changed_files:
         if args.changed_files:
-            changed, since = set(Path(args.changed_files).read_text(encoding="utf-8").split("\n")) - {""}, ""
+            try:
+                text = Path(args.changed_files).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as error:
+                parser.error(f"cannot read changed-files path {args.changed_files}: {error}")
+            changed, since = set(text.split("\n")) - {""}, ""
         else:
             changed, since = changed_files(args.changed), f" since the merge base with {args.changed}"
         if changed is None:
