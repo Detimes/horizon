@@ -273,7 +273,7 @@ mod tests {
     /// is 0 again, each change is reset then set for the scoreboard criteria, and the client
     /// is told on its next request.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn statistics_are_read_and_replaced_whole() {
         super::super::native_guest_turn_tests::with_guests(|game| {
             let mut play = super::super::lan_actions::GuestPlay::default();
