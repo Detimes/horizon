@@ -18,7 +18,12 @@ fn scan(full: &[Key], proto: &[Key], c: Key) -> bool {
     for &key in full {
         chunks.insert(key, std::sync::Arc::new(Chunk::empty(key.0, key.1)));
     }
-    neighbours_scanned(&chunks, |x, z| proto.contains(&(x, z)), &Chunk::empty(c.0, c.1))
+    let centre = Chunk::empty(c.0, c.1);
+    let proto = |x, z| proto.contains(&(x, z));
+    let scanned = neighbours_scanned(&chunks, proto, &centre);
+    // The fast path never changes the answer.
+    assert_eq!(neighbours_ready(&chunks, proto, &centre), scanned);
+    scanned
 }
 
 #[test]
@@ -64,4 +69,19 @@ fn neighbour_scan_is_ready_exactly_when_every_neighbour_is_covered() {
         ready += usize::from(got);
     }
     assert_eq!(ready, 19683);
+}
+
+#[test]
+fn surrounded_is_true_exactly_when_all_nine_columns_are_resident() {
+    // The fast path's premise: the index agrees with the nine lookups for full chunks.
+    let all = ring();
+    let mut chunks = crate::chunk_map::ChunkMap::default();
+    for &(x, z) in all.iter().filter(|&&k| k != (1, 1)) {
+        chunks.insert((x, z), std::sync::Arc::new(Chunk::empty(x, z)));
+    }
+    assert!(!chunks.surrounded((0, 0)));
+    chunks.insert((1, 1), std::sync::Arc::new(Chunk::empty(1, 1)));
+    assert!(chunks.surrounded((0, 0)));
+    // A neighbour of the ring is not surrounded: its own ring is incomplete.
+    assert!(!chunks.surrounded((1, 0)));
 }

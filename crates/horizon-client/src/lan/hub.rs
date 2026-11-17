@@ -2976,7 +2976,7 @@ impl Hub {
         let ready = |c: &Chunk| {
             c.lit
                 && streaming.is_none_or(|streaming| {
-                    neighbours_scanned(&world.chunks, |x, z| streaming.proto_sections(x, z).is_some(), c)
+                    neighbours_ready(&world.chunks, |x, z| streaming.proto_sections(x, z).is_some(), c)
                 })
         };
         let near: Vec<_> = g
@@ -5175,6 +5175,18 @@ fn neighbours_scanned(
             chunks.contains_key(&(x, z)) || proto(x, z)
         })
     })
+}
+
+/// `neighbours_scanned`, with the resident-neighbourhood index as a fast path:
+/// a column whose nine columns are all resident (`ChunkMap::surrounded`) is ready
+/// without the nine lookups. Anything else takes the scan, so the answer is the
+/// scan's in every case.
+fn neighbours_ready(
+    chunks: &crate::chunk_map::ChunkMap,
+    proto: impl Fn(i32, i32) -> bool,
+    c: &Chunk,
+) -> bool {
+    chunks.surrounded((c.x, c.z)) || neighbours_scanned(chunks, proto, c)
 }
 
 #[cfg(test)]
