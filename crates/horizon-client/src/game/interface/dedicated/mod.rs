@@ -1148,6 +1148,7 @@ impl Game<'_> {
         )?)?;
         *startup_began = true;
         self.native_server_about_to_start(true);
+        self.gather_permission_nodes();
         self.native_server_starting(true);
         self.native_lifecycle_open_started();
         // The registries the server sends are read while the world prepares.
