@@ -1,12 +1,20 @@
 """Pure-logic checks for the helpers behind lan_e2e's `mobs` check (no client, no server)."""
+import importlib.util
 import sys
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.append(str(ROOT / 'tools'))
-
-import lan_e2e  # noqa: E402
+TOOLS = Path(__file__).resolve().parent.parent / 'tools'
+# Loaded by path: putting tools/ on sys.path would shadow same-named test modules in tests/ during discovery.
+_spec = importlib.util.spec_from_file_location('lan_e2e', TOOLS / 'lan_e2e.py')
+lan_e2e = importlib.util.module_from_spec(_spec)
+sys.modules['lan_e2e'] = lan_e2e
+# lan_e2e puts tools/ first on sys.path when imported; restore it so discovery still finds tests/ modules.
+_saved_path = list(sys.path)
+try:
+    _spec.loader.exec_module(lan_e2e)
+finally:
+    sys.path[:] = _saved_path
 
 
 class NearestMobDistance(unittest.TestCase):
