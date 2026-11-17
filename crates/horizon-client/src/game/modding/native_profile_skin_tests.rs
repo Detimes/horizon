@@ -2,7 +2,7 @@
 use super::native_guest_turn_tests::with_guests;
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_new_skin_is_set_and_the_player_sent_again() {
     with_guests(|game| {
         let a = game.player(12).unwrap();

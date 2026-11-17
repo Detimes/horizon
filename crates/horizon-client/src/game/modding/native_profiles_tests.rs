@@ -4,7 +4,7 @@ use horizon_protocol::packets::login::Property;
 use mod_api::{GameProfile, ProfileProperty};
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn profiles_come_from_the_players_on_without_a_lookup() {
     with_guests(|game| {
         let i = game.guest_index(12).unwrap();
