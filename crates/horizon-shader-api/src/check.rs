@@ -124,7 +124,8 @@ pub struct Report {
     pub reflection: Option<crate::manifest::Reflection>,
     /// The manifest's `[shadow]`.
     pub shadow: Option<crate::manifest::Shadow>,
-    /// The manifest's `[material] fog`: whether Horizon fogs the material's colour.
+    /// Whether Horizon fogs the material's colour: not under `[material] fog = false` or
+    /// `[frame] fog = "pack"`.
     pub material_fog: bool,
     /// The manifest's `[[textures]]`, and each image decoded, in that order.
     pub textures: Vec<(crate::manifest::PackTexture, Image)>,
@@ -256,7 +257,8 @@ pub fn check(pack: &Pack) -> Result<Report, Vec<Problem>> {
             textures,
             reflection: m.reflection.clone(),
             shadow: m.shadow.clone(),
-            material_fog: m.material.as_ref().and_then(|s| s.fog).unwrap_or(true),
+            material_fog: m.fog == crate::Fog::Engine
+                && m.material.as_ref().and_then(|s| s.fog).unwrap_or(true),
             manifest: m.clone(),
         })
     } else {
@@ -495,7 +497,7 @@ fn undeclared(mut problems: Vec<Problem>, m: &crate::Manifest, kind: StageKind) 
 }
 
 /// Where a pass samples or gathers a 32-bit kept texture (`r32float`, `rgba32float`; an
-/// `rgba32uint` one, `texture_2d<u32>`, can't be sampled at all), this
+/// integer one, `rgba32uint` or `r32uint`, is `texture_2d<u32>` and can't be sampled at all), this
 /// frame's or `_previous`, itself or through a function's argument: the API reads them with
 /// `textureLoad` only, unfiltered, which every device does.
 fn sampled_data(
