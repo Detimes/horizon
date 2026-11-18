@@ -2,30 +2,52 @@
 use super::{Game, api_values::TryIntoEngine, native_server::NativeSidebar};
 use mod_api::{PlayerRef, Sidebar, TextFormError};
 
+/// The lines of a sidebar the client shows (`Objective` scores sorted, the 15 highest).
+const SIDEBAR_LINES: usize = 15;
+/// The deepest NBT the packet writer takes.
+const NBT_DEPTH: usize = 512;
+
 impl Game<'_> {
     /// Shows `sidebar` to that player, or takes it away (None). Ok(false) when they
-    /// aren't on; a text the boundary refuses changes nothing.
+    /// aren't on, whatever the text; for a player who is on, a text the boundary refuses
+    /// (also one whose NBT form is deeper than the writer takes) changes nothing. Only
+    /// the first 15 lines are read: the rest are never shown.
     pub(super) fn player_set_sidebar(
         &mut self,
         player: PlayerRef,
         sidebar: Option<Sidebar>,
     ) -> Result<bool, TextFormError> {
+        let online = self.native_acting_player() == Some(player)
+            || self.online_player_record(player).is_some();
+        if !online {
+            return Ok(false);
+        }
         let sidebar = match sidebar {
             Some(sidebar) => {
                 let title = sidebar.title.try_into_engine(&())?;
-                let mut lines = Vec::with_capacity(sidebar.lines.len());
-                for line in &sidebar.lines {
+                let mut texts = vec![title.clone()];
+                let mut lines = Vec::with_capacity(sidebar.lines.len().min(SIDEBAR_LINES));
+                for line in sidebar.lines.iter().take(SIDEBAR_LINES) {
                     let text = line.text.try_into_engine(&())?;
-                    let value = line.value.try_into_engine(&())?;
+                    let value: Option<horizon_client::text::Text> = line.value.try_into_engine(&())?;
+                    texts.extend([Some(text.clone()), value.clone()].into_iter().flatten());
                     lines.push((text, value));
+                }
+                // Checked before the old sidebar is taken away: a text the writer refuses would
+                // leave the player with none.
+                if texts.iter().any(|text| {
+                    !horizon_core::nbt::within_depth(
+                        &horizon_client::lan::data::component_nbt(&text.component()),
+                        NBT_DEPTH,
+                    )
+                }) {
+                    return Err(TextFormError::TooDeep);
                 }
                 Some(NativeSidebar { title, lines })
             }
             None => None,
         };
-        let online = self.native_acting_player() == Some(player)
-            || self.online_player_record(player).is_some();
-        Ok(online && self.native_sidebar(player.uuid(), sidebar.as_ref()))
+        Ok(self.native_sidebar(player.uuid(), sidebar.as_ref()))
     }
 }
 
@@ -87,9 +109,40 @@ mod tests {
                 sent.iter()
                     .any(|p| matches!(p, C::SetDisplayObjective(d) if d.slot == 1))
             );
+            // clearing sends the removal of the objective the first call added
+            rx.try_iter().for_each(drop);
             assert_eq!(game.player_set_sidebar(a, None), Ok(true));
+            let cleared: Vec<C> = rx
+                .try_iter()
+                .filter_map(|out| match out {
+                    horizon_client::lan::Out::Packet(body) => {
+                        let mut r = horizon_protocol::buf::Reader::new(&body);
+                        let id = r.varint().ok()?;
+                        C::decode(id, &body[r.position()..]).ok()
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                cleared.iter().any(|p| matches!(
+                    p,
+                    C::SetObjective(o) if o.method == 1 && o.name == "horizon:native_sidebar"
+                )),
+                "{cleared:?}"
+            );
+            // 300 nested components pass the text depth check but their NBT is deeper than the writer
+            // takes: refused for a player who is on (nothing sent), Ok(false) for one who is not
+            let deep = (0..300).fold(Text::literal("x"), |inner, _| {
+                Text::literal("").append(inner)
+            });
+            let refused = Sidebar::new(deep, vec![]);
+            assert_eq!(
+                game.player_set_sidebar(a, Some(refused.clone())),
+                Err(mod_api::TextFormError::TooDeep)
+            );
+            assert!(rx.try_iter().next().is_none(), "nothing was sent");
             let gone = mod_api::__private::game::player_ref(a.entity(), 999);
-            assert_eq!(game.player_set_sidebar(gone, None), Ok(false));
+            assert_eq!(game.player_set_sidebar(gone, Some(refused)), Ok(false));
         });
     }
 }
