@@ -1433,12 +1433,15 @@ impl Hub {
     }
     /// ServerPlayer.getTabListDisplayName: a mod's list name, else the nickname, if any, as
     /// mods format it.
-    fn tab_list_name(&self, uuid: u128, name: &str) -> Option<Tag> {
-        let mut display_name = self
-            .list_names
+    /// The Tab list name before the format hook: a mod's list name, else the nickname.
+    fn tab_list_base(&self, uuid: u128) -> Option<crate::text::Text> {
+        self.list_names
             .get(&uuid)
             .cloned()
-            .or_else(|| self.nicknames.get(&uuid).map(crate::text::Text::literal));
+            .or_else(|| self.nicknames.get(&uuid).map(crate::text::Text::literal))
+    }
+    fn tab_list_name(&self, uuid: u128, name: &str) -> Option<Tag> {
+        let mut display_name = self.tab_list_base(uuid);
         native_player_tab_list_name_format(&self.loop_context, uuid, name, &mut display_name);
         display_name.map(|text| crate::scoreboard::component_tag(&text.component()))
     }
@@ -5866,27 +5869,29 @@ mod tests {
         let red = crate::text::Text::legacy("\u{a7}cBob");
         hub.set_list_name(1, Some(red.clone()));
         assert_eq!(hub.list_names.get(&1), Some(&red));
-        let name = shown(sent(&rx)).expect("an update to everyone");
-        // Independent of `tab_list_name`: the red name the mod set, and then the nickname. Another test may
-        // have installed the process-wide format hook, which has the last word: then only the update is checked.
-        let hooked = || mod_api::__private::listened(mod_api::HookId::PlayerTabListNameFormat);
-        if !hooked() {
-            assert_eq!(
-                name,
-                Some(crate::scoreboard::component_tag(&red.component()))
-            );
+        // The name before the format hook, which another test may have installed process-wide and which has the
+        // last word on what a client is sent: the red name the mod set, then the nickname. An update still goes
+        // out each time, and when the hook leaves the name alone it is that name.
+        let updated = |packets: &[play::Clientbound]| {
+            packets.iter().any(|p| {
+                matches!(p, play::Clientbound::PlayerInfoUpdate(u)
+                    if u.actions == 0x20 && u.entries[0].uuid == 1)
+            })
+        };
+        let packets = sent(&rx);
+        assert!(updated(&packets), "an update to everyone");
+        assert_eq!(hub.tab_list_base(1), Some(red.clone()));
+        if let Some(name) = shown(packets) {
+            assert_eq!(name, hub.tab_list_name(1, "Bob"));
         }
         hub.set_list_name(1, None);
         assert!(!hub.list_names.contains_key(&1));
-        let name = shown(sent(&rx)).expect("an update to everyone");
-        if !hooked() {
-            assert_eq!(
-                name,
-                Some(crate::scoreboard::component_tag(
-                    &crate::text::Text::literal("Bobby".to_owned()).component()
-                ))
-            );
-        }
+        let packets = sent(&rx);
+        assert!(updated(&packets), "an update to everyone");
+        assert_eq!(
+            hub.tab_list_base(1).map(|t| t.plain()),
+            Some("Bobby".to_owned())
+        );
         // A player who is not on keeps the name for their return, and nothing is sent.
         hub.set_list_name(7, Some(red.clone()));
         assert!(sent(&rx).is_empty());
