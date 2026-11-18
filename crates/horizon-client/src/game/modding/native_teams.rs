@@ -115,7 +115,10 @@ mod tests {
             assert!(!game.team_set(&"\u{0}".repeat(32_768), None));
             assert!(game.team_set(&"b".repeat(65_535), None));
             assert!(game.score.board.team(&"b".repeat(65_535)).is_some());
-            assert!(!game.team_set("red", Some("red")), "that colour is already set");
+            assert!(
+                !game.team_set("red", Some("red")),
+                "that colour is already set"
+            );
             assert!(
                 game.team_set("red", None),
                 "an existing team takes the change"
