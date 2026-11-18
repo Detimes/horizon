@@ -49,6 +49,14 @@ pub fn peek_height_scale(m: &Mob) -> Option<f32> {
     (m.extra.variant3 == DOWN && peek > 0.0).then_some(1.0 + peek)
 }
 
+/// `Shulker.finalizeSpawn`: a new shulker faces yaw 0 (`setYRot(0.0F)`), whatever the creation path drew.
+/// Only the spawn path calls it: a shulker loaded from NBT keeps its saved `Rotation`.
+pub fn finalize_spawn(m: &mut Mob) {
+    if m.species() == crate::mobs::Species::Shulker {
+        m.yaw = 0.0;
+    }
+}
+
 pub fn register(m: &mut Mob) {
     m.no_gravity = true;
     m.body_yaw = 0.0;
