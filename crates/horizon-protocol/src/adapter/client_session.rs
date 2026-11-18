@@ -2188,6 +2188,63 @@ mod tests {
         }
     }
 
+    /// An explosion's particle goes through the explode step, which reads it back in the client's layout and writes
+    /// it again: for a client through 1.21.8 `dragon_breath`, `effect`, `instant_effect` and `flash` carry no options
+    /// there either, so the sound after the particle stays where the client reads it.
+    #[test]
+    fn an_explosion_particle_keeps_no_options_for_a_client_through_1_21_8() {
+        use crate::adapter::pinned_ids::particle_type;
+        use crate::entity_data::{Particle, ParticleData as D};
+        let send = |version, particle| {
+            let packet = play::Clientbound::Explode(play::Explode {
+                center: [1.0, 2.0, 3.0],
+                radius: 3.0,
+                block_count: 0,
+                knockback: None,
+                particle,
+                sound: (-1, Some(("minecraft:entity.generic.explode".into(), None))),
+                block_particles: Vec::new(),
+                play_sound: true,
+            })
+            .encode();
+            let s = ClientSession::new(version);
+            s.reading.store(to_u8(State::Play), Ordering::Release);
+            s.writing.store(to_u8(State::Play), Ordering::Release);
+            s.clientbound(&packet).unwrap().unwrap()
+        };
+        for version in [ServerVersion::V1_21_5, ServerVersion::V1_21_8] {
+            // A particle without options, as the reference: a one-byte id between the knockback flag and the sound.
+            let reference = send(
+                version,
+                Particle {
+                    id: particle_type::EXPLOSION,
+                    data: None,
+                },
+            );
+            for (id, data) in [
+                (particle_type::DRAGON_BREATH, D::Scalar(1.0)),
+                (particle_type::EFFECT, D::ColorPower(0x1122_3344, 1.0)),
+                (
+                    particle_type::INSTANT_EFFECT,
+                    D::ColorPower(0x1122_3344, 1.0),
+                ),
+                (particle_type::FLASH, D::Color(0x1122_3344)),
+            ] {
+                let sent = send(
+                    version,
+                    Particle {
+                        id,
+                        data: Some(data),
+                    },
+                );
+                assert_eq!(sent.len(), reference.len(), "{version:?} {id}: {sent:?}");
+                // everything after the particle id is the sound, which must come out whole
+                let sound = &reference[27..];
+                assert!(sent.ends_with(sound), "{version:?} {id}: {sent:?}");
+            }
+        }
+    }
+
     /// Every particle with options, written for the clients before 1.21.2 (1.20.5 to 1.21.1 read the same bytes)
     /// as their `ParticleTypes` read them, checked against the 1.20.6 and 1.21.1 client jars: the particle follows the
     /// count, dust colours are three floats, `entity_effect` is one ARGB int, and `effect`, `instant_effect`,
