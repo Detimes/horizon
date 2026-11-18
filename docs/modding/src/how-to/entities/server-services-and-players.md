@@ -75,6 +75,14 @@ are shown, top first, each with its text and an optional right-hand value. The s
 world's scoreboard, so `/scoreboard` and other players do not see it, and it is gone when the player leaves.
 It returns `Ok(false)` for a player who is not online; a text the boundary refuses changes nothing.
 
+The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
+return what the calls above set. Latency is the Tab list ping in milliseconds
+(`Option<i32>`, `0` until the first keep-alive answer). `hidden` is the level
+`hide` set, `None` when shown (`Option<Option<u8>>`). `nickname` is the nickname
+in place of the player's name, `None` when there is none (`Option<Option<String>>`).
+An outer `None` means a stale or unavailable player for all three, a client or an
+unjoinable world for `hidden`, and no server list for `nickname`.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`
