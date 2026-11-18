@@ -1,6 +1,7 @@
 //! Scoreboard teams for server mods (`/team add|join|leave|remove|modify color`).
 use super::Game;
-use horizon_client::text::COLORS;
+use mod_api::__private::game::{Fields, team_ref};
+use mod_api::{ScoreHolder, TeamColor, TeamError, TeamRef};
 
 /// Whether the scoreboard's save keeps `text` as it is: the disk writer empties an NBT string whose modified
 /// UTF-8 form (U+0000 as two bytes, a character past the basic plane as a surrogate pair of three bytes each)
@@ -19,75 +20,146 @@ fn saves_intact(text: &str) -> bool {
     encoded <= usize::from(u16::MAX)
 }
 
+/// The chat colour name `PlayerTeam.setColor` and the scoreboard keep.
+fn color_name(color: TeamColor) -> &'static str {
+    match color {
+        TeamColor::Black => "black",
+        TeamColor::DarkBlue => "dark_blue",
+        TeamColor::DarkGreen => "dark_green",
+        TeamColor::DarkAqua => "dark_aqua",
+        TeamColor::DarkRed => "dark_red",
+        TeamColor::DarkPurple => "dark_purple",
+        TeamColor::Gold => "gold",
+        TeamColor::Gray => "gray",
+        TeamColor::DarkGray => "dark_gray",
+        TeamColor::Blue => "blue",
+        TeamColor::Green => "green",
+        TeamColor::Aqua => "aqua",
+        TeamColor::Red => "red",
+        TeamColor::LightPurple => "light_purple",
+        TeamColor::Yellow => "yellow",
+        TeamColor::White => "white",
+        _ => "white",
+    }
+}
+
 impl Game<'_> {
-    /// `Scoreboard.addPlayerTeam` and `PlayerTeam.setColor`: `name` made when missing, its
-    /// colour one of the sixteen chat colour names or none. True when the call changed
-    /// something (a team made or a colour changed). False on a client, for an empty name,
-    /// one with a space or one the saved scoreboard could not keep, for an unknown colour,
-    /// and when the team already has that colour.
-    pub(super) fn team_set(&mut self, name: &str, color: Option<&str>) -> bool {
+    /// The name of a team handle that still names a team: of this open of the world and on a server.
+    fn live_team(&mut self, team: &TeamRef) -> Option<String> {
+        if self.remote.is_some() || self.native_lifecycle.epoch()? != team.fields().epoch {
+            return None;
+        }
+        self.load_scoreboard();
+        let name = team.fields().name;
+        self.score.board.team(name).map(|_| name.to_owned())
+    }
+    /// What the scoreboard keys a holder by: a player's name, an entity's UUID, a name as written.
+    fn holder_key(&mut self, holder: &ScoreHolder) -> Option<String> {
+        let key = match holder {
+            ScoreHolder::Player(player) => self.player_name(*player)?,
+            ScoreHolder::Entity(entity) => {
+                horizon_protocol::crypto::uuid_string(self.entity_uuid(*entity)?)
+            }
+            ScoreHolder::Name(name) => name.clone(),
+            _ => return None,
+        };
+        (!key.is_empty() && saves_intact(&key)).then_some(key)
+    }
+
+    /// `Scoreboard.getPlayerTeam`: the team of that name, or None.
+    pub(super) fn team(&self, name: &str) -> Option<TeamRef> {
+        if self.remote.is_some() {
+            return None;
+        }
+        let epoch = self.native_lifecycle.epoch()?;
+        // The board loads with the world; a team no one has touched yet is read from it first.
+        self.score.board.team(name)?;
+        Some(team_ref(epoch, name.to_owned()))
+    }
+    /// `Scoreboard.addPlayerTeam`: a new team with no colour. `NameTaken` when it exists;
+    /// `Unavailable` on a client and for a name that is empty, has a space or is one the saved
+    /// scoreboard could not keep.
+    pub(super) fn add_team(&mut self, name: &str) -> Result<TeamRef, TeamError> {
         if self.remote.is_some()
             || name.is_empty()
             || name.contains(char::is_whitespace)
             || !saves_intact(name)
         {
-            return false;
+            return Err(TeamError::Unavailable);
         }
-        if color.is_some_and(|color| !COLORS.iter().any(|(_, known, _)| *known == color)) {
-            return false;
-        }
+        let epoch = self
+            .native_lifecycle
+            .epoch()
+            .ok_or(TeamError::Unavailable)?;
         self.load_scoreboard();
-        if self
-            .score
-            .board
-            .team(name)
-            .is_some_and(|team| team.color.as_deref() == color)
-        {
+        if self.score.board.team(name).is_some() {
+            return Err(TeamError::NameTaken);
+        }
+        self.score.board.add_team(name);
+        Ok(team_ref(epoch, name.to_owned()))
+    }
+    /// `PlayerTeam.setColor`: true when the colour changed.
+    pub(super) fn team_set_color(&mut self, team: TeamRef, color: Option<TeamColor>) -> bool {
+        let Some(name) = self.live_team(&team) else {
+            return false;
+        };
+        let color = color.map(|color| color_name(color).to_owned());
+        let Some(existing) = self.score.board.team(&name) else {
+            return false;
+        };
+        if existing.color == color {
             return false;
         }
-        self.score.board.add_team(name).color = color.map(str::to_owned);
+        self.score.board.add_team(&name).color = color;
         true
     }
-    /// `Scoreboard.addPlayerToTeam`: `holder` leaves its team and joins `team`. False on a
-    /// client, for an empty holder or one the saved scoreboard could not keep, for an
-    /// unknown team, and when the holder is already on that team.
-    pub(super) fn team_join(&mut self, team: &str, holder: &str) -> bool {
-        if self.remote.is_some() || holder.is_empty() || !saves_intact(holder) {
-            return false;
-        }
-        self.load_scoreboard();
-        if self.score.board.team(team).is_none() {
-            return false;
-        }
-        if self
-            .score
-            .board
-            .players_team(holder)
-            .is_some_and(|current| current.name == team)
-        {
-            return false;
-        }
-        self.score.board.add_to_team(holder, team);
-        true
-    }
-    /// `Scoreboard.removePlayerFromTeam`: true when `holder` was on a team.
-    pub(super) fn team_leave(&mut self, holder: &str) -> bool {
+    /// `Scoreboard.addPlayerToTeam`: `holder` leaves its team and joins `team`; Ok(false) when it
+    /// is on that team already.
+    pub(super) fn team_join(
+        &mut self,
+        team: TeamRef,
+        holder: ScoreHolder,
+    ) -> Result<bool, TeamError> {
         if self.remote.is_some() {
+            return Err(TeamError::Unavailable);
+        }
+        let name = self.live_team(&team).ok_or(TeamError::Stale)?;
+        let key = self.holder_key(&holder).ok_or(TeamError::UnknownHolder)?;
+        if self
+            .score
+            .board
+            .players_team(&key)
+            .is_some_and(|current| current.name == name)
+        {
+            return Ok(false);
+        }
+        self.score.board.add_to_team(&key, &name);
+        Ok(true)
+    }
+    /// `Scoreboard.removePlayerFromTeam`: true when `holder` was on `team`.
+    pub(super) fn team_leave(&mut self, team: TeamRef, holder: ScoreHolder) -> bool {
+        let Some(name) = self.live_team(&team) else {
+            return false;
+        };
+        let Some(key) = self.holder_key(&holder) else {
+            return false;
+        };
+        if self
+            .score
+            .board
+            .players_team(&key)
+            .is_none_or(|current| current.name != name)
+        {
             return false;
         }
-        self.load_scoreboard();
-        self.score.board.remove_from_team(holder)
+        self.score.board.remove_from_team(&key)
     }
     /// `Scoreboard.removePlayerTeam`: true when the team existed.
-    pub(super) fn team_remove(&mut self, name: &str) -> bool {
-        if self.remote.is_some() {
+    pub(super) fn team_remove(&mut self, team: TeamRef) -> bool {
+        let Some(name) = self.live_team(&team) else {
             return false;
-        }
-        self.load_scoreboard();
-        if self.score.board.team(name).is_none() {
-            return false;
-        }
-        self.score.board.remove_team(name);
+        };
+        self.score.board.remove_team(&name);
         true
     }
 }
@@ -95,6 +167,7 @@ impl Game<'_> {
 #[cfg(test)]
 mod tests {
     use super::super::native_guest_turn_tests::with_guests;
+    use mod_api::{ScoreHolder, TeamColor, TeamError};
 
     /// Teams are made, coloured, joined, left and removed in the world's scoreboard, which
     /// the next tick's sync sends to the players; refused input changes nothing.
@@ -102,43 +175,65 @@ mod tests {
     #[ignore = "daily"]
     fn teams_are_kept_in_the_worlds_scoreboard() {
         with_guests(|game| {
-            assert!(game.team_set("red", Some("red")));
+            game.load_scoreboard();
+            let red = game.add_team("red").unwrap();
+            assert_eq!(game.add_team("red"), Err(TeamError::NameTaken));
+            assert_eq!(game.team("red"), Some(red.clone()));
+            assert!(game.team("blue").is_none());
+            assert_eq!(game.add_team("two words"), Err(TeamError::Unavailable));
+            // a name the saved scoreboard would empty is refused; one at the limit is kept
+            assert_eq!(
+                game.add_team(&"a".repeat(65_536)),
+                Err(TeamError::Unavailable)
+            );
+            assert!(game.add_team(&"b".repeat(65_535)).is_ok());
+            // colours: a change is true, the same colour again is not
+            assert!(game.team_set_color(red.clone(), Some(TeamColor::Red)));
             assert_eq!(
                 game.score.board.team("red").unwrap().color.as_deref(),
                 Some("red")
             );
-            assert!(!game.team_set("blue", Some("not_a_colour")));
-            assert!(game.score.board.team("blue").is_none());
-            assert!(!game.team_set("two words", None));
-            // a name the saved scoreboard would empty is refused; one at the limit is kept
-            assert!(!game.team_set(&"a".repeat(65_536), None));
-            assert!(!game.team_set(&"\u{0}".repeat(32_768), None));
-            assert!(game.team_set(&"b".repeat(65_535), None));
-            assert!(game.score.board.team(&"b".repeat(65_535)).is_some());
-            assert!(
-                !game.team_set("red", Some("red")),
-                "that colour is already set"
-            );
-            assert!(
-                game.team_set("red", None),
-                "an existing team takes the change"
-            );
+            assert!(!game.team_set_color(red.clone(), Some(TeamColor::Red)));
+            assert!(game.team_set_color(red.clone(), None));
             assert_eq!(game.score.board.team("red").unwrap().color, None);
-            assert!(!game.team_join("missing", "guest12"));
-            assert!(game.team_join("red", "guest12"));
-            assert!(!game.team_join("red", "guest12"), "already on that team");
-            assert!(!game.team_join("red", &"h".repeat(65_536)));
-            assert!(game.score.board.allied("guest12", "guest12"));
+            // holders
+            let guest = ScoreHolder::Name("guest12".into());
+            assert_eq!(game.team_join(red.clone(), guest.clone()), Ok(true));
+            assert_eq!(
+                game.team_join(red.clone(), guest.clone()),
+                Ok(false),
+                "already on that team"
+            );
+            let a = game.player(12).unwrap();
+            assert_eq!(
+                game.team_join(red.clone(), ScoreHolder::Player(a)),
+                Ok(false),
+                "a player is keyed by name"
+            );
+            for bad in ["", &"h".repeat(65_536)] {
+                assert_eq!(
+                    game.team_join(red.clone(), ScoreHolder::Name(bad.to_owned())),
+                    Err(TeamError::UnknownHolder)
+                );
+            }
             assert_eq!(
                 game.score.board.players_team("guest12").unwrap().name,
                 "red"
             );
-            assert!(game.team_leave("guest12"));
-            assert!(!game.team_leave("guest12"));
-            assert!(game.team_join("red", "guest13"));
-            assert!(game.team_remove("red"));
+            assert!(!game.team_leave(red.clone(), ScoreHolder::Name("guest13".into())));
+            assert!(game.team_leave(red.clone(), guest.clone()));
+            assert!(!game.team_leave(red.clone(), guest));
+            assert_eq!(
+                game.team_join(red.clone(), ScoreHolder::Name("guest13".into())),
+                Ok(true)
+            );
+            assert!(game.team_remove(red.clone()));
             assert!(game.score.board.players_team("guest13").is_none());
-            assert!(!game.team_remove("red"));
+            assert!(!game.team_remove(red.clone()), "a removed team is stale");
+            assert_eq!(
+                game.team_join(red, ScoreHolder::Name("guest13".into())),
+                Err(TeamError::Stale)
+            );
         });
     }
 }
