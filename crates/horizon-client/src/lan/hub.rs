@@ -4754,15 +4754,26 @@ impl Hub {
         };
         let display_name = self.tab_list_name(uuid, &guest.name);
         // The held players too: a client held for its hand-over already has this entry (the login sent
-        // it), and `place_arrival` sends only the newcomer's own.
-        self.broadcast_watching(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+        // it), and `place_arrival` sends only the newcomer's own. A viewer a mod hid the player from has no
+        // entry for them and is told nothing: the update would give away their UUID and name. The player's
+        // own client always has its entry.
+        let packet = C::PlayerInfoUpdate(play::PlayerInfoUpdate {
             actions: 0x20,
             entries: vec![play::PlayerInfo {
                 uuid,
                 display_name: Some(display_name),
                 ..Default::default()
             }],
-        }));
+        });
+        self.broadcast_to(
+            &packet,
+            self.guests.simulation_iter().filter(|g| {
+                g.participates_online()
+                    && (g.placed || g.held)
+                    && (g.uuid == uuid
+                        || (self.sees(g.permission, uuid) && !g.tab_hidden.contains(&uuid)))
+            }),
+        );
     }
 
     pub fn disconnect_all(&mut self) {
