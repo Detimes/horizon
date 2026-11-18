@@ -35,10 +35,27 @@ impl Game<'_> {
         };
         let tree = self.advancement_tree();
         let mut progress = horizon_client::advancements::Progress::from_json(&value);
-        progress.criteria.retain(|id, _| tree.by_id.contains_key(id));
+        // As a reload does: an advancement or a criterion this server lacks is dropped.
+        progress.criteria.retain(|id, got| match tree.get(id) {
+            Some(a) => {
+                got.retain(|name, _| a.criteria.iter().any(|c| &c.name == name));
+                true
+            }
+            None => false,
+        });
+        // What stays must be a date the client can be told: a number or a text out of range is refused whole.
+        if progress
+            .criteria
+            .values()
+            .flat_map(|got| got.values())
+            .any(|date| horizon_client::advancements::date_millis(date).is_none())
+        {
+            return false;
+        }
         let set = self.native_as_player_handle(player, |game| {
             game.adv.progress = progress;
             game.adv.changed.clear();
+            game.adv.replaced = game.adv.replaced.wrapping_add(1);
         });
         if set && let Some(host) = self.lan.as_mut() {
             host.hub.guests.update_connection(conn, |g| {
@@ -62,7 +79,7 @@ mod tests {
         with_guests(|game| {
             game.advancement_tree();
             let b = game.player(13).unwrap();
-            let json = r#"{"minecraft:story/root":{"criteria":{"crafting_table":"2026-11-11 10:00:00 +0000"},"done":true},"other:gone":{"criteria":{"x":"2026-11-11 10:00:00 +0000"},"done":true},"DataVersion":4000}"#;
+            let json = r#"{"minecraft:story/root":{"criteria":{"crafting_table":"2026-11-11 10:00:00 +0000","dropped_step":"2026-11-11 10:00:00 +0000"},"done":true},"other:gone":{"criteria":{"x":"2026-11-11 10:00:00 +0000"},"done":true},"DataVersion":4000}"#;
             game.lan
                 .as_mut()
                 .unwrap()
@@ -73,6 +90,7 @@ mod tests {
             let guests = &game.lan.as_ref().unwrap().hub.guests;
             let g = &guests[guests.connection_index(13).unwrap()];
             assert!(g.advancements.has("minecraft:story/root", "crafting_table"));
+            assert!(!g.advancements.has("minecraft:story/root", "dropped_step"), "a criterion this server lacks");
             assert!(!g.advancements.criteria.contains_key("other:gone"));
             assert!(g.advancements_visible.is_empty(), "the next update resets the client");
             let read: serde_json::Value =
@@ -84,6 +102,17 @@ mod tests {
             assert_eq!(read["minecraft:story/root"]["done"], true);
             assert!(read.get("DataVersion").is_some());
             assert!(!game.player_set_advancements(b, "[1, 2]"));
+            // a date that is no date is refused whole, and nothing changes
+            for bad in [
+                r#"{"minecraft:story/root":{"criteria":{"crafting_table":5}}}"#,
+                r#"{"minecraft:story/root":{"criteria":{"crafting_table":"99999999999999999999-01-01 10:00:00 +0000"}}}"#,
+                r#"{"minecraft:story/root":{"criteria":{"crafting_table":"soon"}}}"#,
+            ] {
+                assert!(!game.player_set_advancements(b, bad), "{bad}");
+            }
+            let guests = &game.lan.as_ref().unwrap().hub.guests;
+            let g = &guests[guests.connection_index(13).unwrap()];
+            assert!(g.advancements.has("minecraft:story/root", "crafting_table"));
             assert!(!game.player_set_advancements(b, "not json"));
             assert!(game.player_set_advancements(b, "{}"));
             let guests = &game.lan.as_ref().unwrap().hub.guests;

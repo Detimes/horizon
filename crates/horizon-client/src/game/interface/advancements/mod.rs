@@ -135,6 +135,9 @@ pub(super) struct AdvState {
     /// place on its tab (`DisplayInfo` x, y), in tree order.
     pub(super) positions: Option<Vec<(f32, f32)>>,
     pub(super) progress: Progress,
+    /// How many times a mod replaced the whole progress (`player.set_advancements`): a grant that ran a hook
+    /// which replaced it completed nothing itself.
+    pub(super) replaced: u32,
     pub(super) loaded: bool,
     pub(super) toasts: VecDeque<Toast>,
     /// Awards skip the toast (`/advancement grant ... everything`).
@@ -894,12 +897,15 @@ impl Game<'_> {
         for (ai, ci) in hits {
             let a = &tree.list[ai];
             let was = self.adv.progress.done(a);
+            let replaced = self.adv.replaced;
             let criterion = &a.criteria[ci].name;
             if self.adv.progress.grant(&a.id, criterion, &date) {
                 self.advancement_progress(a, criterion, ProgressType::Grant);
             }
             self.progress_changed(ai);
-            if !was && self.adv.progress.done(a) {
+            // A mod's hook that replaced the progress is no grant of this criterion: what it imported
+            // completed the advancement, not this trigger, and nothing is awarded for it.
+            if !was && self.adv.progress.done(a) && self.adv.replaced == replaced {
                 self.award(ai);
             }
         }

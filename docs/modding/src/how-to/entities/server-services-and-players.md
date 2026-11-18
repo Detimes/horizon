@@ -207,5 +207,9 @@ For mods that carry a player's advancements between servers. Server only. `playe
 the progress as the JSON text `PlayerAdvancements.save` writes (each started advancement's `criteria`, with grant
 dates, and `done`, plus `DataVersion`), or `None` for a stale or unavailable player and on a client.
 `player.set_advancements(host, json)` replaces the whole progress from a JSON object, as a loaded file does:
-advancements this server lacks are dropped, nothing is awarded (no toast, chat line or reward), and the client
-receives the full tree with its next update. It returns `false`, changing nothing, for other input.
+advancements and criteria this server lacks are dropped, nothing is awarded (no toast, chat line or reward), and
+the client receives the full tree with its next update. A hook that replaces the progress while a gameplay grant
+runs does not make that grant complete an advancement: what it imported is not rewarded. It returns `false`,
+changing nothing, for input that is not a JSON object, for a grant date that is not a date this server can send
+(a number, other text, a year out of range), and for a player who cannot take it: a stale or unavailable handle, a
+dead or not connected player, a client, or a world with no server list.
