@@ -1025,14 +1025,9 @@ fn update_recipes(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
                 continue;
             }
         }
-        let shown = match &result {
-            SlotDisplay::Item(id) => Some(*id),
-            SlotDisplay::ItemStack(stack) => Some(stack.item),
-            _ => None,
-        };
-        if let Some(id) = shown
-            && down_or_substitute(ids.item, ids.substitutes.item, id).is_none()
-        {
+        // A result that shows an item the client lacks, however deep (a composite's, a trim's), is not sent.
+        let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
+        if result.lacks_item(&has) {
             continue;
         }
         kept.push((input, result));
