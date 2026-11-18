@@ -90,9 +90,15 @@ mod tests {
             let guests = &game.lan.as_ref().unwrap().hub.guests;
             let g = &guests[guests.connection_index(13).unwrap()];
             assert!(g.advancements.has("minecraft:story/root", "crafting_table"));
-            assert!(!g.advancements.has("minecraft:story/root", "dropped_step"), "a criterion this server lacks");
+            assert!(
+                !g.advancements.has("minecraft:story/root", "dropped_step"),
+                "a criterion this server lacks"
+            );
             assert!(!g.advancements.criteria.contains_key("other:gone"));
-            assert!(g.advancements_visible.is_empty(), "the next update resets the client");
+            assert!(
+                g.advancements_visible.is_empty(),
+                "the next update resets the client"
+            );
             let read: serde_json::Value =
                 serde_json::from_str(&game.player_advancements(b).unwrap()).unwrap();
             assert_eq!(
