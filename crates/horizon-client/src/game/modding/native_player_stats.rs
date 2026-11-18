@@ -98,7 +98,12 @@ impl Game<'_> {
         let Ok(value @ serde_json::Value::Object(_)) = serde_json::from_str(json) else {
             return false;
         };
-        let values = Stats::from_json(&value).values;
+        // Checked whole first: a snapshot with a missing `stats`, a malformed entry or a number that does not fit
+        // changes nothing (`{"stats":{}}` is the explicit reset).
+        let Some(snapshot) = Stats::from_snapshot(&value) else {
+            return false;
+        };
+        let values = snapshot.values;
         self.native_player_current(player)
             && self.native_as_player_handle(player, |game| game.stats.replace(values))
     }
@@ -304,7 +309,24 @@ mod tests {
             assert!(read["stats"].get("minecraft:mined").is_none());
             assert!(!game.player_set_statistics(b, "[]"));
             assert!(!game.player_set_statistics(b, "not json"));
-            assert_eq!(game.player_stat(b, StatType::Custom, "jump"), Some(9));
+            // a snapshot that is not whole changes nothing: no `stats`, a malformed entry, a number that
+            // does not fit; `{"stats":{}}` is the explicit reset
+            let before = game.player_statistics(b).unwrap();
+            for bad in [
+                r#"{}"#,
+                r#"{"DataVersion":1}"#,
+                r#"{"stats":{"minecraft:custom":{"minecraft:jump":"x"}}}"#,
+                r#"{"stats":{"minecraft:custom":{"minecraft:jump":4294967297}}}"#,
+                r#"{"stats":{"minecraft:custom":7}}"#,
+            ] {
+                assert!(!game.player_set_statistics(b, bad), "{bad}");
+                assert_eq!(game.player_statistics(b).unwrap(), before, "{bad}");
+            }
+            assert!(game.player_set_statistics(b, r#"{"stats":{}}"#));
+            let read: serde_json::Value =
+                serde_json::from_str(&game.player_statistics(b).unwrap()).unwrap();
+            assert_eq!(read["stats"], serde_json::json!({}));
+            assert_eq!(game.player_stat(b, StatType::Custom, "jump"), Some(0));
         });
     }
 
