@@ -2,19 +2,13 @@ use super::*;
 
 /// The hook points. Each does nothing in Horizon.
 impl Game<'_> {
-    /// The selected permission handler is asked to answer one node query; only the mod that
-    /// provided `handler` answers. The first mod to answer ends the query. Side: server.
+    /// The selected permission handler is asked to answer one node query. Only the mod
+    /// `provider`, which provided `handler`, is called; every other mod is skipped before the
+    /// call and never sees the player or the contexts. Side: server.
     pub(in crate::game) fn native_permission_handler_query(
         &mut self,
-        handler: &str,
-        node: &mod_api::PermissionNode,
-        online: Option<u128>,
-        uuid: u128,
-        contexts: &[mod_api::PermissionContext],
-        answer: &mut Option<
-            mod_api::Answered<Result<mod_api::PermissionValue, mod_api::PermissionError>>,
-        >,
+        call: mod_api::__private::PermissionHandlerQueryCall<'_>,
     ) {
-        self.fire_permission_handler_query(handler, node, online, uuid, contexts, answer);
+        self.fire_permission_handler_query(call);
     }
 }

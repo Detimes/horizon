@@ -12,7 +12,8 @@ use mod_api::{
     PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
 
-/// A handler a mod provided. Every query goes to that mod. Side: server.
+/// A handler a mod provided. Every query goes to that mod alone: the other mods are not called
+/// (`permission_handler_query` is asked of its provider only). Side: server.
 pub(crate) struct ModPermissionHandler {
     id: String,
     owner: String,
@@ -43,7 +44,8 @@ impl PermissionHandler for ModPermissionHandler {
         contexts: &[PermissionContext],
         answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
-        let Some(answered) = answers.answer(&self.id, node, online, uuid, contexts) else {
+        let Some(answered) = answers.answer(&self.id, &self.owner, node, online, uuid, contexts)
+        else {
             log::warn!(
                 "permission node \"{}\": handler \"{}\" got no answer from mod \"{}\"",
                 node.name,
@@ -135,8 +137,6 @@ pub(crate) fn gather_handlers(
     gathered: &[(&str, &str)],
     configured: &str,
 ) -> Result<(), PermissionError> {
-    for (id, owner) in gathered {
-) -> Result<(), PermissionError> {
     let registered = register_gathered(service, gathered);
     if registered.is_err() {
         service.mark_setup_failed();
@@ -153,6 +153,8 @@ pub(crate) fn gather_handlers(
 fn register_gathered(
     service: &mut PermissionService,
     gathered: &[(&str, &str)],
+) -> Result<(), PermissionError> {
+    for (id, owner) in gathered {
         if id.is_empty() {
             return Err(PermissionError::InvalidInput);
         }

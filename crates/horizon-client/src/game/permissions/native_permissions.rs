@@ -163,13 +163,22 @@ impl ModAnswers for Game<'_> {
     fn answer(
         &mut self,
         handler: &str,
+        provider: &str,
         node: &PermissionNode,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
     ) -> Option<ModAnswer> {
         let mut answer = None;
-        self.native_permission_handler_query(handler, node, online, uuid, contexts, &mut answer);
+        self.native_permission_handler_query(mod_api::__private::PermissionHandlerQueryCall {
+            handler,
+            provider,
+            node,
+            online,
+            uuid,
+            contexts,
+            answer: &mut answer,
+        });
         answer.map(|answered| ModAnswer {
             mod_id: answered.mod_id.to_owned(),
             answer: answered.answer,

@@ -40,6 +40,7 @@ impl ModAnswers for FakeHost {
     fn answer(
         &mut self,
         handler: &str,
+        _provider: &str,
         node: &PermissionNode,
         online: Option<u128>,
         uuid: u128,

@@ -41,11 +41,13 @@ pub(crate) struct ModAnswer {
 /// which hands the mod the game's own server host, so the service never holds the game.
 /// Side: server.
 pub(crate) trait ModAnswers {
-    /// Asks for `node` of handler `handler`, for the player `uuid` (`online` is the same UUID
-    /// when the player is on this server, `None` when offline) with the supplied `contexts`.
+    /// Asks the mod `provider`, which provided handler `handler`, for `node`, for the player
+    /// `uuid` (`online` is the same UUID when the player is on this server, `None` when offline)
+    /// with the supplied `contexts`. No other mod is called, so none sees the UUID or the contexts.
     fn answer(
         &mut self,
         handler: &str,
+        provider: &str,
         node: &PermissionNode,
         online: Option<u128>,
         uuid: u128,
@@ -74,8 +76,6 @@ pub(crate) trait PermissionHandler: Send {
 
 type NodeKey = (String, PermissionValueType);
 
-/// Declared nodes, gathered handler factories and the selected handler of one server. A server
-/// owns one, created when it starts and dropped when it closes.
 /// Who decides the command usages that ask a permission node, as the service stands after its
 /// setup. Side: server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,19 +89,21 @@ pub(crate) enum NodePolicy {
     Refused,
 }
 
+/// Declared nodes, gathered handler factories and the selected handler of one server. A server
+/// owns one, created when it starts and dropped when it closes.
 pub(crate) struct PermissionService {
     nodes: BTreeMap<NodeKey, (PermissionNode, NodeDefault)>,
     factories: BTreeMap<String, HandlerFactory>,
     levels: Option<LevelSource>,
     handler: Option<Box<dyn PermissionHandler>>,
     custom_handler: bool,
-}
-
     /// A duplicate node or handler failed the setup: the service stays uninitialized.
     setup_failed: bool,
     /// `permission-handler` named a handler no mod gathered: a custom handler was configured,
     /// but none was selected.
     handler_missing: bool,
+}
+
 impl Default for PermissionService {
     fn default() -> Self {
         Self::new()
@@ -117,13 +119,11 @@ impl PermissionService {
             levels: None,
             handler: None,
             custom_handler: false,
-        }
-    }
             setup_failed: false,
             handler_missing: false,
+        }
+    }
 
-    /// Whether gathering has finished, so queries are answered.
-    pub(crate) fn is_initialized(&self) -> bool {
     /// A service whose setup failed. It stays uninitialized, so it refuses every query, and
     /// `node_policy` is `Refused`: an uninitialized service that merely has not gathered yet is
     /// a different state.
@@ -138,6 +138,8 @@ impl PermissionService {
         self.setup_failed = true;
     }
 
+    /// Whether gathering has finished, so queries are answered.
+    pub(crate) fn is_initialized(&self) -> bool {
         self.handler.is_some()
     }
 
@@ -206,9 +208,9 @@ impl PermissionService {
                     log::warn!(
                         "permission-handler \"{id}\" is not gathered: the built-in default handler answers queries, and command usages with a permission node are refused"
                     );
+                    self.handler_missing = true;
                     None
                 }
-                    self.handler_missing = true;
             },
         };
         self.factories.clear();
@@ -335,6 +337,7 @@ impl ModAnswers for NoMods {
     fn answer(
         &mut self,
         _handler: &str,
+        _provider: &str,
         _node: &PermissionNode,
         _online: Option<u128>,
         _uuid: u128,

@@ -15,17 +15,21 @@ use mod_api::{
 struct Reply {
     mod_id: &'static str,
     value: Option<fn() -> Result<PermissionValue, PermissionError>>,
+    /// The `provider` of each query it was asked.
+    providers: Vec<String>,
 }
 
 impl ModAnswers for Reply {
     fn answer(
         &mut self,
         _handler: &str,
+        provider: &str,
         _node: &PermissionNode,
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
     ) -> Option<ModAnswer> {
+        self.providers.push(provider.to_owned());
         let make = self.value?;
         Some(ModAnswer {
             mod_id: self.mod_id.to_owned(),
@@ -48,7 +52,17 @@ fn ask(
     node: &PermissionNode,
 ) -> Result<PermissionValue, PermissionError> {
     let mut handler = ModPermissionHandler::new("garden.policy", "garden");
-    handler.query(node, Some(7), 7, &[], &mut Reply { mod_id, value })
+    handler.query(
+        node,
+        Some(7),
+        7,
+        &[],
+        &mut Reply {
+            mod_id,
+            value,
+            providers: Vec::new(),
+        },
+    )
 }
 
 /// `(id, providing mod)` pairs as `permission_gather_handler` gathered them.
@@ -105,6 +119,8 @@ fn duplicate_handler_ids_fail_and_publish_nothing() {
     let ids = gathered(&[("garden.policy", "garden"), ("garden.policy", "shop")]);
     let result = gather_handlers(&mut service, &ids, "");
     assert!(matches!(result, Err(PermissionError::DuplicateHandler)));
+    // A failed setup is its own state: node usages are refused, not run at their levels.
+    assert_eq!(service.node_policy(), NodePolicy::Refused);
     let query = service.query(&node(PermissionValueType::Boolean), None, 1, &[]);
     assert!(matches!(query, Err(PermissionError::NotInitialized)));
 }
@@ -115,12 +131,11 @@ fn empty_handler_id_is_invalid_input() {
     let ids = gathered(&[("", "garden")]);
     let result = gather_handlers(&mut service, &ids, "");
     assert!(matches!(result, Err(PermissionError::InvalidInput)));
+    assert_eq!(service.node_policy(), NodePolicy::Refused);
 }
 
 #[test]
 fn reopened_server_gathers_afresh() {
-    // A failed setup is its own state: node usages are refused, not run at their levels.
-    assert_eq!(service.node_policy(), NodePolicy::Refused);
     let ids = gathered(&[("garden.policy", "garden")]);
     let mut first = PermissionService::new();
     assert!(gather_handlers(&mut first, &ids, "garden.policy").is_ok());
@@ -131,7 +146,6 @@ fn reopened_server_gathers_afresh() {
 #[test]
 fn provider_answer_is_returned() {
     let answer = ask(
-    assert_eq!(service.node_policy(), NodePolicy::Refused);
         "garden",
         Some(|| Ok(PermissionValue::Boolean(true))),
         &node(PermissionValueType::Boolean),
@@ -173,4 +187,22 @@ fn value_of_another_type_is_wrong_type() {
         &node(PermissionValueType::Boolean),
     );
     assert_eq!(answer, Err(PermissionError::WrongType));
+}
+
+#[test]
+fn a_query_is_asked_of_the_providing_mod_alone() {
+    // The hook is called on the mod that provided the handler (`provider`), so no other mod is
+    // handed the player's UUID or the contexts, and none answers first.
+    let mut handler = ModPermissionHandler::new("garden.policy", "garden");
+    let mut reply = Reply {
+        mod_id: "garden",
+        value: Some(|| Ok(PermissionValue::Boolean(true))),
+        providers: Vec::new(),
+    };
+    let node = node(PermissionValueType::Boolean);
+    assert_eq!(
+        handler.query(&node, Some(7), 7, &[], &mut reply),
+        Ok(PermissionValue::Boolean(true))
+    );
+    assert_eq!(reply.providers, ["garden"]);
 }
