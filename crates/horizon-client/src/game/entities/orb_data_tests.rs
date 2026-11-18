@@ -248,5 +248,18 @@ fn a_summoned_portal_cooldown_is_saved_for_an_orb_and_an_arrow() {
             .command_target_nbt(commands::Target::Projectile(arrow))
             .unwrap();
         assert_eq!(tag.get("PortalCooldown"), Some(&Tag::Int(120)));
+        // The chunk save writes the live cooldown for both as well.
+        let keys = std::collections::HashSet::from([(0, 0)]);
+        let index = game.orbs.iter().position(|o| o.id == orb).unwrap();
+        let (_, saved) = game.save_orb(index, &keys).unwrap();
+        assert_eq!(saved.get("PortalCooldown"), Some(&Tag::Int(250)));
+        let index = game
+            .creatures
+            .projectiles
+            .iter()
+            .position(|p| p.id == arrow)
+            .unwrap();
+        let (_, saved) = game.save_projectile(index, &keys).unwrap();
+        assert_eq!(saved.get("PortalCooldown"), Some(&Tag::Int(120)));
     });
 }
