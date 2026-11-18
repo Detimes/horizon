@@ -6061,7 +6061,8 @@ impl Renderer {
             return Err("the graphics device was lost".into());
         }
         if let Some(hdr) = hdr {
-            horizon_hdr::set_metadata(device, surface, hdr.declared_peak(), hdr.black);
+            let (peak, black) = hdr.metadata();
+            horizon_hdr::set_metadata(device, surface, peak, black);
         }
         Ok(())
     }
@@ -6100,7 +6101,8 @@ impl Renderer {
     }
     fn send_hdr_metadata(&self) {
         if let (Some(surface), Some(hdr)) = (&self.surface, &self.hdr) {
-            horizon_hdr::set_metadata(&self.device, surface, hdr.declared_peak(), hdr.black);
+            let (peak, black) = hdr.metadata();
+            horizon_hdr::set_metadata(&self.device, surface, peak, black);
         }
     }
     /// This renderer's output as applied, with what its destination offers and reports.
@@ -6375,7 +6377,9 @@ impl Renderer {
     /// pages get or lose their buffers of looks. The game meshes the world again. Where an
     /// arena's pages no longer hold (`Arena::set_looks`: their most changes, as a translucent
     /// page's does with looks, or a page got no looks), every section goes now, as on a change
-    /// of layout, and new pages keep to the limit.
+    /// of layout, and new pages keep to the limit. So do they when looks turn on: a resident
+    /// section's looks are the new buffers' zeros (face 0, down), and this frame draws before the
+    /// game meshes the world again.
     fn set_terrain_looks(&mut self, on: bool) {
         log::info!(
             "Horizon renderer: terrain quad looks {}",
@@ -6389,7 +6393,7 @@ impl Renderer {
         if let Some(arena) = &mut self.translucent_arena {
             holds &= arena.set_looks(&self.device, on);
         }
-        if !holds {
+        if !holds || on {
             self.sections_dropped |=
                 self.sections.len() > 0 || !self.lods.is_empty() || self.lod_pending.is_some();
             self.clear_sections(self.layout);
@@ -13332,6 +13336,17 @@ impl DisplayWatch {
             polled: Some(std::time::Instant::now() + DISPLAY_POLL),
         };
         (watch, now)
+    }
+    /// Whether the reading comes from a Wayland compositor.
+    fn wayland(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.wayland.is_some()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
     }
     /// What the system reports at each poll that is due at `time` (`read`; on Wayland, at each
     /// event), whether or not it is `last` again: the surface's capabilities are read with it.
