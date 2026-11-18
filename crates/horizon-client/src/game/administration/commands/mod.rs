@@ -1719,6 +1719,23 @@ impl Game<'_> {
                     self.breath_clouds.update(i, |c| {
                         c.at = pos;
                     });
+                    // The cloud keeps its rotation in its saved compound: a teleport that sets one
+                    // writes it there, where `/data get` and the save read it.
+                    if let Some([yaw, pitch]) = rotation {
+                        let float = |v: f32| {
+                            horizon_core::nbt::Tag::Float(if v == 0.0 { 0 } else { v.to_bits() })
+                        };
+                        if let horizon_core::nbt::Tag::Compound(raw) =
+                            self.persist.raw.entry(id).or_insert_with(|| {
+                                horizon_core::nbt::Tag::Compound(horizon_core::nbt::Compound::new())
+                            })
+                        {
+                            raw.insert(
+                                horizon_core::nbt::JavaString::from("Rotation"),
+                                horizon_core::nbt::Tag::List(vec![float(yaw), float(pitch)]),
+                            );
+                        }
+                    }
                 }
             }
             // Wall-mounted entities do not move; a hook follows its own tick and a

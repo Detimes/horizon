@@ -1,1 +1,2 @@
 horizon-client game::rotation_kept_tests::a_summoned_falling_block_shulker_and_cloud_keep_their_rotation lib daily resources
+horizon-client game::rotation_kept_tests::a_teleported_cloud_reads_back_the_rotation_the_teleport_set lib daily resources

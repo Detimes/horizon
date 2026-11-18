@@ -49,3 +49,33 @@ fn a_summoned_falling_block_shulker_and_cloud_keep_their_rotation() {
         }
     });
 }
+
+/// `/tp` with a rotation on an area effect cloud writes it to the cloud's saved `Rotation` (what `/data get`
+/// reads).
+#[test]
+#[ignore = "daily"]
+fn a_teleported_cloud_reads_back_the_rotation_the_teleport_set() {
+    with_game(|game| {
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.summon_with_nbt(
+            "minecraft:area_effect_cloud",
+            [8.5, 70.0, 0.5],
+            "{Rotation:[75f,20f]}",
+        )
+        .unwrap();
+        let cloud = Target::Cloud(game.breath_clouds[0].id);
+        assert!(game.run_command("tp @e[type=area_effect_cloud,limit=1] 9.5 70 0.5 30 -10"));
+        let tag = game.command_target_nbt(cloud).unwrap();
+        let Some(Tag::List(rotation)) = tag.get("Rotation") else {
+            panic!("no Rotation in {tag:?}");
+        };
+        assert_eq!(
+            rotation.as_slice(),
+            [
+                Tag::Float(30.0_f32.to_bits()),
+                Tag::Float((-10.0_f32).to_bits())
+            ]
+        );
+    });
+}
