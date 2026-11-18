@@ -1034,11 +1034,16 @@ fn update_recipes(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
                 continue;
             }
         }
-        // A result that shows an item the client lacks, however deep (a composite's, a trim's), is not sent.
+        // A result that shows an item the client lacks, however deep (a composite's, a trim's), is sent as an
+        // empty display and not dropped: the client sends the position of the recipe it picked among those
+        // matching its input, and the server applies it to the full list, so a shorter list would shift
+        // the choice onto another recipe.
         let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
-        if result.lacks_item(&has) {
-            continue;
-        }
+        let result = if result.lacks_item(&has) {
+            SlotDisplay::Empty
+        } else {
+            result
+        };
         kept.push((input, result));
     }
     w.varint(kept.len() as i32);
@@ -1331,13 +1336,16 @@ mod tests {
         w.varint(2);
         w.varint(1012); // diamond; 836 in 1.21.4
         w.varint(72); // 1.21.4 lacks it
-        w.varint(3);
+        w.varint(4);
         HolderSet::Items(vec![1012, 72]).write(&mut w);
         SlotDisplay::ItemStack(crate::item::Stack::new(1012, 2)).write(&mut w);
         HolderSet::Tag("minecraft:planks".into()).write(&mut w);
         SlotDisplay::Item(72).write(&mut w);
         HolderSet::Items(vec![72]).write(&mut w); // nothing left to input
         SlotDisplay::Item(1012).write(&mut w);
+        // a result the client has no item for: kept, shown empty, so the positions stay aligned
+        HolderSet::Items(vec![1012]).write(&mut w);
+        SlotDisplay::Item(5000).write(&mut w);
         let s = ClientSession::new(ServerVersion::V1_21_4);
         s.writing.store(to_u8(State::Play), Ordering::Release);
         let id = packet_ids::play::clientbound::UPDATE_RECIPES;
@@ -1347,13 +1355,15 @@ mod tests {
         let mut expected = vec![1, 23];
         expected.extend(b"minecraft:furnace_input");
         expected.extend([1, 0xc4, 0x06]);
-        expected.push(2); // stonecutter recipes
+        expected.push(3); // stonecutter recipes
         expected.extend([2, 0xc4, 0x06]); // input: the diamond
         expected.extend([3, 2, 0xc4, 0x06, 0, 0]); // item_stack display (1.21.4's type 3): two diamonds
         expected.push(0);
         expected.push(16);
         expected.extend(b"minecraft:planks");
         expected.extend([2, 38]); // item display (1.21.4's type 2): pinned 72's stand-in
+        expected.extend([2, 0xc4, 0x06]); // input: the diamond again
+        expected.push(0); // empty display: its result has no item here
         assert_eq!(r.rest(), &expected[..]);
     }
 
