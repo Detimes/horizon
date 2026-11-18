@@ -541,7 +541,10 @@ pub fn date_millis(text: &str) -> Option<i64> {
     let mp = (m + 9) % 12;
     let doy = (153 * mp + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era.checked_mul(146_097)?.checked_add(doe)?.checked_sub(719_468)?;
+    let days = era
+        .checked_mul(146_097)?
+        .checked_add(doe)?
+        .checked_sub(719_468)?;
     let secs = days
         .checked_mul(86400)?
         .checked_add(h.checked_mul(3600)?)?
@@ -3451,7 +3454,10 @@ mod tests {
     fn a_date_outside_the_range_is_not_a_date() {
         // the year would overflow the arithmetic; a month or day that does not exist is no date either
         assert_eq!(date_millis("999999999999999 01-01 10:00:00 +0000"), None);
-        assert_eq!(date_millis("9223372036854775807-05-05 10:00:00 +0000"), None);
+        assert_eq!(
+            date_millis("9223372036854775807-05-05 10:00:00 +0000"),
+            None
+        );
         assert_eq!(date_millis("2026-13-01 10:00:00 +0000"), None);
         assert_eq!(date_millis("2026-05-00 10:00:00 +0000"), None);
         assert_eq!(date_millis(""), None);
