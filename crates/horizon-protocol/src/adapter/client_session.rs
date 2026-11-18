@@ -2012,7 +2012,6 @@ mod tests {
         }
     }
 
-
     /// A real 1.20.6, 1.21.4 or 1.21.8 client given an absorption effect left with "Invalid entity data item type
     /// for field 17 ... old=0(Byte), new=4.0(Float)": 26.3's Avatar has the main hand (15) and the skin parts (16),
     /// its Player the absorption (17), the score (18) and the shoulders (19, 20); through 1.21.8 the Player has the
