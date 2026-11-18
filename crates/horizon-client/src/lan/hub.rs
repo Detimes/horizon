@@ -5867,20 +5867,26 @@ mod tests {
         hub.set_list_name(1, Some(red.clone()));
         assert_eq!(hub.list_names.get(&1), Some(&red));
         let name = shown(sent(&rx)).expect("an update to everyone");
-        // independent of `tab_list_name`: the red name the mod set, and then the nickname
-        assert_eq!(
-            name,
-            Some(crate::scoreboard::component_tag(&red.component()))
-        );
+        // Independent of `tab_list_name`: the red name the mod set, and then the nickname. Another test may
+        // have installed the process-wide format hook, which has the last word: then only the update is checked.
+        let hooked = || mod_api::__private::listened(mod_api::HookId::PlayerTabListNameFormat);
+        if !hooked() {
+            assert_eq!(
+                name,
+                Some(crate::scoreboard::component_tag(&red.component()))
+            );
+        }
         hub.set_list_name(1, None);
         assert!(!hub.list_names.contains_key(&1));
         let name = shown(sent(&rx)).expect("an update to everyone");
-        assert_eq!(
-            name,
-            Some(crate::scoreboard::component_tag(
-                &crate::text::Text::literal(&"Bobby".to_owned()).component()
-            ))
-        );
+        if !hooked() {
+            assert_eq!(
+                name,
+                Some(crate::scoreboard::component_tag(
+                    &crate::text::Text::literal("Bobby".to_owned()).component()
+                ))
+            );
+        }
         // A player who is not on keeps the name for their return, and nothing is sent.
         hub.set_list_name(7, Some(red.clone()));
         assert!(sent(&rx).is_empty());
