@@ -105,3 +105,27 @@ fn a_client_cannot_resend_a_command_tree() {
         assert_eq!(game.player_resend_command_tree(ghost), Err(Refusal::Client));
     });
 }
+
+/// A resend asked from inside `player_commands_sent` (the server is filtering the trees) starts
+/// no second pass and sends nothing itself: the pass that asked the hook sends the tree.
+#[test]
+#[ignore = "daily"]
+fn a_resend_from_inside_the_filter_pass_does_nothing() {
+    with_guests(|game| {
+        let b = game.player(13).unwrap();
+        let rx = listen(game, 13);
+        game.native_commands.filtering = true;
+        assert_eq!(game.player_resend_command_tree(b), Ok(()));
+        game.native_filter_commands(Some(13));
+        assert_eq!(trees(&rx), 0, "a nested resend sends no tree");
+        assert!(
+            game.native_commands.filtering,
+            "a nested pass leaves the running pass's flag alone"
+        );
+        game.native_commands.filtering = false;
+        // The guard is released after a pass, so a later resend works again.
+        assert_eq!(game.player_resend_command_tree(b), Ok(()));
+        assert_eq!(trees(&rx), 1);
+        assert!(!game.native_commands.filtering);
+    });
+}

@@ -1906,6 +1906,25 @@ impl Game<'_> {
     /// which sends the trees without what the mods took out: for `only`, or
     /// for every placed player.
     pub(super) fn native_filter_commands(&mut self, only: Option<u32>) {
+        // `player_commands_sent` can call `player_resend_command_tree`, which comes back here:
+        // asked again meanwhile, the running pass is the one that answers and sends.
+        if std::mem::replace(&mut self.native_commands.filtering, true) {
+            log::warn!(
+                "Horizon: player_commands_sent resent a command tree while it was asked; the running pass sends it"
+            );
+            return;
+        }
+        // A mod's panic unwinds through here: the flag must not stay set for later passes.
+        let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.filter_commands_pass(only);
+        }));
+        self.native_commands.filtering = false;
+        if let Err(payload) = passed {
+            std::panic::resume_unwind(payload);
+        }
+    }
+
+    fn filter_commands_pass(&mut self, only: Option<u32>) {
         let Some(host) = self.lan.as_ref() else {
             return;
         };

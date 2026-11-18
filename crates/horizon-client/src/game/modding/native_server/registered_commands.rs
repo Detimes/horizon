@@ -33,6 +33,10 @@ pub(in crate::game) struct NativeCommandState {
     pub(in crate::game) registered: Option<NativeCommands>,
     /// Bumped each time the mods are asked; a hub holds the one it was given.
     generation: u64,
+    /// Whether the mods are being asked what each player's tree keeps (`native_filter_commands`).
+    /// `player_commands_sent` gets a mutable host, so it can resend a tree, which would ask again:
+    /// a resend made meanwhile is left to the pass that is running.
+    pub(in crate::game) filtering: bool,
 }
 
 impl NativeCommandState {
