@@ -2365,7 +2365,10 @@ mod tests {
         let s = ClientSession::new(ServerVersion::V1_21_3);
         s.reading.store(to_u8(State::Play), Ordering::Release);
         s.writing.store(to_u8(State::Play), Ordering::Release);
-        assert_eq!(s.clientbound_all(&add(entity::ACACIA_BOAT)).unwrap().len(), 1);
+        assert_eq!(
+            s.clientbound_all(&add(entity::ACACIA_BOAT)).unwrap().len(),
+            1
+        );
     }
 
     /// A client through 1.21.4 takes an orb's value from `add_experience_orb` (id 2), not from entity data:

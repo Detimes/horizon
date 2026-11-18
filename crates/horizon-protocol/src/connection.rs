@@ -658,10 +658,7 @@ impl ConnWriter {
     /// The packet bodies this connection's client takes for one body, in order: renumbered for a client of an
     /// older release ([`Connection::serve_older`]), none when it has no such packet, and what the packet brought
     /// with it (a boat's wood, an experience orb's value) after it; the body itself otherwise.
-    pub fn for_client<'a>(
-        &self,
-        body: &'a [u8],
-    ) -> Result<Vec<std::borrow::Cow<'a, [u8]>>> {
+    pub fn for_client<'a>(&self, body: &'a [u8]) -> Result<Vec<std::borrow::Cow<'a, [u8]>>> {
         match &self.older_client {
             None => Ok(vec![std::borrow::Cow::Borrowed(body)]),
             Some(client) => Ok(client
