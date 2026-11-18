@@ -244,7 +244,7 @@ impl Game<'_> {
             self.falling.push(FallingBlock {
                 attachment_lifetime: Default::default(),
                 // Entity.load: the saved Rotation, as the save writes it back.
-                rotation: entity_nbt::rotation(&tag),
+                rotation: entity_nbt::loaded_rotation(&tag),
                 join: Default::default(),
                 id: self.next_entity,
                 state,

@@ -105,25 +105,25 @@ pub fn loaded_motion(tag: &Tag) -> Vec3 {
     let clamp = |v: f64| if v.abs() > 10.0 { 0.0 } else { v };
     Vec3::new(clamp(m.x), clamp(m.y), clamp(m.z))
 }
-/// A saved Rotation as `Entity.load` takes it: the yaw wrapped into [-180, 180) (`Mth.wrapDegrees`) and the pitch
-/// clamped to [-90, 90]; a value that is not finite is left as it is.
 pub fn rotation(tag: &Tag) -> [f32; 2] {
-    read_doubles::<2>(tag.get("Rotation")).map_or([0.0; 2], |r| {
-        let yaw = r[0] as f32;
-        let pitch = r[1] as f32;
-        [
-            if yaw.is_finite() {
-                wrap_degrees(yaw)
-            } else {
-                yaw
-            },
-            if pitch.is_finite() {
-                pitch.clamp(-90.0, 90.0)
-            } else {
-                pitch
-            },
-        ]
-    })
+    read_doubles::<2>(tag.get("Rotation")).map_or([0.0; 2], |r| [r[0] as f32, r[1] as f32])
+}
+/// A saved Rotation as `Entity.load` takes it: the yaw wrapped into [-180, 180) (`Mth.wrapDegrees`) and the pitch
+/// clamped to [-90, 90]; a value that is not finite is left as it is. What a save writes is read with [`rotation`].
+pub fn loaded_rotation(tag: &Tag) -> [f32; 2] {
+    let [yaw, pitch] = rotation(tag);
+    [
+        if yaw.is_finite() {
+            wrap_degrees(yaw)
+        } else {
+            yaw
+        },
+        if pitch.is_finite() {
+            pitch.clamp(-90.0, 90.0)
+        } else {
+            pitch
+        },
+    ]
 }
 /// `Mth.wrapDegrees`.
 fn wrap_degrees(degrees: f32) -> f32 {
@@ -1790,7 +1790,7 @@ fn mob_from_nbt_at(
     authoritative: bool,
 ) -> Option<Mob> {
     let kind = types.get(&self::kind(tag)?)?.clone();
-    let [yaw, pitch] = rotation(tag);
+    let [yaw, pitch] = loaded_rotation(tag);
     let mut m = if authoritative {
         Mob::with_random(id, kind, position, yaw, random)
     } else {
@@ -11275,12 +11275,14 @@ mod loaded_rotation_tests {
     /// vanilla 26.3 reads `Rotation:[400f,100f]` back as `[40f, 90f]`.
     #[test]
     fn a_saved_rotation_loads_wrapped_and_clamped() {
-        assert_eq!(rotation(&tag(400.0, 100.0)), [40.0, 90.0]);
-        assert_eq!(rotation(&tag(-190.0, -100.0)), [170.0, -90.0]);
-        assert_eq!(rotation(&tag(180.0, 0.0)), [-180.0, 0.0]);
-        assert_eq!(rotation(&tag(73.0, -24.0)), [73.0, -24.0]);
+        assert_eq!(loaded_rotation(&tag(400.0, 100.0)), [40.0, 90.0]);
+        assert_eq!(loaded_rotation(&tag(-190.0, -100.0)), [170.0, -90.0]);
+        assert_eq!(loaded_rotation(&tag(180.0, 0.0)), [-180.0, 0.0]);
+        assert_eq!(loaded_rotation(&tag(73.0, -24.0)), [73.0, -24.0]);
+        // a save writes the raw value (a painting's yaw 270 from its facing) and reads it back as it is
+        assert_eq!(rotation(&tag(270.0, 10.0)), [270.0, 10.0]);
         assert_eq!(
-            rotation(&Tag::compound(Vec::<(&str, Tag)>::new())),
+            loaded_rotation(&Tag::compound(Vec::<(&str, Tag)>::new())),
             [0.0, 0.0]
         );
     }

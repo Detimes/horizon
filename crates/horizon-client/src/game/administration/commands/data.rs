@@ -323,7 +323,7 @@ impl Game<'_> {
                     .persist
                     .raw
                     .get(&id)
-                    .map_or([0.0; 2], horizon_client::entity_nbt::rotation);
+                    .map_or([0.0; 2], horizon_client::entity_nbt::loaded_rotation);
                 // Read the live cloud, including its current radius and age;
                 // the raw compound alone does not contain generated clouds.
                 let mut tag = self.other_to_nbt(
@@ -691,7 +691,7 @@ impl Game<'_> {
                     falling.position = position;
                     falling.previous = position;
                     falling.velocity = velocity;
-                    falling.rotation = entity_nbt::rotation(&tag);
+                    falling.rotation = entity_nbt::loaded_rotation(&tag);
                     falling.age = age;
                     falling.no_gravity = no_gravity;
                     falling.drop_item = drop_item;
