@@ -8,7 +8,8 @@ impl Game<'_> {
     /// None. False when the server list is unavailable, the handle is stale or the player
     /// isn't online.
     pub(super) fn player_set_list_name(&mut self, player: PlayerRef, name: Option<Text>) -> bool {
-        let online = self.native_acting_player() == Some(player)
+        // A fake player acting on itself is no one's Tab entry.
+        let online = (self.native_acting_player() == Some(player) && !self.lan_acting_fake)
             || self.online_player_record(player).is_some();
         if !online {
             return false;

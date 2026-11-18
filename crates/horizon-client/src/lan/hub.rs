@@ -4750,7 +4750,9 @@ impl Hub {
             return;
         };
         let display_name = self.tab_list_name(uuid, &guest.name);
-        self.broadcast(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+        // The held players too: a client held for its hand-over already has this entry (the login sent
+        // it), and `place_arrival` sends only the newcomer's own.
+        self.broadcast_watching(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
             actions: 0x20,
             entries: vec![play::PlayerInfo {
                 uuid,
@@ -5865,11 +5867,20 @@ mod tests {
         hub.set_list_name(1, Some(red.clone()));
         assert_eq!(hub.list_names.get(&1), Some(&red));
         let name = shown(sent(&rx)).expect("an update to everyone");
-        assert_eq!(name, hub.tab_list_name(1, "Bob"));
+        // independent of `tab_list_name`: the red name the mod set, and then the nickname
+        assert_eq!(
+            name,
+            Some(crate::scoreboard::component_tag(&red.component()))
+        );
         hub.set_list_name(1, None);
         assert!(!hub.list_names.contains_key(&1));
         let name = shown(sent(&rx)).expect("an update to everyone");
-        assert_eq!(name, hub.tab_list_name(1, "Bob"));
+        assert_eq!(
+            name,
+            Some(crate::scoreboard::component_tag(
+                &crate::text::Text::literal(&"Bobby".to_owned()).component()
+            ))
+        );
         // A player who is not on keeps the name for their return, and nothing is sent.
         hub.set_list_name(7, Some(red.clone()));
         assert!(sent(&rx).is_empty());
