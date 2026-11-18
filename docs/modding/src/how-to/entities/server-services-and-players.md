@@ -76,6 +76,14 @@ across a leave and rejoin. The `player_tab_list_name_format` hook still has the 
 and chat, name tags and commands keep the real name. The call returns `false` for a stale
 handle, an unavailable server list or a player who is not online.
 
+The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
+return what the calls above set. Latency is the Tab list ping in milliseconds
+(`Option<i32>`, `0` until the first keep-alive answer). `hidden` is the level
+`hide` set, `None` when shown (`Option<Option<u8>>`). `nickname` is the nickname
+in place of the player's name, `None` when there is none (`Option<Option<String>>`).
+An outer `None` means a stale or unavailable player for all three, a client or an
+unjoinable world for `hidden`, and no server list for `nickname`.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`
