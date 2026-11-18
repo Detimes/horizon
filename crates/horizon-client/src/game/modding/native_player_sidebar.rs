@@ -29,7 +29,8 @@ impl Game<'_> {
                 let mut lines = Vec::with_capacity(sidebar.lines.len().min(SIDEBAR_LINES));
                 for line in sidebar.lines.iter().take(SIDEBAR_LINES) {
                     let text = line.text.try_into_engine(&())?;
-                    let value: Option<horizon_client::text::Text> = line.value.try_into_engine(&())?;
+                    let value: Option<horizon_client::text::Text> =
+                        line.value.try_into_engine(&())?;
                     texts.extend([Some(text.clone()), value.clone()].into_iter().flatten());
                     lines.push((text, value));
                 }
