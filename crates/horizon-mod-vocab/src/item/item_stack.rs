@@ -151,6 +151,9 @@ pub struct StackSplit {
     pub remainder: Option<ItemStack>,
 }
 
+/// The most lore lines the item packet reader takes.
+const MAX_LORE_LINES: usize = 256;
+
 impl ItemStack {
     /// Construct a nonempty stack. Registry maxima are validated by the game on writes.
     pub fn new(item: ItemKey, count: u32) -> Option<Self> {
@@ -420,13 +423,19 @@ impl ItemStack {
     /// Bukkit's `ItemMeta.displayName` and `lore` do: None removes the name, an empty `lore`
     /// removes the lore. The texts become component NBT through the host
     /// (`TextHost::text_to_nbt`); vanilla draws a custom name in italics unless its style says
-    /// `italic: false`. Nothing changes when a text is refused.
+    /// `italic: false`. Nothing changes when a text is refused, or when `lore` has more than 256
+    /// lines (`Malformed`: the item packet reader takes at most 256). Clearing the name or the lore
+    /// records a removal when the item's prototype supplies that component, so its default does not
+    /// come back.
     pub fn set_display(
         &mut self,
         host: &dyn crate::Host,
         name: Option<&crate::Text>,
         lore: &[crate::Text],
     ) -> Result<(), crate::TextFormError> {
+        if lore.len() > MAX_LORE_LINES {
+            return Err(crate::TextFormError::Malformed);
+        }
         let name = name.map(|name| host.text_to_nbt(name)).transpose()?;
         let lore = lore
             .iter()
@@ -436,10 +445,14 @@ impl ItemStack {
             Some(name) => {
                 let _ = self.set_component_value("minecraft:custom_name", name);
             }
-            None => self.remove_component_value("minecraft:custom_name", false),
+            None => {
+                let default = host.item_default_component(self.item, "minecraft:custom_name");
+                self.remove_component_value("minecraft:custom_name", default.is_some());
+            }
         }
         if lore.is_empty() {
-            self.remove_component_value("minecraft:lore", false);
+            let default = host.item_default_component(self.item, "minecraft:lore");
+            self.remove_component_value("minecraft:lore", default.is_some());
         } else {
             let _ = self.set_component_value("minecraft:lore", Tag::List(lore));
         }
@@ -523,7 +536,16 @@ mod tests {
             None
         }
     }
-    crate::impl_host_areas!(TextNbt, except(text));
+    /// Its items have no prototype defaults.
+    impl crate::prelude::ItemsHost for TextNbt {
+        fn item_key(&self, _: &crate::Identifier) -> Option<ItemKey> {
+            None
+        }
+        fn item_default_component(&self, _: ItemKey, _: &str) -> Option<Tag> {
+            None
+        }
+    }
+    crate::impl_host_areas!(TextNbt, except(text, items));
 
     #[test]
     fn set_display_writes_and_clears_the_name_and_lore_components() {
@@ -561,6 +583,56 @@ mod tests {
         assert_eq!(stack, before);
         stack.set_display(&TextNbt, None, &[]).unwrap();
         assert!(stack.components().is_none(), "both components removed");
+    }
+
+    /// [`TextNbt`] over an item whose prototype supplies a name and a lore.
+    struct Prototyped;
+    impl crate::prelude::TextHost for Prototyped {
+        fn text_to_nbt(&self, text: &crate::Text) -> Result<Tag, crate::TextFormError> {
+            TextNbt.text_to_nbt(text)
+        }
+    }
+    impl crate::prelude::ItemsHost for Prototyped {
+        fn item_key(&self, _: &crate::Identifier) -> Option<ItemKey> {
+            None
+        }
+        fn item_default_component(&self, _: ItemKey, id: &str) -> Option<Tag> {
+            matches!(id, "minecraft:custom_name" | "minecraft:lore")
+                .then(|| Tag::String("default".into()))
+        }
+    }
+    impl crate::Host for Prototyped {
+        fn backend(&self) -> Option<crate::BackendRef<'_>> {
+            None
+        }
+    }
+    crate::impl_host_areas!(Prototyped, except(text, items));
+
+    /// More than 256 lore lines is refused before either component changes, and clearing the name
+    /// or the lore of an item whose prototype supplies one records a removal.
+    #[test]
+    fn set_display_limits_the_lore_and_records_the_removal_of_a_prototype_default() {
+        let mut stack = ItemStack::of(ItemKey(0));
+        let lines = vec![crate::Text::literal("l"); 257];
+        let before = stack.clone();
+        assert_eq!(
+            stack.set_display(&TextNbt, Some(&crate::Text::literal("Sword")), &lines),
+            Err(crate::TextFormError::Malformed)
+        );
+        assert_eq!(stack, before, "neither component changed");
+        stack
+            .set_display(&TextNbt, None, &vec![crate::Text::literal("l"); 256])
+            .unwrap();
+        assert!(stack.components().is_some());
+        // no prototype default: clearing leaves no trace; with one, the removal is recorded
+        let mut plain = ItemStack::of(ItemKey(0));
+        plain.set_display(&TextNbt, None, &[]).unwrap();
+        assert!(plain.components().is_none());
+        let mut named = ItemStack::of(ItemKey(0));
+        named.set_display(&Prototyped, None, &[]).unwrap();
+        let patch = named.components().unwrap().as_nbt();
+        assert!(patch.contains_key(&JavaString::from("!minecraft:custom_name")));
+        assert!(patch.contains_key(&JavaString::from("!minecraft:lore")));
     }
 
     struct Number;

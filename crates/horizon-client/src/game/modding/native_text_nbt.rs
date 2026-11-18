@@ -4,8 +4,9 @@ use horizon_client::{lan::data::component_nbt, text::Text};
 use horizon_core::nbt::{Tag, within_depth};
 use mod_api::TextFormError;
 
-/// The deepest NBT the writer takes.
-const NBT_DEPTH: usize = 512;
+/// The deepest NBT the writer takes, less the containers the text sits in once it is saved with an item:
+/// the stack's compound, its `components` compound and, for a lore line, the `lore` list.
+const NBT_DEPTH: usize = 512 - 3;
 
 /// A component's JSON as item components and block entities store it: a plain literal with no style
 /// and no children is its string (as `ComponentSerialization` saves it, so two stacks that carry the
@@ -60,7 +61,8 @@ mod tests {
         ));
     }
 
-    /// A chain of 257 children passes the 512-node text check but its NBT has 513 nested containers.
+    /// A chain of 257 children passes the 512-node text check but its NBT has 513 nested containers; one of
+    /// 255 fits the writer alone and not once the item's own containers are counted.
     #[test]
     fn a_text_whose_nbt_is_too_deep_is_refused() {
         let chain = |n: usize| {
@@ -70,6 +72,8 @@ mod tests {
             )
         };
         assert_eq!(component_to_nbt(&chain(257)), Err(TextFormError::TooDeep));
+        assert_eq!(component_to_nbt(&chain(255)), Err(TextFormError::TooDeep));
+        assert!(component_to_nbt(&chain(254)).is_ok());
         assert!(component_to_nbt(&chain(200)).is_ok());
     }
 
