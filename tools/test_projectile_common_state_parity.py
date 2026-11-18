@@ -135,12 +135,49 @@ def groups():
             cmd(f'/data get entity {target} PortalCooldown', expect_result=4),
             *setup(f'/kill {target}'),
         ])
+    # arrow and orb frozen ticks: a summoned value is read back, after ticks, and across a chunk save and reload.
+    extra_kinds = ('arrow', 'spectral_arrow', 'experience_orb')
+    extra = []
+    for kind in extra_kinds:
+        target = f'@e[type={kind},limit=1]'
+        for saved in ('', ',TicksFrozen:100', ',TicksFrozen:0', ',TicksFrozen:-5', ',TicksFrozen:"bad"'):
+            extra.extend([
+                cmd(f'/summon {kind} 12.5 234 8.5 {{NoGravity:1b{saved}}}'),
+                cmd(f'/data get entity {target} TicksFrozen'),
+                {'op': 'tick', 'n': 3},
+                cmd(f'/data get entity {target} TicksFrozen'),
+                *setup(f'/kill {target}'),
+            ])
+    extra_reload = [*setup(f'/forceload add {chunk}'), wait]
+    for index, kind in enumerate(extra_kinds):
+        extra_reload.append(cmd(
+            f'/summon {kind} {4100 + 4 * index}.5 300 4104.5 {{NoGravity:1b,TicksFrozen:180}}'))
+    extra_reload.append({'op': 'tick', 'n': 3})
+    for kind in extra_kinds:
+        extra_reload.append(cmd(f'/data get entity @e[type={kind},limit=1] TicksFrozen'))
+    extra_reload.extend([
+        *setup(f'/forceload remove {chunk}'),
+        {'op': 'tick', 'n': 60},
+        cmd('/execute unless loaded 4096 300 4096', expect_result=1),
+        *setup(f'/forceload add {chunk}'),
+        wait,
+    ])
+    for kind in extra_kinds:
+        target = f'@e[type={kind},limit=1]'
+        extra_reload.extend([
+            cmd(f'/execute if entity {target}', expect_result=1),
+            cmd(f'/data get entity {target} TicksFrozen'),
+            *setup(f'/kill {target}'),
+        ])
+    extra_reload.extend(setup(f'/forceload remove {chunk}'))
     return [
         ('projectile common state', summon),
         ('projectile common state reload', reloads),
         ('wither skull chunk reload', skull_reload),
         ('projectile fire and water', block_effects),
         ('other projectile codecs', controls),
+        ('arrow and orb frozen ticks', extra),
+        ('arrow and orb frozen ticks reload', extra_reload),
     ]
 
 
