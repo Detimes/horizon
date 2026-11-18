@@ -36,11 +36,7 @@ pub struct Command {
     pub usage: String,
     /// The operator level a player needs to run this usage (0: everyone).
     /// Shared prefixes stay visible when needed to reach a lower-level usage.
-    /// Side: server. Not used while a usage has a `node` and a custom permission
-    /// handler is selected; see [`Self::with_node`].
     pub level: u8,
-    /// The Boolean permission node this usage asks, set by [`Self::with_node`]. Side: server.
-    pub node: Option<PermissionNode>,
 }
 
 impl Command {
@@ -49,7 +45,6 @@ impl Command {
         Self {
             usage: usage.to_owned(),
             level: 0,
-            node: None,
         }
     }
     /// The same, for operators of `level` and above.
@@ -57,17 +52,35 @@ impl Command {
         Self {
             usage: usage.to_owned(),
             level: level.min(4),
-            node: None,
         }
     }
-    /// The same usage, asking a Boolean permission node instead of its level when a custom
-    /// permission handler is selected: the handler's answer decides who sees and runs it, and a
-    /// handler error refuses the command without falling back to `level`. With no custom
-    /// handler the usage keeps its level. A node that is not Boolean refuses the usage. Side: server.
-    pub fn with_node(mut self, node: &PermissionNode) -> Self {
-        self.node = Some(node.clone());
-        self
+    /// This usage asking a Boolean permission node instead of its level when a custom permission
+    /// handler is selected. Register the result with `register_node_commands`; `register_commands`
+    /// takes only plain [`Command`]s, so a mod built for API 0.2 keeps its payload. See
+    /// [`NodeCommand`]. Side: server.
+    pub fn with_node(self, node: &PermissionNode) -> NodeCommand {
+        NodeCommand {
+            command: self,
+            node: node.clone(),
+        }
     }
+}
+
+/// A [`Command`] usage whose permission is a Boolean permission node, pushed by
+/// `register_node_commands` beside the plain commands of `register_commands`.
+///
+/// While a custom permission handler is selected, the handler's answer for `node` decides who sees
+/// and runs the usage, `command.level` is not used, and a handler error refuses the command
+/// without falling back to the level. With the built-in handler the usage keeps `command.level`.
+/// A node that is not Boolean refuses the usage. Side: server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub struct NodeCommand {
+    /// The usage and, for the built-in handler, its operator level.
+    pub command: Command,
+    /// The Boolean permission node this usage asks.
+    pub node: PermissionNode,
 }
 
 /// Which `Game` observes the phase; a mirror `Game` never fires.

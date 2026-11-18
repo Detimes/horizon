@@ -159,6 +159,13 @@ fn usage_nodes(
     Ok(out)
 }
 
+/// Whether the node at `index` of a usage's nodes (`usage_nodes`) ends a runnable path: nothing
+/// follows it, or only optional nodes do. The command tree and the permission gate both ask it of
+/// the same nodes, so a gated path is the very path the tree makes executable.
+pub(super) fn runs_at(nodes: &[(String, Value, bool)], index: usize) -> bool {
+    nodes.get(index + 1).is_none_or(|next| next.2)
+}
+
 /// Native mods' commands as a root in the commands report's format
 /// (`lan::commands`, which sends each player what their level allows), and
 /// each command's traversal level: the lowest of its usages. A node is runnable where
@@ -230,7 +237,7 @@ pub(super) fn command_tree_accepting(
         }
         let mut children = &mut root;
         for (i, (name, node, _)) in nodes.iter().enumerate() {
-            let runnable = nodes.get(i + 1).is_none_or(|n| n.2);
+            let runnable = runs_at(&nodes, i);
             let entry = children.entry(name.clone()).or_insert_with(|| {
                 let mut n = node.clone();
                 n["executable"] = false.into();

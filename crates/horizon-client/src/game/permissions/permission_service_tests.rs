@@ -2,7 +2,8 @@
 //! contexts, online and offline UUIDs, initialization, handler selection and failures.
 
 use super::permission_service::{
-    HandlerFactory, LevelSource, ModAnswers, PermissionHandler, PermissionService,
+    DEFAULT_HANDLER_ID, HandlerFactory, LevelSource, ModAnswers, NodePolicy, PermissionHandler,
+    PermissionService,
 };
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
@@ -589,12 +590,12 @@ fn the_collector_declares_nodes_like_register_node() {
 }
 
 #[test]
-fn a_custom_handler_is_reported_only_when_its_factory_was_selected() {
+fn the_node_policy_follows_the_selection_and_a_missing_handler_is_its_own_state() {
     let built_in = ready(vec![(
         boolean("a.flag"),
         NodeDefault::Level(PermissionLevel::All),
     )]);
-    assert!(!built_in.custom_handler_selected());
+    assert_eq!(built_in.node_policy(), NodePolicy::Levels);
 
     let mut unknown = PermissionService::new();
     unknown
@@ -607,7 +608,8 @@ fn a_custom_handler_is_reported_only_when_its_factory_was_selected() {
         )
         .unwrap();
     unknown.finish_gathering(Some("missing"));
-    assert!(!unknown.custom_handler_selected());
+    // A handler id no mod gathered is not the built-in handler: node usages are refused.
+    assert_eq!(unknown.node_policy(), NodePolicy::Refused);
 
     let mut selected = PermissionService::new();
     selected
@@ -620,7 +622,7 @@ fn a_custom_handler_is_reported_only_when_its_factory_was_selected() {
         )
         .unwrap();
     selected.finish_gathering(Some("policy"));
-    assert!(selected.custom_handler_selected());
+    assert_eq!(selected.node_policy(), NodePolicy::Handler);
 }
 
 #[test]
@@ -632,7 +634,7 @@ fn a_second_gathering_changes_nothing() {
     )]);
     // A join or a resource reload must not select a handler or declare a node afterwards.
     service.finish_gathering(Some("policy"));
-    assert!(!service.custom_handler_selected());
+    assert_eq!(service.node_policy(), NodePolicy::Levels);
     assert_eq!(
         service.register_handler_factory(
             "policy",
@@ -649,4 +651,38 @@ fn a_second_gathering_changes_nothing() {
         Ok(true)
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_failed_setup_is_refused_and_a_service_not_yet_gathered_is_not() {
+    let pending = PermissionService::new();
+    assert_eq!(pending.node_policy(), NodePolicy::Levels);
+
+    let mut failed = PermissionService::failed();
+    assert_eq!(failed.node_policy(), NodePolicy::Refused);
+    // It stays uninitialized: every query is refused too.
+    assert!(!failed.is_initialized());
+    assert_eq!(
+        failed.query_bool(&boolean("a.flag"), None, CAROL),
+        Err(PermissionError::NotInitialized)
+    );
+}
+
+#[test]
+fn a_missing_configured_handler_refuses_node_usages_but_the_default_still_answers_queries() {
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_node(boolean("a.flag"), NodeDefault::Level(PermissionLevel::All))
+        .unwrap();
+    service.finish_gathering(Some("missing"));
+    assert_eq!(service.node_policy(), NodePolicy::Refused);
+    assert_eq!(
+        service.query_bool(&boolean("a.flag"), None, CAROL),
+        Ok(true)
+    );
+    // Naming the built-in handler is not a missing handler.
+    let mut named = PermissionService::new();
+    named.finish_gathering(Some(DEFAULT_HANDLER_ID));
+    assert_eq!(named.node_policy(), NodePolicy::Levels);
 }

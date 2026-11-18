@@ -1,7 +1,11 @@
 //! Tests for gathering, selection and the mod-backed handler. Expected values are literals.
 
-use super::handler::{ModPermissionHandler, configured_handler, gather_handlers};
-use super::permission_service::{ModAnswer, ModAnswers, PermissionHandler, PermissionService};
+use super::handler::{
+    ConfiguredHandler, ModPermissionHandler, configured_handler, gather_handlers,
+};
+use super::permission_service::{
+    ModAnswer, ModAnswers, NodePolicy, PermissionHandler, PermissionService,
+};
 use mod_api::{
     PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
@@ -53,9 +57,13 @@ fn gathered<'a>(ids: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
 }
 
 #[test]
-fn empty_setting_selects_no_handler() {
+fn empty_setting_and_the_default_id_ask_for_the_built_in_handler() {
     let ids = gathered(&[("garden.policy", "garden")]);
-    assert_eq!(configured_handler("", &ids), None);
+    assert_eq!(configured_handler("", &ids), ConfiguredHandler::BuiltIn);
+    assert_eq!(
+        configured_handler("default", &ids),
+        ConfiguredHandler::BuiltIn
+    );
 }
 
 #[test]
@@ -63,14 +71,32 @@ fn gathered_setting_selects_its_handler() {
     let ids = gathered(&[("garden.policy", "garden"), ("shop.policy", "shop")]);
     assert_eq!(
         configured_handler("shop.policy", &ids),
-        Some("shop.policy".to_owned())
+        ConfiguredHandler::Gathered("shop.policy".to_owned())
     );
 }
 
 #[test]
-fn unknown_setting_selects_no_handler() {
+fn an_unknown_setting_is_a_configured_handler_that_is_missing_not_the_built_in_one() {
     let ids = gathered(&[("garden.policy", "garden")]);
-    assert_eq!(configured_handler("missing.policy", &ids), None);
+    assert_eq!(
+        configured_handler("missing.policy", &ids),
+        ConfiguredHandler::Missing("missing.policy".to_owned())
+    );
+}
+
+#[test]
+fn a_configured_handler_no_mod_gathered_refuses_node_usages() {
+    let ids = gathered(&[("garden.policy", "garden")]);
+    let mut service = PermissionService::new();
+    assert!(gather_handlers(&mut service, &ids, "missing.policy").is_ok());
+    assert_eq!(service.node_policy(), NodePolicy::Refused);
+    // The setting is the one that decides, not the gathered set: none configured is the built-in.
+    let mut built_in = PermissionService::new();
+    assert!(gather_handlers(&mut built_in, &ids, "").is_ok());
+    assert_eq!(built_in.node_policy(), NodePolicy::Levels);
+    let mut selected = PermissionService::new();
+    assert!(gather_handlers(&mut selected, &ids, "garden.policy").is_ok());
+    assert_eq!(selected.node_policy(), NodePolicy::Handler);
 }
 
 #[test]
@@ -93,6 +119,8 @@ fn empty_handler_id_is_invalid_input() {
 
 #[test]
 fn reopened_server_gathers_afresh() {
+    // A failed setup is its own state: node usages are refused, not run at their levels.
+    assert_eq!(service.node_policy(), NodePolicy::Refused);
     let ids = gathered(&[("garden.policy", "garden")]);
     let mut first = PermissionService::new();
     assert!(gather_handlers(&mut first, &ids, "garden.policy").is_ok());
@@ -103,6 +131,7 @@ fn reopened_server_gathers_afresh() {
 #[test]
 fn provider_answer_is_returned() {
     let answer = ask(
+    assert_eq!(service.node_policy(), NodePolicy::Refused);
         "garden",
         Some(|| Ok(PermissionValue::Boolean(true))),
         &node(PermissionValueType::Boolean),

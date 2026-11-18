@@ -218,11 +218,13 @@ impl Game<'_> {
             Ok(service) => service,
             Err(error) => {
                 // Two mods declared the same node: the gather failed as a whole, so no handler is
-                // selected and the service stays empty and uninitialized, refusing every query.
+                // selected and the service stays empty and uninitialized, refusing every query. It
+                // is marked failed, so command usages with a node are refused too, not run at
+                // their operator levels.
                 log::error!(
-                    "permission nodes were not gathered ({error}): no permission query is answered"
+                    "permission nodes were not gathered ({error}): no permission query is answered and command usages with a permission node are refused"
                 );
-                self.permission_service = PermissionService::new();
+                self.permission_service = PermissionService::failed();
                 return;
             }
         };
@@ -234,7 +236,7 @@ impl Game<'_> {
             .collect();
         if let Err(error) = gather_handlers(&mut service, &gathered, configured_handler) {
             log::error!(
-                "permission handlers were not gathered ({error}): no permission query is answered"
+                "permission handlers were not gathered ({error}): no permission query is answered and command usages with a permission node are refused"
             );
         }
         self.permission_service = service;

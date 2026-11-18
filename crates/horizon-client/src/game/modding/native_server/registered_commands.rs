@@ -55,9 +55,12 @@ impl Game<'_> {
         }
         let mut registered = Vec::new();
         self.native_register_commands(&mut registered);
-        let custom_handler = self.permission_service.custom_handler_selected();
+        let mut with_nodes = Vec::new();
+        self.native_register_node_commands(&mut with_nodes);
+        let policy = self.permission_service.node_policy();
+        let arguments = command_arguments();
         let (usages, mut gate, gate_problems) =
-            permission_gate::split_usages(&registered, custom_handler);
+            permission_gate::split_usages(&registered, &with_nodes, policy, &arguments);
         for p in gate_problems {
             log::warn!("Horizon: a native mod's command was left out: {p}");
         }
@@ -65,7 +68,6 @@ impl Game<'_> {
             &self.level.rule_registry,
             features,
         );
-        let arguments = command_arguments();
         let hub = self.lan.as_ref().map(|host| &host.hub);
         let (tree, levels, problems, rejected) = command_tree_accepting(
             &usages,

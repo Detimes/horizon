@@ -5,7 +5,9 @@
 //! The permission service (`permission_service.rs`) provides `PermissionHandler`,
 //! `register_handler_factory`, `finish_gathering` and `query`.
 
-use super::permission_service::{ModAnswers, PermissionHandler, PermissionService};
+use super::permission_service::{
+    DEFAULT_HANDLER_ID, ModAnswers, PermissionHandler, PermissionService,
+};
 use mod_api::{
     PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
@@ -94,31 +96,63 @@ fn value_matches(value: &PermissionValue, ty: &PermissionValueType) -> bool {
     )
 }
 
-/// The handler `permission-handler` selects. An empty setting selects none. A name no mod
-/// gathered is logged, naming the id, and selects none: the default handler answers. Side: server.
-pub(crate) fn configured_handler(configured: &str, gathered: &[(&str, &str)]) -> Option<String> {
-    if configured.is_empty() {
-        return None;
+/// What `permission-handler` asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ConfiguredHandler {
+    /// An empty setting, or `default`: the built-in handler answers.
+    BuiltIn,
+    /// A handler some mod gathered.
+    Gathered(String),
+    /// A handler id no mod gathered (a typo, or the handler mod missing or disabled). It is not
+    /// the built-in handler: a custom handler was configured, none could be selected, and command
+    /// usages with a node are refused.
+    Missing(String),
+}
+
+/// The handler `permission-handler` asks for. A name no mod gathered is logged, naming the id,
+/// and is `Missing`, not the built-in handler. Side: server.
+pub(crate) fn configured_handler(configured: &str, gathered: &[(&str, &str)]) -> ConfiguredHandler {
+    if configured.is_empty() || configured == DEFAULT_HANDLER_ID {
+        return ConfiguredHandler::BuiltIn;
     }
     if gathered.iter().any(|(id, _)| *id == configured) {
-        return Some(configured.to_owned());
+        return ConfiguredHandler::Gathered(configured.to_owned());
     }
     log::warn!(
-        "permission-handler \"{configured}\" names no gathered handler; the default handler answers permission queries"
+        "permission-handler \"{configured}\" names no gathered handler; command usages with a permission node are refused"
     );
-    None
+    ConfiguredHandler::Missing(configured.to_owned())
 }
 
 /// Registers each gathered handler factory (`(id, providing mod)` pairs), selects one and publishes the service through
 /// `finish_gathering`. A duplicate or empty id returns its error before anything is selected, so
-/// the service stays uninitialized and refuses every query. The node set must already be gathered.
-/// Side: server.
+/// the service stays uninitialized, refuses every query and is marked failed (`node_policy` is
+/// `Refused`). A configured id no mod gathered selects the built-in handler for queries and
+/// marks the service `Refused` for command usages with a node. The node set must already be
+/// gathered. Side: server.
 pub(crate) fn gather_handlers(
     service: &mut PermissionService,
     gathered: &[(&str, &str)],
     configured: &str,
 ) -> Result<(), PermissionError> {
     for (id, owner) in gathered {
+) -> Result<(), PermissionError> {
+    let registered = register_gathered(service, gathered);
+    if registered.is_err() {
+        service.mark_setup_failed();
+        return registered;
+    }
+    let selected = match configured_handler(configured, gathered) {
+        ConfiguredHandler::BuiltIn => None,
+        ConfiguredHandler::Gathered(id) | ConfiguredHandler::Missing(id) => Some(id),
+    };
+    service.finish_gathering(selected.as_deref());
+    Ok(())
+}
+
+fn register_gathered(
+    service: &mut PermissionService,
+    gathered: &[(&str, &str)],
         if id.is_empty() {
             return Err(PermissionError::InvalidInput);
         }
@@ -132,7 +166,5 @@ pub(crate) fn gather_handlers(
             ),
         )?;
     }
-    let selected = configured_handler(configured, gathered);
-    service.finish_gathering(selected.as_deref());
     Ok(())
 }

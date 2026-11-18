@@ -76,6 +76,19 @@ type NodeKey = (String, PermissionValueType);
 
 /// Declared nodes, gathered handler factories and the selected handler of one server. A server
 /// owns one, created when it starts and dropped when it closes.
+/// Who decides the command usages that ask a permission node, as the service stands after its
+/// setup. Side: server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NodePolicy {
+    /// The built-in handler answers: a usage with a node keeps its operator level.
+    Levels,
+    /// A handler a mod provides answers: the node decides and its level is not asked.
+    Handler,
+    /// The setup failed (a node or a handler declared twice) or `permission-handler` names a
+    /// handler no mod provides: a usage with a node is refused, never run at its level.
+    Refused,
+}
+
 pub(crate) struct PermissionService {
     nodes: BTreeMap<NodeKey, (PermissionNode, NodeDefault)>,
     factories: BTreeMap<String, HandlerFactory>,
@@ -84,6 +97,11 @@ pub(crate) struct PermissionService {
     custom_handler: bool,
 }
 
+    /// A duplicate node or handler failed the setup: the service stays uninitialized.
+    setup_failed: bool,
+    /// `permission-handler` named a handler no mod gathered: a custom handler was configured,
+    /// but none was selected.
+    handler_missing: bool,
 impl Default for PermissionService {
     fn default() -> Self {
         Self::new()
@@ -101,9 +119,25 @@ impl PermissionService {
             custom_handler: false,
         }
     }
+            setup_failed: false,
+            handler_missing: false,
 
     /// Whether gathering has finished, so queries are answered.
     pub(crate) fn is_initialized(&self) -> bool {
+    /// A service whose setup failed. It stays uninitialized, so it refuses every query, and
+    /// `node_policy` is `Refused`: an uninitialized service that merely has not gathered yet is
+    /// a different state.
+    pub(crate) fn failed() -> Self {
+        let mut service = Self::new();
+        service.mark_setup_failed();
+        service
+    }
+
+    /// Records that gathering failed (a node or a handler declared twice).
+    pub(crate) fn mark_setup_failed(&mut self) {
+        self.setup_failed = true;
+    }
+
         self.handler.is_some()
     }
 
@@ -155,8 +189,10 @@ impl PermissionService {
     }
 
     /// Ends gathering: selects the configured factory, or the built-in handler when none is
-    /// configured or the configured id is unknown (logged by name), builds the handler from the
-    /// declared nodes and starts answering. A second call does nothing.
+    /// configured, builds the handler from the declared nodes and starts answering. A configured
+    /// id no mod gathered (logged by name) keeps the built-in handler for queries, but is its own
+    /// state: `node_policy` is `Refused`, so a command usage with a node does not run at an
+    /// operator level. A second call does nothing.
     pub(crate) fn finish_gathering(&mut self, configured_handler: Option<&str>) {
         if self.is_initialized() {
             return;
@@ -168,10 +204,11 @@ impl PermissionService {
                 Some(factory) => Some(factory),
                 None => {
                     log::warn!(
-                        "permission-handler \"{id}\" is not gathered: the built-in default handler answers"
+                        "permission-handler \"{id}\" is not gathered: the built-in default handler answers queries, and command usages with a permission node are refused"
                     );
                     None
                 }
+                    self.handler_missing = true;
             },
         };
         self.factories.clear();
@@ -191,9 +228,18 @@ impl PermissionService {
         self.handler = Some(handler);
     }
 
-    /// Whether a handler other than the built-in one was selected. Side: server.
-    pub(crate) fn custom_handler_selected(&self) -> bool {
-        self.custom_handler
+    /// Who decides the command usages that ask a node: the built-in handler's levels, a mod's
+    /// handler, or nobody (`Refused`). A failed setup and a configured handler no mod provided
+    /// are `Refused`; a service that has not gathered yet is `Levels`, as before there was a
+    /// service. Side: server.
+    pub(crate) fn node_policy(&self) -> NodePolicy {
+        if self.setup_failed || self.handler_missing {
+            NodePolicy::Refused
+        } else if self.custom_handler {
+            NodePolicy::Handler
+        } else {
+            NodePolicy::Levels
+        }
     }
 
     /// Answers `node` for `uuid`. `online` is the UUID when the player is on this server; an
