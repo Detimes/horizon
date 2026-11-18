@@ -236,5 +236,17 @@ fn a_summoned_portal_cooldown_is_saved_for_an_orb_and_an_arrow() {
             .command_target_nbt(commands::Target::Projectile(arrow))
             .unwrap();
         assert_eq!(tag.get("PortalCooldown"), Some(&Tag::Int(250)));
+        // A merged cooldown survives the read path, which writes the live value.
+        assert!(
+            run(
+                game,
+                "data merge entity 00000009-0000-0000-0000-000000000004 {PortalCooldown:120}"
+            )
+            .0
+        );
+        let tag = game
+            .command_target_nbt(commands::Target::Projectile(arrow))
+            .unwrap();
+        assert_eq!(tag.get("PortalCooldown"), Some(&Tag::Int(120)));
     });
 }
