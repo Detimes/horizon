@@ -93,12 +93,18 @@ pub struct Report {
     pub outside: Vec<String>,
     /// Files of the mod's own content the game would refuse, kept in
     /// `outside/` too, with why: a path vanilla does not read (upper case),
-    /// JSON that does not parse.
+    /// JSON that does not parse, a carver of a type written in Java.
     pub unreadable: BTreeMap<String, String>,
     pub recipes_upgraded: usize,
     pub loot_tables_upgraded: usize,
     /// Advancements whose criteria were rewritten ([`upgrade_advancement`]).
     pub advancements_upgraded: usize,
+    /// Damage types' death message types and effects that are not vanilla's
+    /// (a mod's own, added to NeoForge's enum in Java, or a misspelt one),
+    /// set to vanilla's default ([`java_damage_values`]): how often each
+    /// `<field> <original value>` was replaced.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub damage_types_defaulted: BTreeMap<String, usize>,
     /// Predicate files rewritten in 26.3's shape ([`upgrade_predicate`]).
     pub predicates_upgraded: usize,
     /// Blocks whose jar has no loot table but drop themselves in the oracle:
@@ -137,7 +143,8 @@ pub struct Report {
     /// Structure, placement and pool element types rewritten as vanilla's,
     /// and those left as they are.
     pub worldgen_types: crate::worldgen::Upgrade,
-    /// The loader's convention biome tags the structures name, carried.
+    /// The loader's convention biome tags the structures and biome modifiers
+    /// name, carried.
     pub convention_biome_tags: usize,
 }
 
@@ -460,6 +467,39 @@ pub fn upgrade_advancement(v: &mut Value) -> bool {
     changed
 }
 
+/// A damage type's enum fields, vanilla's values (`DeathMessageType`,
+/// `DamageEffects`), and the default of each.
+const DAMAGE_ENUMS: [(&str, &[&str]); 2] = [
+    (
+        "death_message_type",
+        &["default", "fall_variants", "intentional_game_design"],
+    ),
+    (
+        "effects",
+        &[
+            "hurt", "thorns", "drowning", "burning", "poking", "freezing",
+        ],
+    ),
+];
+
+/// A damage type's death message type and effects set to vanilla's default
+/// (the first value) when a mod added its own to NeoForge's enum in Java
+/// (Productive Metalworks' `productivemetalworks:foundry`, the Twilight
+/// Forest's `twilightforest:pinch`): 26.3 refuses the damage type, which stops
+/// the world. The `<field> <value>` pairs set, in place.
+fn java_damage_values(damage: &mut Value) -> Vec<String> {
+    let mut defaulted = Vec::new();
+    for (field, values) in DAMAGE_ENUMS {
+        if let Some(Value::String(v)) = damage.get_mut(field)
+            && !values.contains(&v.as_str())
+        {
+            defaulted.push(format!("{field} {v}"));
+            *v = values[0].to_owned();
+        }
+    }
+    defaulted
+}
+
 /// A 1.21.1 loot table in 26.3's shape, in place: `conditions` lists become
 /// one `condition` (`all_of` for several), `functions` become `modifier`,
 /// and conditions and functions name their kind in `type`. A tool match on
@@ -471,6 +511,15 @@ pub fn upgrade_loot(v: &mut Value) {
     match v {
         Value::Array(a) => a.iter_mut().for_each(upgrade_loot),
         Value::Object(o) => {
+            // 1.21.1 built in the empty table (`BuiltInLootTables.EMPTY`); 26.3
+            // binds a nested table's name to a loaded table and has no
+            // `minecraft:empty`, so the whole loot table load stops on it.
+            if o.get("type").and_then(Value::as_str) == Some("minecraft:loot_table")
+                && o.get("value").and_then(Value::as_str) == Some("minecraft:empty")
+            {
+                o.remove("value");
+                o.insert("type".to_owned(), json!("minecraft:empty"));
+            }
             if let Some(Value::Array(pools)) = o.get_mut("pools") {
                 for pool in pools {
                     for key in ["rolls", "bonus_rolls"] {
@@ -936,7 +985,43 @@ fn unreadable(name: &str, bytes: &mut Vec<u8>) -> Option<String> {
         o.remove("replace");
         *bytes = serde_json::to_vec_pretty(&value).expect("a parsed value serializes");
     }
+    // Vanilla refuses an advancement whose item predicates name a component or sub-predicate
+    // nothing registered (a mod's own, from its Java); the game would match it on any item and
+    // grant the advancement at once.
+    if name.starts_with("data/")
+        && name.contains("/advancement/")
+        && let Some(key) = mod_item_predicate(&value["criteria"])
+    {
+        return Some(format!(
+            "its criteria name {key}, an item component or predicate of the mod's Java"
+        ));
+    }
     None
+}
+
+/// The first data component or item sub-predicate outside `minecraft:` that an item
+/// predicate in `v` names (`"components"` or `"predicates"` keys).
+fn mod_item_predicate(v: &Value) -> Option<String> {
+    match v {
+        Value::Object(o) => ["components", "predicates"]
+            .iter()
+            .filter_map(|key| o.get(*key)?.as_object())
+            .flat_map(|m| m.keys())
+            .find(|k| k.split_once(':').is_some_and(|(ns, _)| ns != "minecraft"))
+            .cloned()
+            .or_else(|| o.values().find_map(mod_item_predicate)),
+        Value::Array(a) => a.iter().find_map(mod_item_predicate),
+        _ => None,
+    }
+}
+
+/// A data file's JSON as the carry reads it ([`unreadable`]): without a
+/// byte-order mark, and without comments when it has them.
+pub(crate) fn lenient_json(bytes: &[u8]) -> Option<Value> {
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    serde_json::from_slice(bytes)
+        .or_else(|_| serde_json::from_slice(&without_comments(bytes)))
+        .ok()
 }
 
 /// JSON text without the comments Gson's lenient reader skips: `//` and
@@ -1060,12 +1145,16 @@ pub fn carry(
     let mut biome_conventions = BTreeSet::new();
     let set_tags = crate::worldgen::structure_set_tags(&mut zip);
     let piece_counts = crate::worldgen::piece_counts(&mut zip);
+    let mut java_carvers = crate::worldgen::java_carvers(&mut zip);
     let mut processor_data = crate::processors::ProcessorData::read(&mut zip);
     processor_data.mark_loaded(loaded);
     report.namespaces = extra_namespaces(&mut zip, id, pack.mods);
     let owned: Vec<&str> = std::iter::once(id.as_str())
         .chain(report.namespaces.iter().map(String::as_str))
         .collect();
+    // Another namespace's carver stays outside anyway, and its id (vanilla's
+    // `minecraft:cave`) still names the game's own.
+    java_carvers.retain(|c, _| c.split_once(':').is_some_and(|(ns, _)| owned.contains(&ns)));
     let mut budget = crate::entry::Budget::archive();
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
@@ -1089,6 +1178,7 @@ pub fn carry(
             .map_err(|e| format!("{name}: {e}"))?;
         let unreadable = if keep {
             unreadable(&name, &mut bytes)
+                .or_else(|| crate::worldgen::java_carver(&name, &java_carvers))
         } else {
             None
         };
@@ -1102,7 +1192,12 @@ pub fn carry(
         }
         let dest = if keep {
             report.copied += 1;
-            inside.join(&name)
+            // Carvers and configured features under 26.3's folder names: the
+            // game reads a mod's worldgen there only.
+            // A file the jar also holds under the new name keeps it, as for 1.21's folders.
+            let renamed = crate::worldgen::renamed_in_26_3(&name)
+                .filter(|new| !present.contains(new.as_str()));
+            inside.join(renamed.unwrap_or_else(|| name.clone()))
         } else {
             report.outside.push(name.clone());
             outside.join(&name)
@@ -1179,6 +1274,9 @@ pub fn carry(
                     );
                     let mut changed =
                         crate::worldgen::upgrade(kind, &mut v, types, &set_tags) || carried;
+                    if kind == "biome" {
+                        changed |= crate::worldgen::drop_carvers(&mut v, &java_carvers);
+                    }
                     if kind == "structure" {
                         let path = rel.trim_start_matches("worldgen/structure/");
                         let structure = format!("{ns}:{}", path.trim_end_matches(".json"));
@@ -1199,6 +1297,7 @@ pub fn carry(
                 let modifier =
                     modifier.and_then(|v| crate::lithostitched::modifier(&v, loaded, types));
                 if let Some(("biome_modifier", file)) = &modifier {
+                    crate::worldgen::convention_tags(&file["biomes"], &mut biome_conventions);
                     let to = format!("data/{id}/neoforge/biome_modifier/lithostitched/{path}");
                     write(
                         &inside.join(to),
@@ -1235,6 +1334,31 @@ pub fn carry(
             } else if rel.starts_with("tags/worldgen/biome/") && name.starts_with("data/") {
                 if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
                     crate::worldgen::convention_tags(&v, &mut biome_conventions);
+                }
+            } else if (rel.starts_with("neoforge/biome_modifier/")
+                || rel.starts_with("forge/biome_modifier/"))
+                && name.starts_with("data/")
+                && name.ends_with(".json")
+            {
+                // The biomes a modifier changes, often by the loader's tags (`#c:is_overworld`).
+                if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
+                    crate::worldgen::convention_tags(&v["biomes"], &mut biome_conventions);
+                }
+            } else if rel.starts_with("damage_type/")
+                && name.starts_with("data/")
+                && name.ends_with(".json")
+            {
+                if let Ok(mut damage) = serde_json::from_slice::<Value>(&bytes) {
+                    let defaulted = java_damage_values(&mut damage);
+                    for field in &defaulted {
+                        *report
+                            .damage_types_defaulted
+                            .entry(field.clone())
+                            .or_default() += 1;
+                    }
+                    if !defaulted.is_empty() {
+                        bytes = serde_json::to_vec_pretty(&damage).unwrap_or(bytes);
+                    }
                 }
             } else if rel.starts_with("advancement/")
                 && name.starts_with("data/")
@@ -1351,8 +1475,9 @@ pub fn carry(
             report.item_definitions_added += 1;
         }
     }
-    // The loader's convention biome tags the structures and their tags name
-    // (NeoForge's `c:is_plains`...): the game has no loader, so they come along.
+    // The loader's convention biome tags the structures, biome modifiers and
+    // their tags name (NeoForge's `c:is_plains`...): the game has no loader, so
+    // they come along.
     for tag in crate::worldgen::with_included(&biome_conventions, conventions) {
         let file = inside.join(format!("data/c/tags/worldgen/biome/{tag}.json"));
         if !file.exists() {
@@ -2171,6 +2296,122 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A 1.21.1 mod's carvers and configured features land in 26.3's folders
+    /// (`worldgen/carver`, `worldgen/feature`), the only ones the game reads,
+    /// with `config` unwrapped; its biomes name their carvers as a list, as
+    /// 26.3's codec reads them.
+    #[test]
+    fn worldgen_is_carried_in_26_3_folders_and_shape() {
+        let dir = temp_dir("worldgen");
+        let jar = dir.join("worldgen.jar");
+        write_jar(
+            &jar,
+            &[
+                (
+                    "data/example/worldgen/configured_carver/deep.json",
+                    br##"{"type": "minecraft:canyon", "config": {"probability": 0.02,
+                        "y": {"absolute": 20}, "yScale": 3.0,
+                        "replaceable": "#minecraft:overworld_carver_replaceables",
+                        "lava_level": {"above_bottom": 8},
+                        "vertical_rotation": 0.0, "shape": {"thickness": 2.0}}}"##,
+                ),
+                (
+                    "data/example/worldgen/configured_feature/ore.json",
+                    br#"{"type": "minecraft:ore", "config": {"size": 5,
+                        "discard_chance_on_air_exposure": 0.0, "targets": []}}"#,
+                ),
+                (
+                    "data/example/worldgen/biome/glade.json",
+                    br#"{"has_precipitation": true, "temperature": 0.7, "downfall": 0.8,
+                        "effects": {"water_color": 4159204}, "features": [],
+                        "carvers": {"air": ["example:deep"]},
+                        "spawners": {"monster": []}, "spawn_costs": {}}"#,
+                ),
+            ],
+        );
+        let out = dir.join("out");
+        carry_alone(&jar, &out).unwrap();
+        let worldgen = out.join("carry/data/example/worldgen");
+        let read = |file: &str| -> Value {
+            serde_json::from_slice(&fs::read(worldgen.join(file)).unwrap()).unwrap()
+        };
+        assert_eq!(
+            read("carver/deep.json"),
+            json!({"type": "minecraft:canyon", "probability": 0.02, "y": {"absolute": 20},
+                "vertical_rotation": 0.0, "shape": {"thickness": 2.0, "y_scale": 3.0}})
+        );
+        assert_eq!(
+            read("feature/ore.json"),
+            json!({"type": "minecraft:ore", "size": 5,
+                "discard_chance_on_air_exposure": 0.0, "targets": []})
+        );
+        let biome = read("biome/glade.json");
+        assert_eq!(biome["carvers"], json!(["example:deep"]));
+        assert_eq!(biome.get("spawners"), None);
+        assert!(!worldgen.join("configured_carver").exists());
+        assert!(!worldgen.join("configured_feature").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A carver of the mod's own type is Java code the game can't run, and
+    /// one such carver refuses the world: it stays outside (read with its
+    /// comments, as the carry reads it), and the mod's biomes keep only the
+    /// carvers that were carried, dropping inline Java ones too. Another
+    /// namespace's Java override stays outside without taking vanilla's
+    /// carver out of the biomes.
+    #[test]
+    fn carvers_written_in_java_stay_outside_and_leave_the_biomes() {
+        let dir = temp_dir("java-carvers");
+        let jar = dir.join("java-carvers.jar");
+        let crater = "data/example/worldgen/configured_carver/crater.json";
+        let vent = "data/example/worldgen/configured_carver/vent.json";
+        write_jar(
+            &jar,
+            &[
+                (
+                    "data/example/worldgen/biome/moon.json",
+                    br#"{"has_precipitation": false, "temperature": 0.5, "downfall": 0.0,
+                        "effects": {"water_color": 4159204}, "features": [],
+                        "carvers": {"air": ["example:crater", "example:rift", "example:vent",
+                            "minecraft:cave", {"type": "example:inline", "config": {}}]},
+                        "spawners": {}, "spawn_costs": {}}"#,
+                ),
+                (
+                    vent,
+                    br#"{"type": /* the mod's */ "example:vent", "config": {"probability": 0.1}}"#,
+                ),
+                (
+                    "data/minecraft/worldgen/configured_carver/cave.json",
+                    br#"{"type": "example:caves", "config": {"probability": 0.2}}"#,
+                ),
+                (
+                    crater,
+                    br#"{"type": "example:crater", "config": {"probability": 0.1,
+                        "y": {"absolute": 60}}}"#,
+                ),
+                (
+                    "data/example/worldgen/configured_carver/rift.json",
+                    br#"{"type": "minecraft:canyon", "config": {"probability": 0.02,
+                        "y": {"absolute": 20}, "yScale": 3.0, "vertical_rotation": 0.0,
+                        "shape": {"thickness": 2.0}}}"#,
+                ),
+            ],
+        );
+        let out = dir.join("out");
+        let report = carry_alone(&jar, &out).unwrap();
+        let worldgen = out.join("carry/data/example/worldgen");
+        assert!(!worldgen.join("carver/crater.json").exists());
+        assert!(worldgen.join("carver/rift.json").exists());
+        assert!(out.join("outside").join(crater).exists());
+        assert!(report.unreadable[crater].contains("example:crater"));
+        assert!(report.unreadable[vent].contains("example:vent"));
+        assert!(!worldgen.join("carver/vent.json").exists());
+        let biome: Value =
+            serde_json::from_slice(&fs::read(worldgen.join("biome/moon.json")).unwrap()).unwrap();
+        assert_eq!(biome["carvers"], json!(["example:rift", "minecraft:cave"]));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// YUNG's pools carry comments, which Minecraft's lenient reader skips;
     /// the carry holds them as plain JSON. A comment marker inside a string
     /// stays, and text that is not JSON without its comments is refused.
@@ -2238,6 +2479,66 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// An advancement whose item predicate names a mod's own component or sub-predicate
+    /// stays outside, as vanilla refuses it; one with vanilla's alone is carried.
+    #[test]
+    fn advancements_naming_a_mods_item_predicates_stay_outside() {
+        let mut canteen = br#"{"criteria": {"full": {"trigger": "minecraft:inventory_changed",
+            "conditions": {"items": [{"predicates": {"m:full_canteen": {}}}]}}}}"#
+            .to_vec();
+        let why = unreadable("data/m/advancement/full_canteen.json", &mut canteen).unwrap();
+        assert!(why.contains("m:full_canteen"), "{why}");
+        let mut book = br#"{"criteria": {"book": {"trigger": "minecraft:inventory_changed",
+            "conditions": {"items": [{"items": "m:guide", "components": {"m:book": "m:x"}}]}}}}"#
+            .to_vec();
+        assert!(unreadable("data/m/advancement/book.json", &mut book).is_some());
+        let mut damaged = br#"{"criteria": {"worn": {"trigger": "minecraft:inventory_changed",
+            "conditions": {"items": [{"predicates": {"minecraft:damage": {"durability": 1}}}]}}}}"#
+            .to_vec();
+        assert_eq!(
+            unreadable("data/m/advancement/worn.json", &mut damaged),
+            None
+        );
+    }
+
+    /// A death message type or effects a mod added in Java become vanilla's
+    /// default; vanilla's own stay.
+    #[test]
+    fn damage_type_values_of_java_become_the_default() {
+        let dir = temp_dir("death-messages");
+        let jar = dir.join("damage.jar");
+        write_jar(
+            &jar,
+            &[
+                (
+                    "data/example/damage_type/melt.json",
+                    br#"{"message_id": "example.melt", "scaling": "never", "exhaustion": 0.1,
+                        "effects": "example:pinch", "death_message_type": "example:melt"}"#,
+                ),
+                (
+                    "data/example/damage_type/drop.json",
+                    br#"{"message_id": "example.drop", "scaling": "never", "exhaustion": 0.1,
+                        "effects": "burning", "death_message_type": "fall_variants"}"#,
+                ),
+            ],
+        );
+        let out = dir.join("out");
+        let report = carry_alone(&jar, &out).unwrap();
+        let read = |name: &str| -> Value {
+            let file = out.join(format!("carry/data/example/damage_type/{name}.json"));
+            serde_json::from_slice(&fs::read(file).unwrap()).unwrap()
+        };
+        assert_eq!(read("melt")["death_message_type"], "default");
+        assert_eq!(read("melt")["effects"], "hurt");
+        assert_eq!(read("drop")["death_message_type"], "fall_variants");
+        assert_eq!(read("drop")["effects"], "burning");
+        assert_eq!(
+            report.damage_types_defaulted.keys().collect::<Vec<_>>(),
+            ["death_message_type example:melt", "effects example:pinch"]
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn enter_block_criteria_name_their_blocks() {
         let mut a = json!({"criteria": {
@@ -2277,6 +2578,21 @@ mod tests {
         let mut tag_list = json!({"type": "minecraft:smelting",
             "ingredient": [{"tag": "c:ores"}, {"item": "gem:gem"}]});
         assert!(!upgrade_recipe(&mut tag_list));
+    }
+
+    /// A nested reference to 1.21.1's built-in empty table becomes an empty
+    /// entry, with its weight.
+    #[test]
+    fn the_empty_loot_table_becomes_an_empty_entry() {
+        let mut table = json!({"pools": [{"rolls": 1.0, "entries": [
+            {"type": "minecraft:loot_table", "value": "minecraft:empty", "weight": 3},
+            {"type": "minecraft:loot_table", "value": "m:other"}]}]});
+        upgrade_loot(&mut table);
+        assert_eq!(
+            table["pools"][0]["entries"],
+            json!([{"type": "minecraft:empty", "weight": 3},
+                {"type": "minecraft:loot_table", "value": "m:other"}])
+        );
     }
 
     #[test]
@@ -2893,6 +3209,67 @@ mod tests {
         )
         .unwrap();
         assert_eq!(tag, json!({"values": ["minecraft:plains"]}));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A biome modifier that names its biomes by the loader's convention tags
+    /// (`#c:is_overworld`) brings those tags along, as a structure does: the
+    /// game has no loader to supply them and skips a modifier whose tag it
+    /// doesn't know, so the mod's ores never generate.
+    #[test]
+    fn biome_modifiers_bring_the_convention_tags_they_name() {
+        let dir = temp_dir("modifier-conventions");
+        let jar = dir.join("ores.jar");
+        write_jar(
+            &jar,
+            &[
+                (
+                    "data/example/neoforge/biome_modifier/tin.json",
+                    br##"{"type": "neoforge:add_features", "biomes": "#c:is_overworld",
+                        "features": "example:tin_ore", "step": "underground_ores"}"##,
+                ),
+                (
+                    "data/example/forge/biome_modifier/nether_tin.json",
+                    br##"{"type": "forge:add_features", "biomes": "#c:is_nether",
+                        "features": "example:nether_tin_ore", "step": "underground_ores"}"##,
+                ),
+            ],
+        );
+        let conventions = BTreeMap::from([
+            (
+                "is_overworld".to_owned(),
+                json!({"values": ["minecraft:plains"]}),
+            ),
+            (
+                "is_nether".to_owned(),
+                json!({"values": ["minecraft:nether_wastes"]}),
+            ),
+            (
+                "is_end".to_owned(),
+                json!({"values": ["minecraft:the_end"]}),
+            ),
+        ]);
+        let info = crate::jar::JarInfo {
+            mod_id: "example".into(),
+            ..Default::default()
+        };
+        let pack = Pack {
+            loaded: &|_| true,
+            mods: &|_| false,
+        };
+        let out = dir.join("out");
+        let report = carry(&jar, &info, &out, None, &|_| true, &pack, &conventions).unwrap();
+        let tags = out.join("carry/data/c/tags/worldgen/biome");
+        let tag = |t: &str| -> Value {
+            serde_json::from_slice(&fs::read(tags.join(format!("{t}.json"))).unwrap()).unwrap()
+        };
+        assert_eq!(tag("is_overworld"), json!({"values": ["minecraft:plains"]}));
+        assert_eq!(
+            tag("is_nether"),
+            json!({"values": ["minecraft:nether_wastes"]})
+        );
+        assert!(!tags.join("is_end.json").exists());
+        assert_eq!(report.convention_biome_tags, 2);
         fs::remove_dir_all(&dir).unwrap();
     }
 
