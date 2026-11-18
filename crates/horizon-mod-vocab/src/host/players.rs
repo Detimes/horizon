@@ -1174,8 +1174,12 @@ pub trait PlayersBackendMut {
     /// checks on an online-mode server), replacing one of the same name.
     /// Other players see it once the player is sent to them again
     /// (`player_refresh`). False for a stale or unavailable player, a fake
-    /// player, an empty name, and a name, value or signature longer than the
-    /// protocol allows (64, 32767 and 1024 characters).
+    /// player, an empty name, a name, value or signature longer than the
+    /// protocol allows (64, 32767 and 1024 UTF-16 code units, so a character past
+    /// the basic plane counts twice), and a name the profile does not have yet
+    /// when it already holds 16 properties (replacing one of its own names
+    /// still works). The integrated server's owner keeps the account's other
+    /// properties.
     #[access(WorldOnly)]
     fn player_set_profile_property(
         &mut self,

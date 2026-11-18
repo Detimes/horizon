@@ -369,7 +369,7 @@ pub struct Hub {
     pub hidden: crate::fast_hash::FxHashMap<u128, u8>,
     /// Players `refresh_player` hid from everyone: the level a mod hid them
     /// at before (`hidden`), and the tick it began.
-    refreshing: Vec<(u128, Option<u8>, u64)>,
+    refreshing: Vec<(u128, u64)>,
     pub lan: Lan,
     pub config: HubConfig,
     /// What the hooks fired inside a click or a name format are given; the
@@ -1340,9 +1340,13 @@ impl Hub {
     /// Whether a player of `permission` sees the player `uuid`: not one a
     /// native mod hid from players below a higher level.
     pub fn sees(&self, permission: u8, uuid: u128) -> bool {
-        self.hidden
-            .get(&uuid)
-            .is_none_or(|&level| permission >= level)
+        // A player being sent again (`refresh_player`) is out of everyone's lists for that time; the level a
+        // mod hid them at is a separate thing and stays what the mod set.
+        !self.refreshing.iter().any(|r| r.0 == uuid)
+            && self
+                .hidden
+                .get(&uuid)
+                .is_none_or(|&level| permission >= level)
     }
 
     /// The player lists after `hidden` or a permission changed: each placed
@@ -1351,7 +1355,10 @@ impl Hub {
     /// checks the client's entity pairs again, so the tracker follows too.
     /// Nothing runs while nobody is hidden.
     fn sync_hidden(&mut self) {
-        if self.hidden.is_empty() && self.guests.iter().all(|g| g.tab_hidden.is_empty()) {
+        if self.hidden.is_empty()
+            && self.refreshing.is_empty()
+            && self.guests.iter().all(|g| g.tab_hidden.is_empty())
+        {
             return;
         }
         let candidates: Vec<usize> = (0..self.guests.len())
@@ -1360,11 +1367,15 @@ impl Hub {
                 self.guests[j].placed
                     && self.guests[j].participates_online()
                     && (self.hidden.contains_key(&u)
+                        || self.refreshing.iter().any(|r| r.0 == u)
                         || self.guests.iter().any(|g| g.tab_hidden.contains(&u)))
             })
             .collect();
         for i in 0..self.guests.len() {
-            if !self.guests[i].placed || !self.guests[i].participates_online() {
+            // A held client (waiting for its hand-over) keeps a picture of the players, the refresh included.
+            if !(self.guests[i].placed || self.guests[i].held)
+                || !self.guests[i].participates_online()
+            {
                 continue;
             }
             for &j in &candidates {
@@ -4713,32 +4724,29 @@ impl Hub {
     /// after brings them back with their profile as it is then. A level a mod
     /// hid them at is kept.
     pub fn refresh_player(&mut self, uuid: u128) {
-        let previous = self.hidden.insert(uuid, u8::MAX);
         if let Some(pending) = self.refreshing.iter_mut().find(|r| r.0 == uuid) {
-            pending.2 = self.ticks;
+            pending.1 = self.ticks;
             return;
         }
-        self.refreshing.push((uuid, previous, self.ticks));
+        self.refreshing.push((uuid, self.ticks));
     }
 
-    /// Shows the players `refresh_player` hid a whole tick ago again, at the
-    /// level a mod hid them at before (or to everyone), unless a mod set
-    /// another meanwhile.
+    /// The profile properties the player list gives the guest at `i` now: those it logged in with, or for
+    /// the integrated server's owner the signed-in account's once fetched.
+    pub fn listed_profile_properties(&self, i: usize) -> Vec<horizon_protocol::packets::login::Property> {
+        let g = &self.guests[i];
+        listed_properties(
+            &g.properties,
+            self.singleplayer_owner == Some(g.uuid),
+            self.lan.shared.config.owner_profile.as_deref(),
+        )
+    }
+
+    /// Shows the players `refresh_player` took out of the lists a whole tick ago again, at the level a mod
+    /// hides them at (or to everyone): the refresh never touched that level.
     pub fn end_refreshes(&mut self) {
         let ticks = self.ticks;
-        let (done, pending): (Vec<_>, Vec<_>) = std::mem::take(&mut self.refreshing)
-            .into_iter()
-            .partition(|r| r.2 + 1 < ticks);
-        self.refreshing = pending;
-        for (uuid, previous, _) in done {
-            if self.hidden.get(&uuid) != Some(&u8::MAX) {
-                continue;
-            }
-            match previous {
-                Some(level) => self.hidden.insert(uuid, level),
-                None => self.hidden.remove(&uuid),
-            };
-        }
+        self.refreshing.retain(|r| r.1 + 1 >= ticks);
     }
 
     pub fn set_nickname(&mut self, uuid: u128, nickname: Option<String>) {
