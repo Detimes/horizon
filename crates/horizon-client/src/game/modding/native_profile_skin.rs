@@ -123,6 +123,9 @@ mod tests {
             .map(|i| property(&format!("p{i}"), "v"))
             .collect();
         assert!(with_property(full.clone(), property("new", "v")).is_none());
-        assert_eq!(with_property(full, property("p3", "w")).unwrap()[3].value, "w");
+        assert_eq!(
+            with_property(full, property("p3", "w")).unwrap()[3].value,
+            "w"
+        );
     }
 }

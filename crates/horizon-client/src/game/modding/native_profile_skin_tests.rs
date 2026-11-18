@@ -24,7 +24,11 @@ fn a_new_skin_is_set_and_the_player_sent_again() {
         // Hidden from everyone for a whole tick, then shown again.
         assert!(game.player_refresh(a));
         let hub = &mut game.lan.as_mut().unwrap().hub;
-        assert_eq!(hub.hidden.get(&12), None, "the refresh leaves the mod's hide level alone");
+        assert_eq!(
+            hub.hidden.get(&12),
+            None,
+            "the refresh leaves the mod's hide level alone"
+        );
         assert!(!hub.sees(4, 12));
         hub.ticks += 1;
         hub.end_refreshes();

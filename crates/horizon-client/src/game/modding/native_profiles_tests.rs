@@ -18,7 +18,11 @@ fn profiles_come_from_the_players_on_without_a_lookup() {
         let skin = GameProfile::new(
             12,
             "guest12".into(),
-            vec![ProfileProperty::new("textures".into(), "e30=".into(), Some("sig".into()))],
+            vec![ProfileProperty::new(
+                "textures".into(),
+                "e30=".into(),
+                Some("sig".into()),
+            )],
         );
         let a = game.player(12).unwrap();
         assert_eq!(game.player_profile(a), Some(skin.clone()));

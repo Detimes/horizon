@@ -4733,7 +4733,10 @@ impl Hub {
 
     /// The profile properties the player list gives the guest at `i` now: those it logged in with, or for
     /// the integrated server's owner the signed-in account's once fetched.
-    pub fn listed_profile_properties(&self, i: usize) -> Vec<horizon_protocol::packets::login::Property> {
+    pub fn listed_profile_properties(
+        &self,
+        i: usize,
+    ) -> Vec<horizon_protocol::packets::login::Property> {
         let g = &self.guests[i];
         listed_properties(
             &g.properties,
