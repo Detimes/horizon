@@ -11,8 +11,7 @@ pub fn write_json(path: &Path, json: &serde_json::Value) -> std::io::Result<()> 
     let mut temporary = path.as_os_str().to_owned();
     temporary.push(".tmp");
     let temporary = std::path::PathBuf::from(temporary);
-    let written =
-        std::fs::write(&temporary, text).and_then(|()| std::fs::rename(&temporary, path));
+    let written = std::fs::write(&temporary, text).and_then(|()| std::fs::rename(&temporary, path));
     if written.is_err() {
         let _ = std::fs::remove_file(&temporary);
     }
