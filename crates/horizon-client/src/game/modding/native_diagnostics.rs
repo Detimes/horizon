@@ -32,6 +32,12 @@ impl Game<'_> {
         packet_counts::set_counting(on);
         true
     }
+    /// The server stopped: packet counting and the mod's mob sampling go off, so they cannot carry
+    /// into a later server of this process.
+    pub(in crate::game) fn stop_mod_diagnostics(&mut self) {
+        packet_counts::set_counting(false);
+        super::tick_profile::set_mod_sampling(false);
+    }
     /// A connected player's packet counts since the last take. None on a client, for a stale
     /// or unavailable player and for one with no connection.
     pub(super) fn player_take_packet_counts(
@@ -99,6 +105,19 @@ mod tests {
             assert!(game.mob_cost_sampling(true));
             assert!(game.mob_cost_sampling(false));
             assert!(game.take_mob_costs().is_empty());
+        });
+    }
+
+    /// A server that stops with counting and sampling on leaves both off for the next one.
+    #[test]
+    #[ignore = "daily"]
+    fn stopping_the_server_switches_the_diagnostics_off() {
+        with_guests(|game| {
+            assert!(game.count_packets(true));
+            assert!(game.mob_cost_sampling(true));
+            assert!(packet_counts::counting());
+            game.stop_serving();
+            assert!(!packet_counts::counting());
         });
     }
 }
