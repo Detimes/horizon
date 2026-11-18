@@ -21,12 +21,7 @@ impl Game<'_> {
         let json = guest
             .advancements
             .to_json(&self.adv.tree, horizon_world::DATA_VERSION);
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(text) = serde_json::to_string_pretty(&json) {
-            let _ = std::fs::write(path, text);
-        }
+        horizon_gameplay::atomic_json::save_json(&path, &json);
     }
     /// `PlayerAdvancements.save` and `ServerStatsCounter.save` of a network player.
     pub(in crate::game) fn save_guest_records(

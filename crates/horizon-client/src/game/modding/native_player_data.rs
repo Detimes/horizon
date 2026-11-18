@@ -25,15 +25,29 @@ impl Game<'_> {
         let Ok(value @ serde_json::Value::Object(_)) = serde_json::from_str(json) else {
             return false;
         };
+        // A fake player first: its connection id is made up and would pass the check below.
         let conn = match self.player_handle_read(player) {
-            Some(PlayerRead::Acting { .. }) => self.lan_acting,
-            Some(PlayerRead::Guest(g)) => Some(g.conn),
-            None => None,
+            Some(PlayerRead::Acting { .. }) if !self.lan_acting_fake => self.lan_acting,
+            Some(PlayerRead::Guest(g)) if !g.is_fake() => Some(g.conn),
+            _ => None,
         };
         let Some(conn) = conn else {
             return false;
         };
         let tree = self.advancement_tree();
+        // An advancement this server has must come with a `criteria` object: a malformed entry would be
+        // dropped silently by the read below and the snapshot would still replace the progress.
+        if value.as_object().is_some_and(|all| {
+            all.iter().any(|(id, entry)| {
+                id != "DataVersion"
+                    && tree.get(id).is_some()
+                    && !entry
+                        .get("criteria")
+                        .is_some_and(serde_json::Value::is_object)
+            })
+        }) {
+            return false;
+        }
         let mut progress = horizon_client::advancements::Progress::from_json(&value);
         // As a reload does: an advancement or a criterion this server lacks is dropped.
         progress.criteria.retain(|id, got| match tree.get(id) {
@@ -55,7 +69,7 @@ impl Game<'_> {
         let set = self.native_as_player_handle(player, |game| {
             game.adv.progress = progress;
             game.adv.changed.clear();
-            game.adv.replaced = game.adv.replaced.wrapping_add(1);
+            game.note_replacement();
         });
         if set && let Some(host) = self.lan.as_mut() {
             host.hub.guests.update_connection(conn, |g| {
@@ -120,6 +134,16 @@ mod tests {
             let g = &guests[guests.connection_index(13).unwrap()];
             assert!(g.advancements.has("minecraft:story/root", "crafting_table"));
             assert!(!game.player_set_advancements(b, "not json"));
+            // a known advancement whose `criteria` is not an object refuses the whole snapshot
+            let before = game.player_advancements(b).unwrap();
+            for bad in [
+                r#"{"minecraft:story/root":{"done":true}}"#,
+                r#"{"minecraft:story/root":{"criteria":"x"}}"#,
+                r#"{"minecraft:story/root":5}"#,
+            ] {
+                assert!(!game.player_set_advancements(b, bad), "{bad}");
+                assert_eq!(game.player_advancements(b).unwrap(), before, "{bad}");
+            }
             assert!(game.player_set_advancements(b, "{}"));
             let guests = &game.lan.as_ref().unwrap().hub.guests;
             let g = &guests[guests.connection_index(13).unwrap()];
