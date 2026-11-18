@@ -1716,17 +1716,8 @@ struct Game<'a> {
     upload_pace: upload_pace::UploadPace,
     /// This frame's view frustum, for culling entities and block entities.
     view_frustum: Option<horizon_client::gfx::JoinedFrusta>,
-    /// Whether the renderer's section-occlusion graph is active for this view.
-    entity_section_visibility_valid: bool,
-    /// The camera section in the current world layout.
-    entity_section_camera: Option<(i32, i32, i32)>,
-    sync_occlusion_culler: Option<horizon_client::voxel_occlusion::Culler>,
-    async_occlusion_culler: Option<Box<occlusion_culling::AsyncOcclusionCuller>>,
-    async_occlusion_culling_failed: bool,
+    occlusion: entity_culling::EntityOcclusion,
     async_particle_culler: RefCell<particle_culling::ParticleAsyncState>,
-    /// `Renderer::pack_shadow_casters` for this frame's entities: (keep what the culler hides,
-    /// build the player's model in first person); (false, false) without a shader pack.
-    pack_shadow_casters: (bool, bool),
     /// A scripted flight from the control socket (`fly`).
     flight: Option<control::Flight>,
     /// The running agent action from the control socket (game/runtime/agent/mod.rs).
@@ -2049,119 +2040,7 @@ struct Game<'a> {
     block_entity_tick_items: Option<Box<block_entity_tick_items::Scope>>,
     wasm_dispatch_failures: std::rc::Rc<std::cell::Cell<u64>>,
 }
-/// The open world's dimensions past vanilla's three. One per process, as a window
-/// and its server thread name the same dimensions.
-static EXTRA_DIMS: std::sync::RwLock<Vec<mod_api::DimensionKey>> =
-    std::sync::RwLock::new(Vec::new());
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Dim {
-    Overworld,
-    Nether,
-    End,
-    /// A dimension past vanilla's three, from a data pack or a mod.
-    Extra(mod_api::DimensionKey),
-}
-impl Dim {
-    /// The level as block behaviour and the mods name it.
-    fn level(self) -> LevelDimension {
-        match self {
-            Self::Overworld => LevelDimension::Overworld,
-            Self::Nether => LevelDimension::Nether,
-            Self::End => LevelDimension::End,
-            Self::Extra(_) => LevelDimension::of_level(
-                horizon_core::LevelKey::parse(self.id())
-                    .unwrap_or(horizon_core::LevelKey::OVERWORLD),
-            ),
-        }
-    }
-    fn id(self) -> &'static str {
-        match self {
-            Self::Overworld => "minecraft:overworld",
-            Self::Nether => "minecraft:the_nether",
-            Self::End => "minecraft:the_end",
-            Self::Extra(key) => {
-                mod_api::__private::dimension_id(key).expect("the game's table made the key")
-            }
-        }
-    }
-    fn from_id(id: &str) -> Self {
-        match id {
-            "minecraft:overworld" => Self::Overworld,
-            "minecraft:the_nether" => Self::Nether,
-            "minecraft:the_end" => Self::End,
-            _ => Self::extra(id).unwrap_or(Self::Overworld),
-        }
-    }
-    /// `Level.getSeaLevel` of the level: the sea level its noise settings give a mod's level, else
-    /// the built-in level's.
-    fn sea_level(self) -> i32 {
-        Self::sea_level_of_id(self.id())
-    }
-    /// [`Self::sea_level`] of the level `id` names.
-    fn sea_level_of_id(id: &str) -> i32 {
-        horizon_core::LevelKey::parse(id).map_or(63, horizon_world::level::sea_level_of)
-    }
-    /// The open world's dimension `id` past vanilla's three.
-    fn extra(id: &str) -> Option<Self> {
-        let extra = EXTRA_DIMS.read().unwrap();
-        let key = extra
-            .iter()
-            .find(|key| mod_api::__private::dimension_id(**key) == Some(id))?;
-        Some(Self::Extra(*key))
-    }
-    fn is_vanilla(id: &str) -> bool {
-        matches!(
-            id,
-            "minecraft:overworld" | "minecraft:the_nether" | "minecraft:the_end"
-        )
-    }
-    /// Whether the open world has the dimension `id`.
-    fn exists(id: &str) -> bool {
-        Self::is_vanilla(id) || Self::extra(id).is_some()
-    }
-    /// The open world's dimensions, in the order its server ticks them.
-    fn all() -> Vec<Self> {
-        let extra = EXTRA_DIMS.read().unwrap();
-        [Self::Overworld, Self::Nether, Self::End]
-            .into_iter()
-            .chain(extra.iter().copied().map(Self::Extra))
-            .collect()
-    }
-    /// The dimensions past vanilla's three of the world being opened.
-    fn set_extra<'a>(ids: impl Iterator<Item = &'a str>) {
-        *EXTRA_DIMS.write().unwrap() = ids.map(mod_api::__private::dimension_key).collect();
-    }
-    /// Adds the dimension `id` a remote server sent, which no local world told of, so that
-    /// [`Self::from_id`] finds it.
-    fn add_extra(id: &str) {
-        if !Self::exists(id) {
-            EXTRA_DIMS
-                .write()
-                .unwrap()
-                .push(mod_api::__private::dimension_key(id));
-        }
-    }
-    /// The dimension as mods' level handles name it.
-    fn key(self) -> mod_api::DimensionKey {
-        match self {
-            Self::Overworld => mod_api::DimensionKey::OVERWORLD,
-            Self::Nether => mod_api::DimensionKey::NETHER,
-            Self::End => mod_api::DimensionKey::END,
-            Self::Extra(key) => key,
-        }
-    }
-    /// The level's shape in a world of vanilla's dimension types.
-    fn shape(self) -> horizon_client::save::LevelShape {
-        use horizon_client::save::LevelShape;
-        match self {
-            Self::Overworld => LevelShape::OVERWORLD,
-            Self::Nether => LevelShape::NETHER,
-            Self::End => LevelShape::END,
-            Self::Extra(_) => LevelShape::OVERWORLD,
-        }
-    }
-}
+use horizon_gameplay::dim::Dim;
 /// `Inventory.add` on a player's 36 slots (hotbar first) and off hand,
 /// `max` the stack's own maximum: onto equal stacks first
 /// (`getSlotWithRemainingSpace`: the selected slot, the off hand, then the
@@ -5714,7 +5593,7 @@ impl Game<'_> {
             // in the view or not (`Renderer::shadow_pass_block_entities`, #8464): those the
             // view leaves out go in hidden from the camera.
             let shadow_only: Vec<&([i32; 3], u32)> =
-                if self.pack_ids.is_some() && self.pack_shadow_casters.0 {
+                if self.pack_ids.is_some() && self.occlusion.shadow_casters.0 {
                     let listed: HashSet<[i32; 3]> = camera_list.iter().map(|b| b.0).collect();
                     r.shadow_pass_block_entities(camera)
                         .filter(|(pos, state)| {
@@ -5739,7 +5618,7 @@ impl Game<'_> {
                 }
                 let name = &*self.res.facts().get(BlockStateId(state)).name;
                 if self.settings.horizon.entity_culling == EntityCullingMode::Off
-                    || self.pack_shadow_casters.0
+                    || self.occlusion.shadow_casters.0
                     || name == "minecraft:end_portal"
                     || name == "minecraft:end_gateway"
                     || hi.y - lo.y > 2.0
@@ -11028,13 +10907,8 @@ impl<'a> Game<'a> {
             tick_script: tick_script::TickScript::from_env(),
             agent: agent::Agent::default(),
             view_frustum: None,
-            entity_section_visibility_valid: false,
-            entity_section_camera: None,
-            sync_occlusion_culler: None,
-            async_occlusion_culler: None,
-            async_occlusion_culling_failed: false,
+            occlusion: Default::default(),
             async_particle_culler: RefCell::new(Default::default()),
-            pack_shadow_casters: (false, false),
             pending_uploads: Vec::new(),
             upload_pace: Default::default(),
             frame_graph: Default::default(),

@@ -298,6 +298,9 @@ pub struct PlayerSender {
     /// The play packets sent and received, by id, while a mod counts them; shared with the
     /// connection's network thread, which counts what it receives.
     pub packet_counts: Arc<super::packet_counts::PacketCounts>,
+    /// The host and port the client typed in its handshake ([`typed_address`]), None for a
+    /// connection that sent none.
+    pub connect: Option<(Arc<str>, u16)>,
 }
 #[derive(Clone)]
 enum To {
@@ -371,6 +374,7 @@ impl PlayerSender {
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
+            connect: None,
         }
     }
     #[cfg(test)]
@@ -410,6 +414,7 @@ impl PlayerSender {
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
+            connect: None,
         };
         (sender, move || inspect.queued_contents())
     }
@@ -428,6 +433,7 @@ impl PlayerSender {
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
+            connect: None,
         }
     }
     /// The bytes received from and sent to the client on the wire so far.
@@ -818,10 +824,19 @@ fn serve_connection(
                 );
                 return Ok(());
             }
-            serve_login(c, address, &shared, counted)
+            let typed = typed_address(&intention, c.is_memory());
+            serve_login(c, address, typed, &shared, counted)
         }
         other => Err(format!("unknown intent {other}")),
     }
+}
+
+/// The host and port a client typed (`ClientIntentionPacket`), the host cut at its first NUL,
+/// where a proxy appends its own data (Floodgate's, Forge's marker). None for a memory
+/// connection, whose client typed nothing, and for an empty host.
+fn typed_address(intention: &handshake::Intention, memory: bool) -> Option<(Arc<str>, u16)> {
+    let host = intention.host.split('\0').next().unwrap_or_default();
+    (!memory && !host.is_empty()).then(|| (host.into(), intention.port))
 }
 
 /// The older release a client's handshake states, when this server lets it join
@@ -1038,6 +1053,7 @@ fn authenticate(
 fn serve_login(
     mut c: Connection,
     address: std::net::SocketAddr,
+    typed: Option<(Arc<str>, u16)>,
     shared: &Arc<Shared>,
     counted: Option<super::Counted>,
 ) -> Result<(), String> {
@@ -1182,7 +1198,15 @@ fn serve_login(
     let result = login_and_configure(&mut c, shared, uuid, &name, &user, properties);
     match result {
         Ok(Some(parts)) => {
-            play(c, shared, parts, address, counted, expected.is_some());
+            play(
+                c,
+                shared,
+                parts,
+                address,
+                typed,
+                counted,
+                expected.is_some(),
+            );
             Ok(())
         }
         Ok(None) => {
@@ -2002,6 +2026,7 @@ fn play(
     shared: &Arc<Shared>,
     parts: Parts,
     address: std::net::SocketAddr,
+    typed: Option<(Arc<str>, u16)>,
     counted: Option<super::Counted>,
     expected: bool,
 ) {
@@ -2039,6 +2064,7 @@ fn play(
         viewed_levels: parts.channels.viewed_levels.answer(),
         menu_extra_rev: parts.channels.menu_extra_rev.revision(),
         packet_counts: packet_counts.clone(),
+        connect: typed,
     };
     let required_pack = shared
         .config
@@ -3821,6 +3847,33 @@ mod tests {
 }
 
 #[cfg(test)]
+mod typed_address_tests {
+    use super::*;
+    fn typed(host: &str, port: u16, memory: bool) -> Option<(String, u16)> {
+        let intention = handshake::Intention {
+            protocol: 0,
+            host: host.into(),
+            port,
+            intent: handshake::LOGIN,
+        };
+        typed_address(&intention, memory).map(|(host, port)| (host.to_string(), port))
+    }
+    /// The host and port as typed, the host cut where a proxy puts its own data.
+    #[test]
+    fn the_host_is_the_text_before_a_nul() {
+        let play = Some(("play.example.com".to_owned(), 25570));
+        assert_eq!(typed("play.example.com", 25570, false), play);
+        assert_eq!(
+            typed("play.example.com\x00198.51.100.7\x00uuid", 25570, false),
+            play
+        );
+        assert_eq!(typed("", 25565, false), None);
+        assert_eq!(typed("\0data", 25565, false), None);
+        assert_eq!(typed("localhost", 25565, true), None);
+    }
+}
+
+#[cfg(test)]
 mod outgoing_budget_tests {
     use super::*;
     use horizon_protocol::connection::Framing;
@@ -3848,6 +3901,7 @@ mod outgoing_budget_tests {
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
+            connect: None,
         }
     }
     #[test]
