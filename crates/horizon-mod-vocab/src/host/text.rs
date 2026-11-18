@@ -28,5 +28,6 @@ pub trait TextHost {
     /// to NBT): what `minecraft:custom_name` and each `minecraft:lore` line hold. See
     /// `ItemStack::set_display`.
     #[access(Metadata)]
+    #[raw_text]
     fn text_to_nbt(&self, text: &Text) -> Result<Tag, TextFormError>;
 }

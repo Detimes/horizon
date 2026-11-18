@@ -1,8 +1,8 @@
 //! `text_to_nbt`: a text as item components and block entities store it.
 use super::Game;
-use horizon_client::{lan::data::component_nbt, text::Text};
+use horizon_client::{api_text, lan::data::component_nbt};
 use horizon_core::nbt::{Tag, within_depth};
-use mod_api::TextFormError;
+use mod_api::{Text, TextFormError};
 
 /// The deepest NBT the writer takes, less the containers the text sits in once it is saved with an item:
 /// the stack's compound, its `components` compound and, for a lore line, the `lore` list.
@@ -29,18 +29,35 @@ fn component_to_nbt(component: &serde_json::Value) -> Result<Tag, TextFormError>
     }
 }
 
+/// The text as item components store it. The JSON between the text and its NBT has no tag widths
+/// or typed arrays, so a custom click's payload is not read back from it: its slot is replaced
+/// by the tag the mod gave, exactly.
+fn text_nbt(text: &Text) -> Result<Tag, TextFormError> {
+    let (component, payloads) = api_text::component_with_payload_slots(text)?;
+    let mut tag = component_to_nbt(&component)?;
+    api_text::restore_payloads(&mut tag, &payloads);
+    // The payloads count toward the depth now.
+    if within_depth(&tag, NBT_DEPTH) {
+        Ok(tag)
+    } else {
+        Err(TextFormError::TooDeep)
+    }
+}
+
 impl Game<'_> {
-    /// The text as item components store it.
+    /// The text as item components store it; takes the mod's own text (`#[raw_text]`).
     pub(super) fn text_to_nbt(&self, text: &Text) -> Result<Tag, TextFormError> {
-        component_to_nbt(&text.component())
+        text_nbt(text)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Text, component_nbt, component_to_nbt};
+    use super::{component_nbt, component_to_nbt, text_nbt};
+    use horizon_client::text::Text;
     use horizon_core::nbt::Tag;
-    use mod_api::TextFormError;
+    use mod_api::text::{TextClick, TextHover};
+    use mod_api::{Text as ApiText, TextFormError};
     use serde_json::json;
 
     /// A plain unstyled literal is its string, a styled one stays a compound: both forms of the same
@@ -88,5 +105,83 @@ mod tests {
         assert_eq!(styles[0].color, Some(0xFFAA00), "gold");
         assert!(!styles[0].is_bold());
         assert!(styles[7].is_bold(), "the second word is bold");
+    }
+
+    /// A custom click's payload is kept without interpretation: the NBT holds the tags the mod gave,
+    /// typed arrays and numeric widths included, not what a JSON round trip makes of them.
+    #[test]
+    fn a_custom_click_payload_keeps_its_exact_tags() {
+        let nested = Tag::compound([
+            ("flag", Tag::Byte(1)),
+            ("ratio", Tag::Float(1.5f32.to_bits())),
+            ("bytes", Tag::ByteArray(vec![1, 2, 3])),
+        ]);
+        let payloads = [
+            Tag::ByteArray(vec![0, 1, 255]),
+            Tag::IntArray(vec![-1, 0, 70_000]),
+            Tag::LongArray(vec![i64::MIN, 0, i64::MAX]),
+            nested,
+            Tag::compound([("looks_like_a_slot", Tag::String("\0payload:0".into()))]),
+        ];
+        let click = |index: usize, payload: &Tag| {
+            let mut text = ApiText::literal(format!("click {index}"));
+            text.style.click = Some(TextClick::Custom {
+                id: format!("test:action_{index}"),
+                payload: Some(payload.clone()),
+            });
+            text
+        };
+        let mut root = ApiText::literal("");
+        root.children = payloads
+            .iter()
+            .enumerate()
+            .map(|(index, payload)| click(index, payload))
+            .collect();
+        // A click inside a hover text sits somewhere else in the component than a child's.
+        let mut hovered = ApiText::literal("hover");
+        hovered.style.hover = Some(TextHover::Text(Box::new(click(9, &payloads[3]))));
+        root.children.push(hovered);
+
+        let tag = text_nbt(&root).unwrap();
+        let Some(Tag::List(extra)) = tag.get("extra") else {
+            panic!("the children are the extra list");
+        };
+        let payload_of = |component: &Tag| {
+            component
+                .get("click_event")
+                .and_then(|event| event.get("payload"))
+                .cloned()
+        };
+        for (index, payload) in payloads.iter().enumerate() {
+            assert_eq!(payload_of(&extra[index]).as_ref(), Some(payload), "{index}");
+            let id = extra[index].get("click_event").and_then(|e| e.get("id"));
+            assert_eq!(
+                id,
+                Some(&Tag::String(format!("test:action_{index}").as_str().into()))
+            );
+        }
+        let hover = extra[payloads.len()]
+            .get("hover_event")
+            .and_then(|event| event.get("value"))
+            .expect("the hover text");
+        assert_eq!(payload_of(hover).as_ref(), Some(&payloads[3]));
+    }
+
+    /// A payload as deep as the text check lets it pass still has to fit the NBT writer once it
+    /// sits in the item's containers.
+    #[test]
+    fn a_custom_click_payload_counts_toward_the_depth_limit() {
+        let deep = |n: usize| (0..n).fold(Tag::Int(0), |inner, _| Tag::compound([("x", inner)]));
+        let with = |n: usize| {
+            let mut text = ApiText::literal("x");
+            text.style.click = Some(TextClick::Custom {
+                id: "test:deep".into(),
+                payload: Some(deep(n)),
+            });
+            text_nbt(&text)
+        };
+        assert!(with(100).is_ok());
+        assert!(with(507).is_ok());
+        assert_eq!(with(508), Err(TextFormError::TooDeep));
     }
 }
