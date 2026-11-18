@@ -172,6 +172,11 @@ which runs them on main a batch of merges at a time, on the Mac mini's runner:
   a broken or flaky harness holds only what landed after the last green run, never the whole Nightly (before
   2026-11-03, any later failure held every Nightly until a run passed again: 30 h without one). `release.yml`
   also starts when a parity-main run finishes. A forced run (`force=true`) doesn't wait for parity-main.
+- A harness that keeps failing on main while its issue is open goes on `known_failing` in
+  `tools/parity_hosts.json` ([parity-workflow.md](parity-workflow.md)): it still runs and reports, but no longer
+  fails parity-main, so main's last green commit moves on and later merges are checked and bisected on their own.
+  From 2026-11-15 to 11-17 one batch of regressions kept every run red and no Nightly could ship. Harnesses whose
+  difference harms players (crashes, saves, multiplayer) stay off the list: they hold the Nightly until fixed.
 
 A pull request still runs its own parity job when it changes a harness script, an oracle
 (`mods/horizon/src/test/`), a probe (`crates/*/examples/`, `game/*_fixture.rs`, `game/*_harness.rs`), the runner
@@ -625,7 +630,10 @@ and by hand; pushes to `launcher` and `launcher-*` branches only build.
 
 - `tools/release_train.py decide --kind launcher` counts the pull requests merged since the last published
   launcher release that changed those paths (not `launcher/links.json`, which the launcher reads from main, nor
-  tests or Markdown), with the same batching rule (5 pull requests settled 5 minutes, or the oldest 6 hours), `release-now`, `skip-release` and `RELEASES_PAUSED`.
+  tests or Markdown), with the same batching rule except that the oldest waits 1 hour, not 6 (5 pull requests settled
+  5 minutes, or the oldest 1 hour: a fix to installs or updates starts its release at most ~70 minutes after it
+  merges, as the decision runs every 10 minutes, then builds and publishes), `release-now`, `skip-release` and
+  `RELEASES_PAUSED`.
 - The tag is `launcher@X.Y.Z` on the release line (`launcher@0.2.0` first; the game and the launcher count their
   patches separately). Without `.github/release-line.txt`, `launcher-vX.Y.Z`: the patch after the last launcher tag,
   or the next minor (`X.Y+1.0`) when one of those pull requests is labelled `feature`. `launcher-v0.2.0` was taken
