@@ -369,6 +369,7 @@ pub mod game {
         }
     }
 
+    #[non_exhaustive]
     pub struct TeamRefFields<'a> {
         pub epoch: WorldEpoch,
         pub name: &'a str,
