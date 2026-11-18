@@ -8,7 +8,7 @@
 //! An event 1.21.4 has no action for, or does not accept from a server (`open_file`), is left out.
 //!
 //! The item components of a `show_item` are not converted.
-use horizon_world::nbt::{JavaString, Tag};
+use horizon_core::nbt::{JavaString, Tag};
 
 /// Rewrites the events of `tag` (a text component in NBT form) and of its `extra`, `with` and `separator`
 /// components, and of the `show_text` and `show_entity` components of its hover events.

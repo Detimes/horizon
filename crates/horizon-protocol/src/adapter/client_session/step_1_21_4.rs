@@ -24,10 +24,8 @@ use crate::{
     item::{Hashed, HashedSlot, Slot, Stack},
     packets::play,
 };
-use horizon_world::{
-    datafix::json::{self, Json},
-    nbt::{JavaString, Tag},
-};
+use horizon_core::nbt::{JavaString, Tag};
+use horizon_world::datafix::json::{self, Json};
 
 /// What becomes of a payload the 1.21.4 client sent.
 #[derive(Debug, PartialEq)]
