@@ -4,6 +4,14 @@ use super::*;
 impl Launcher {
     pub(crate) fn drain(&mut self, window: gpui::AnyWindowHandle, cx: &mut Context<Self>) {
         let mut changed = false;
+        // A game said which shader API it serves: the packs judged by the launcher's own line
+        // while it was asked are judged again.
+        let answers = horizon_launcher::game_shader_api::answers();
+        if answers != self.shader_answers {
+            self.shader_answers = answers;
+            self.game_packs.stale();
+            changed = true;
+        }
         self.perf.tick();
         match self.bench.as_mut().map(|b| b.tick(&self.perf)) {
             Some(perf::Step::Go(page)) => {
@@ -114,6 +122,15 @@ impl Launcher {
                     }
                 }
                 Msg::Session(session) => self.handle_game_session(session),
+                Msg::PlayStep(step) => {
+                    if let Some(line) = self.play_step.said(self.starting_client.is_some(), step) {
+                        console_page::keep_line(
+                            &mut self.prepare_log,
+                            &mut self.log_revision,
+                            line,
+                        );
+                    }
+                }
                 Msg::JarConsent { jars, reply } => jar_launch::consent(window, jars, reply, cx),
                 Msg::JarClient { run, prepared } => {
                     self.starting_client = None;
@@ -321,6 +338,7 @@ impl Launcher {
                     }
                 }
                 Msg::PackDone(result) => self.pack_done(result),
+                Msg::ImportedPacks(asked, packs) => self.packs_read(asked, packs),
                 Msg::FoundPacks(found) => {
                     self.found_scanning = false;
                     self.found_packs = found;
@@ -442,6 +460,8 @@ impl Launcher {
                 }
             }
         }
+        // A start that ended (the game started, or it failed) is on no step.
+        self.play_step.settle(self.starting_client.is_some());
         changed |= self.servers_tick();
         changed |= self.mods_tick();
         changed |= self.github_tick();
