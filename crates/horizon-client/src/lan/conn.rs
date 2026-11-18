@@ -2463,6 +2463,10 @@ pub(super) fn frame_body(
 ) -> horizon_protocol::Result<()> {
     // Renumbered first for a client of an older release; one with no such packet gets nothing, and what a packet
     // brought with it (a boat's wood, an experience orb's value) follows it.
+    // A client of this release takes the body as it is: no allocation per packet.
+    if !writer.serves_older_client() {
+        return frame_one(writer, body, out);
+    }
     for body in writer.for_client(body)? {
         frame_one(writer, &body, out)?;
     }

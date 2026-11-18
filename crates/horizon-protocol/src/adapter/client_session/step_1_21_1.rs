@@ -36,16 +36,22 @@ use crate::{
     packets::{login::Property, play},
 };
 
+/// The pinned (26.3) entity type ids of the two woods 1.21.1's `Boat.Type` lacks, which `pinned_ids::entity_type`
+/// (generated for the older registries) does not name.
+const PALE_OAK_BOAT: i32 = 95;
+const PALE_OAK_CHEST_BOAT: i32 = 96;
+const POPLAR_BOAT: i32 = 106;
+const POPLAR_CHEST_BOAT: i32 = 107;
+
 /// A pinned boat or raft of any wood as 1.21.1 shows it: the plain `boat` (oak) or `chest_boat` type in the
 /// pinned ids, and the wood as `Boat.Type`'s ordinal, which 1.21.1 keeps in entity data (index 11) until 1.21.2
 /// split the entity type per wood (`translate::v1_21_1::boats` is the mirror). Pale oak and poplar, which no
 /// 1.21.1 `Boat.Type` has, are shown as birch.
 pub(super) fn boat(kind: i32) -> Option<(i32, i32)> {
     use crate::adapter::translate::v1_21_1::boats::{CHEST_TYPES, TYPES};
-    // pale_oak_boat, pale_oak_chest_boat, poplar_boat, poplar_chest_boat
     let kind = match kind {
-        95 | 106 => TYPES[2],
-        96 | 107 => CHEST_TYPES[2],
+        PALE_OAK_BOAT | POPLAR_BOAT => TYPES[2],
+        PALE_OAK_CHEST_BOAT | POPLAR_CHEST_BOAT => CHEST_TYPES[2],
         _ => kind,
     };
     let ordinal = |types: [i32; 9]| types.iter().position(|&k| k == kind);

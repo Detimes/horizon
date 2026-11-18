@@ -2433,7 +2433,10 @@ mod tests {
             (entity::ACACIA_BOAT, 10, 4),
             (entity::BAMBOO_RAFT, 10, 8),
             (entity::OAK_BOAT, 10, 0),
-            (95, 10, 2), // pale_oak_boat, a birch to this client
+            (95, 10, 2),  // pale_oak_boat, a birch to this client
+            (96, 17, 2),  // pale_oak_chest_boat
+            (106, 10, 2), // poplar_boat
+            (107, 17, 2), // poplar_chest_boat
             (entity::ACACIA_CHEST_BOAT, 17, 4),
             (entity::BAMBOO_CHEST_RAFT, 17, 8),
             (entity::OAK_CHEST_BOAT, 17, 0),

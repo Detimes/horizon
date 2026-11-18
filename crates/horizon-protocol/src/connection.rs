@@ -655,6 +655,11 @@ impl ConnWriter {
         self.stream.flush()?;
         Ok(())
     }
+    /// Whether this connection serves a client of an older release ([`Connection::serve_older`]): only
+    /// then does a body become other bodies, so the rest can frame the borrowed body as it is.
+    pub fn serves_older_client(&self) -> bool {
+        self.older_client.is_some()
+    }
     /// The packet bodies this connection's client takes for one body, in order: renumbered for a client of an
     /// older release ([`Connection::serve_older`]), none when it has no such packet, and what the packet brought
     /// with it (a boat's wood, an experience orb's value) after it; the body itself otherwise.
