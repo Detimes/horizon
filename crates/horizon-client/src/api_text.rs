@@ -1370,7 +1370,12 @@ pub fn restore_payloads(root: &mut Tag, payloads: &[&Tag]) {
         if action.to_string().ok()? != "custom" {
             return None;
         }
-        payload.to_string().ok()?.strip_prefix(PAYLOAD_SLOT)?.parse().ok()
+        payload
+            .to_string()
+            .ok()?
+            .strip_prefix(PAYLOAD_SLOT)?
+            .parse()
+            .ok()
     }
     let click_event = nbt::JavaString::from("click_event");
     let mut work = vec![root];
