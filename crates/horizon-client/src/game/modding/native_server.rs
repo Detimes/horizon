@@ -1300,11 +1300,37 @@ impl Game<'_> {
     /// before, or takes it away (None). Only their client holds it: the
     /// server's scoreboard, its `/scoreboard` and the other players don't
     /// see it, and it is gone when they leave (a mod sends it again when
-    /// they come back). It takes the sidebar's place from an objective the
-    /// world shows there, for this player, until they rejoin. False when
-    /// they aren't on.
+    /// they come back). It takes the place of the sidebar the client shows:
+    /// slot 1 and, when the player is on a coloured team, that team's slot,
+    /// which the client prefers over slot 1. Clearing it gives both slots back
+    /// to the objectives the world shows there. False when they aren't on.
     pub(super) fn native_sidebar(&mut self, uuid: u128, sidebar: Option<&NativeSidebar>) -> bool {
         let objective = SIDEBAR_OBJECTIVE.to_owned();
+        self.load_scoreboard();
+        // The slot of the player's team colour (DisplaySlot ids: list 0, sidebar 1, below name 2, then
+        // the team colours in the order of the chat colours) and what the world shows in the two.
+        let name = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().find(|g| g.uuid == uuid))
+            .map(|g| g.name.clone());
+        let board = &self.score.board;
+        let team_slot = name
+            .as_deref()
+            .and_then(|name| board.players_team(name))
+            .and_then(|team| team.color.as_deref())
+            .and_then(|color| {
+                let index = horizon_client::text::COLORS
+                    .iter()
+                    .position(|c| c.1 == color)?;
+                let world = board
+                    .display_objective(&format!("sidebar.team.{color}"))
+                    .map(|o| o.name.clone());
+                Some((3 + index as i32, world))
+            });
+        let world_sidebar = board
+            .display_objective(horizon_client::scoreboard::SLOT_SIDEBAR)
+            .map(|o| o.name.clone());
         // Removed first, so the new one's lines replace all the old ones.
         let mut packets = vec![C::SetObjective(play::SetObjective {
             name: objective.clone(),
@@ -1323,6 +1349,12 @@ impl Game<'_> {
                 slot: 1,
                 objective: objective.clone(),
             }));
+            if let Some((slot, _)) = &team_slot {
+                packets.push(C::SetDisplayObjective(play::SetDisplayObjective {
+                    slot: *slot,
+                    objective: objective.clone(),
+                }));
+            }
             let lines = &sidebar.lines[..sidebar.lines.len().min(15)];
             for (i, (left, right)) in lines.iter().enumerate() {
                 packets.push(C::SetScore(play::SetScore {
@@ -1337,6 +1369,20 @@ impl Game<'_> {
                         Some(t) => play::NumberFormat::Fixed(component_nbt(&t.component())),
                         None => play::NumberFormat::Blank,
                     }),
+                }));
+            }
+        } else {
+            // Removing the objective empties the slots that showed it; the world's own come back.
+            if let Some(world) = world_sidebar {
+                packets.push(C::SetDisplayObjective(play::SetDisplayObjective {
+                    slot: 1,
+                    objective: world,
+                }));
+            }
+            if let Some((slot, Some(world))) = team_slot {
+                packets.push(C::SetDisplayObjective(play::SetDisplayObjective {
+                    slot,
+                    objective: world,
                 }));
             }
         }

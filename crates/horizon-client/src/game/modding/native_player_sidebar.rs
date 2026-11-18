@@ -146,4 +146,70 @@ mod tests {
             assert_eq!(game.player_set_sidebar(gone, Some(refused)), Ok(false));
         });
     }
+
+    /// A player on a coloured team has the team's slot preferred over slot 1 by the client: the personal
+    /// sidebar is shown in that slot too, and clearing gives both slots back to the world's objectives.
+    #[test]
+    #[ignore = "daily"]
+    fn a_team_players_sidebar_takes_the_team_slot_and_clear_restores_the_worlds() {
+        with_guests(|game| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            game.lan
+                .as_mut()
+                .unwrap()
+                .hub
+                .update_guest(12, |g| {
+                    g.sender = PlayerSender::new(tx, Arc::new(AtomicUsize::new(0)));
+                })
+                .unwrap();
+            let a = game.player(12).unwrap();
+            game.load_scoreboard();
+            game.score.board.add_team("red").color = Some("red".to_owned());
+            game.score.board.add_to_team("guest12", "red");
+            assert!(game.score.board.add_objective(
+                "world_team",
+                "dummy",
+                serde_json::json!("world"),
+                horizon_client::scoreboard::RenderType::Integer,
+                false,
+                None,
+            ));
+            game.score
+                .board
+                .set_display_objective("sidebar.team.red", Some("world_team"));
+            let slot = 3 + horizon_client::text::COLORS
+                .iter()
+                .position(|c| c.1 == "red")
+                .unwrap() as i32;
+            let displays = |rx: &std::sync::mpsc::Receiver<horizon_client::lan::Out>| {
+                rx.try_iter()
+                    .filter_map(|out| match out {
+                        horizon_client::lan::Out::Packet(body) => {
+                            let mut r = horizon_protocol::buf::Reader::new(&body);
+                            let id = r.varint().ok()?;
+                            match C::decode(id, &body[r.position()..]).ok()? {
+                                C::SetDisplayObjective(d) => Some((d.slot, d.objective)),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let personal = Sidebar::new(Text::literal("Mine"), vec![]);
+            assert_eq!(game.player_set_sidebar(a, Some(personal)), Ok(true));
+            let shown = displays(&rx);
+            assert!(
+                shown.contains(&(1, "horizon:native_sidebar".to_owned())),
+                "{shown:?}"
+            );
+            assert!(
+                shown.contains(&(slot, "horizon:native_sidebar".to_owned())),
+                "{shown:?}"
+            );
+            assert_eq!(game.player_set_sidebar(a, None), Ok(true));
+            let restored = displays(&rx);
+            assert_eq!(restored, [(slot, "world_team".to_owned())]);
+        });
+    }
 }
