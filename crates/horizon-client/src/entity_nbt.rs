@@ -105,8 +105,36 @@ pub fn loaded_motion(tag: &Tag) -> Vec3 {
     let clamp = |v: f64| if v.abs() > 10.0 { 0.0 } else { v };
     Vec3::new(clamp(m.x), clamp(m.y), clamp(m.z))
 }
+/// A saved Rotation as `Entity.load` takes it: the yaw wrapped into [-180, 180) (`Mth.wrapDegrees`) and the pitch
+/// clamped to [-90, 90]; a value that is not finite is left as it is.
 pub fn rotation(tag: &Tag) -> [f32; 2] {
-    read_doubles::<2>(tag.get("Rotation")).map_or([0.0; 2], |r| [r[0] as f32, r[1] as f32])
+    read_doubles::<2>(tag.get("Rotation")).map_or([0.0; 2], |r| {
+        let yaw = r[0] as f32;
+        let pitch = r[1] as f32;
+        [
+            if yaw.is_finite() {
+                wrap_degrees(yaw)
+            } else {
+                yaw
+            },
+            if pitch.is_finite() {
+                pitch.clamp(-90.0, 90.0)
+            } else {
+                pitch
+            },
+        ]
+    })
+}
+/// `Mth.wrapDegrees`.
+fn wrap_degrees(degrees: f32) -> f32 {
+    let mut wrapped = degrees % 360.0;
+    if wrapped >= 180.0 {
+        wrapped -= 360.0;
+    }
+    if wrapped < -180.0 {
+        wrapped += 360.0;
+    }
+    wrapped
 }
 /// `TagValueInput.getBooleanOr`: a numeric tag's byteValue is nonzero, with a false default.
 pub fn flag(tag: &Tag, key: &str) -> bool {
@@ -11230,5 +11258,30 @@ mod sulfur_bucket_content_tests {
         let mut cod = mob(Species::Cod, "minecraft:cod");
         apply_item_components(&mut cod, &bucket);
         assert_eq!(cod.extra.body_id(), None, "only a sulfur cube reads it");
+    }
+}
+
+#[cfg(test)]
+mod loaded_rotation_tests {
+    use super::*;
+
+    fn tag(yaw: f32, pitch: f32) -> Tag {
+        Tag::compound([(
+            "Rotation",
+            Tag::List(vec![Tag::Float(yaw.to_bits()), Tag::Float(pitch.to_bits())]),
+        )])
+    }
+
+    /// vanilla 26.3 reads `Rotation:[400f,100f]` back as `[40f, 90f]`.
+    #[test]
+    fn a_saved_rotation_loads_wrapped_and_clamped() {
+        assert_eq!(rotation(&tag(400.0, 100.0)), [40.0, 90.0]);
+        assert_eq!(rotation(&tag(-190.0, -100.0)), [170.0, -90.0]);
+        assert_eq!(rotation(&tag(180.0, 0.0)), [-180.0, 0.0]);
+        assert_eq!(rotation(&tag(73.0, -24.0)), [73.0, -24.0]);
+        assert_eq!(
+            rotation(&Tag::compound(Vec::<(&str, Tag)>::new())),
+            [0.0, 0.0]
+        );
     }
 }
