@@ -5855,51 +5855,74 @@ mod tests {
             .collect()
     }
 
-    /// A mod's list name is kept by UUID and goes to every client at once, and None takes it
-    /// away again; it is kept for the next Tab list entry too. What a client is sent is the
-    /// formatted Tab list name, so the test reads it through the same path: another test may
-    /// install the process-wide format hook.
+    /// A second placed guest, Alice (uuid 2), whose receiver is returned.
+    fn add_alice(hub: &mut Hub) -> std::sync::mpsc::Receiver<crate::lan::Out> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut alice = Guest::new(
+            crate::lan::Joined {
+                conn: 2,
+                uuid: 2,
+                name: "Alice".into(),
+                properties: Vec::new(),
+                info: horizon_protocol::packets::configuration::ClientInformation::new(8),
+                brand: "vanilla".into(),
+                sender: crate::lan::PlayerSender::new(tx, std::sync::Arc::default()),
+                latency: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0)),
+                address: "127.0.0.1:25566".parse().unwrap(),
+                expected: false,
+            },
+            2,
+            [0.5, 64.0, 0.5],
+            8,
+        );
+        alice.placed = true;
+        alice.dimension = "minecraft:overworld".into();
+        hub.guests.push(alice);
+        rx
+    }
+
+    /// A mod's list name is kept by UUID and goes to every client that has the player's Tab entry, and
+    /// None takes it away again; it is kept for the next Tab list entry too. The decoded packets hold the
+    /// exact names (the test format hook leaves the name alone without its setting), and a viewer the
+    /// player is hidden from is told nothing.
     #[test]
     fn a_list_name_replaces_the_tab_list_name_and_goes_back() {
-        let (mut hub, rx) = hub_with_a_guest();
+        let (mut hub, bob) = hub_with_a_guest();
+        let alice = add_alice(&mut hub);
         hub.nicknames.insert(1, "Bobby".into());
-        let shown = |packets: Vec<play::Clientbound>| {
-            packets.into_iter().find_map(|p| match p {
-                play::Clientbound::PlayerInfoUpdate(update) if update.actions == 0x20 => {
-                    update.entries[0].display_name.clone()
-                }
-                _ => None,
-            })
+        let names = |rx: &std::sync::mpsc::Receiver<crate::lan::Out>| {
+            sent(rx)
+                .into_iter()
+                .filter_map(|p| match p {
+                    play::Clientbound::PlayerInfoUpdate(update) if update.actions == 0x20 => {
+                        Some((update.entries[0].uuid, update.entries[0].display_name.clone()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
         };
         let red = crate::text::Text::legacy("\u{a7}cBob");
+        let red_tag = crate::scoreboard::component_tag(&red.component());
+        let bobby_tag =
+            crate::scoreboard::component_tag(&crate::text::Text::literal("Bobby").component());
         hub.set_list_name(1, Some(red.clone()));
         assert_eq!(hub.list_names.get(&1), Some(&red));
-        // The name before the format hook, which another test may have installed process-wide and which has the
-        // last word on what a client is sent: the red name the mod set, then the nickname. An update still goes
-        // out each time, and when the hook leaves the name alone it is that name.
-        let updated = |packets: &[play::Clientbound]| {
-            packets.iter().any(|p| {
-                matches!(p, play::Clientbound::PlayerInfoUpdate(u)
-                    if u.actions == 0x20 && u.entries[0].uuid == 1)
-            })
-        };
-        let packets = sent(&rx);
-        assert!(updated(&packets), "an update to everyone");
-        assert_eq!(hub.tab_list_base(1), Some(red.clone()));
-        if let Some(name) = shown(packets) {
-            assert_eq!(name, hub.tab_list_name(1, "Bob"));
+        for rx in [&bob, &alice] {
+            assert_eq!(names(rx), [(1, Some(Some(red_tag.clone())))]);
         }
         hub.set_list_name(1, None);
         assert!(!hub.list_names.contains_key(&1));
-        let packets = sent(&rx);
-        assert!(updated(&packets), "an update to everyone");
-        assert_eq!(
-            hub.tab_list_base(1).map(|t| t.plain()),
-            Some("Bobby".to_owned())
-        );
+        for rx in [&bob, &alice] {
+            assert_eq!(names(rx), [(1, Some(Some(bobby_tag.clone())))]);
+        }
+        // A viewer Bob is hidden from gets nothing; Bob's own client still does.
+        hub.hidden.insert(1, 3);
+        hub.set_list_name(1, Some(red.clone()));
+        assert_eq!(names(&bob), [(1, Some(Some(red_tag)))]);
+        assert!(names(&alice).is_empty(), "no entry, no update");
         // A player who is not on keeps the name for their return, and nothing is sent.
         hub.set_list_name(7, Some(red.clone()));
-        assert!(sent(&rx).is_empty());
+        assert!(sent(&bob).is_empty() && sent(&alice).is_empty());
         assert_eq!(hub.list_names.get(&7), Some(&red));
     }
 
