@@ -144,6 +144,8 @@ pub struct TickCtx<'a> {
     pub spawn: [f64; 3],
     /// Rotation of the world spawn sent by PlayerList.sendLevelInfo.
     pub spawn_angle: [f32; 2],
+    /// The world spawn's dimension (`RespawnData.dimension`), sent with it.
+    pub spawn_dimension: &'a str,
     pub difficulty: i32,
     pub difficulty_locked: bool,
     /// The overworld clock's speed (0 when the day does not advance).
@@ -2144,12 +2146,12 @@ impl Hub {
         });
     }
 
-    /// ClientboundSetDefaultSpawnPositionPacket for the level's respawn data
-    /// (the world spawn, in the Overworld wherever the player is).
-    pub fn default_spawn(&self, spawn: [f64; 3], angle: [f32; 2]) -> C {
+    /// ClientboundSetDefaultSpawnPositionPacket for the level's respawn data:
+    /// the world spawn with the dimension it was set in, wherever the player is.
+    pub fn default_spawn(&self, dimension: &str, spawn: [f64; 3], angle: [f32; 2]) -> C {
         C::SetDefaultSpawnPosition(play::SetDefaultSpawnPosition {
             pos: play::GlobalPos {
-                dimension: "minecraft:overworld".into(),
+                dimension: dimension.into(),
                 pos: [
                     spawn[0].floor() as i32,
                     spawn[1].floor() as i32,
@@ -2176,7 +2178,7 @@ impl Hub {
         }
         g.send(&C::InitializeBorder(super::border::initialize(ctx.border)));
         g.send(&self.time_packet(ctx.world, ctx.clock_rate));
-        g.send(&self.default_spawn(spawn, ctx.spawn_angle));
+        g.send(&self.default_spawn(ctx.spawn_dimension, spawn, ctx.spawn_angle));
         let w = &ctx.world.weather;
         if w.raining {
             g.send(&C::GameEvent(play::GameEvent {
@@ -2976,13 +2978,11 @@ impl Hub {
         let ready = |c: &Chunk| {
             c.lit
                 && streaming.is_none_or(|streaming| {
-                    (-1..=1).all(|dz| {
-                        (-1..=1).all(|dx| {
-                            let (x, z) = (c.x + dx, c.z + dz);
-                            world.chunks.contains_key(&(x, z))
-                                || streaming.proto_sections(x, z).is_some()
-                        })
-                    })
+                    neighbours_ready(
+                        &world.chunks,
+                        |x, z| streaming.proto_sections(x, z).is_some(),
+                        c,
+                    )
                 })
         };
         let near: Vec<_> = g
@@ -3268,27 +3268,19 @@ impl Hub {
             pitch: rot.1,
             head_yaw: rot.2,
             on_ground,
-            velocity: [0.0; 3],
-            acceleration_power: None,
-            data: 0,
             meta,
             forced_meta: [0; 4],
-            // The effect swirls go back to none.
+            // What a client still holds goes back to its default: the effect
+            // swirls to none, and the skin parts to 0, every outer layer hidden
+            // (Avatar.DATA_PLAYER_MODE_CUSTOMISATION).
             defaults: vec![
                 (10, serializer::PARTICLES, Value::Particles(Vec::new())),
                 (11, serializer::BOOLEAN, Value::Bool(false)),
+                (16, serializer::BYTE, Value::Byte(0)),
             ],
             equipment,
             attributes,
-            precise: false,
-            vertical_collision: false,
-            horizontal_collision: false,
-            needs_sync: false,
-            sync_position: false,
-            stepped: false,
-            idle: false,
-            bare: false,
-            ..Default::default()
+            ..EntityState::default()
         }
     }
 
@@ -3352,6 +3344,10 @@ impl Hub {
                 state.hidden = self.hidden.get(&g.uuid).copied();
                 stuck_meta(&mut state.meta, &mut state.defaults, g.stuck);
                 frozen_meta(&mut state, g.motion.as_ref().map_or(0, |m| m.ticks_frozen));
+                // Entity.getDeltaMovement: the server copy's, which a glide sends.
+                if let Some(v) = g.motion.as_ref().map(|m| m.velocity) {
+                    state.velocity = [v.x, v.y, v.z];
+                }
                 shoulder_meta(&mut state, g.shoulders);
                 state
             })
@@ -3610,6 +3606,19 @@ impl Hub {
                     values,
                 }));
             }
+            // ServerEntity.sendDirtyEntityData: the skin parts
+            // (Avatar.DATA_PLAYER_MODE_CUSTOMISATION) the player's model shows, which
+            // ServerPlayer.updateOptions copies from the client's information, go to the
+            // player itself too. Its own entity is never tracked to it
+            // (ChunkMap.TrackedEntity.updatePlayer skips the entity itself), so this is
+            // the only way its client learns them and draws its outer layer (#17123).
+            if g.info.model_customisation != g.sent_skin {
+                g.sent_skin = g.info.model_customisation;
+                g.send(&C::SetEntityData(play::SetEntityData {
+                    id: g.entity_id,
+                    values: vec![(16, serializer::BYTE, Value::Byte(g.sent_skin as i8))],
+                }));
+            }
             // ServerEntity.sendDirtyEntityData: the arrows and bee stingers stuck
             // in the player go to the player too, whose own model draws them.
             if g.stuck != g.sent_stuck {
@@ -3662,15 +3671,17 @@ impl Hub {
                 }));
             }
         });
-        // AbstractContainerMenu.broadcastChanges for the inventory menu.
+        // AbstractContainerMenu.broadcastChanges for the inventory menu: the
+        // slots are compared where they lie and only the changed ones copied.
         let mut changes = Vec::new();
         for slot in 0..46 {
-            let now = self.guests[i].menu_slot(slot);
-            if now != self.guests[i].menu_sent[slot] {
-                changes.push((slot, now));
+            let now = self.guests[i].menu_slot_ref(slot);
+            if now != self.guests[i].menu_sent[slot].as_ref() {
+                changes.push(slot);
             }
         }
-        for (slot, now) in changes {
+        for slot in changes {
+            let now = self.guests[i].menu_slot(slot);
             let net = self.stack(&now);
             self.guests.update(i, |g| {
                 g.menu_state = (g.menu_state + 1) & 0x7FFF;
@@ -4800,6 +4811,11 @@ impl Hub {
         self.respawned(id);
         self.guests.update(i, |g| {
             g.sent_pose = crate::pose::Pose::Standing;
+            // ClientPacketListener.handleRespawn without KEEP_ENTITY_DATA: the client's new player is
+            // built from zero data, so the skin parts its dead one held are gone too. Pairing this
+            // reset with the pose's keeps the outer layer sent again on the next tick; without it the
+            // mask counted as sent and the layer stayed missing until the skin screen (#17123).
+            g.sent_skin = 0;
             // ServerPlayer.restoreFrom: the game mode again (onUpdateAbilities).
             g.send(&g.abilities_packet());
             // The new player faces the level's respawn direction (snapTo), or
@@ -4826,7 +4842,7 @@ impl Hub {
             g.tracker.clear();
         });
         self.resend_teleport(i, None);
-        let spawn = self.default_spawn(ctx.spawn, ctx.spawn_angle);
+        let spawn = self.default_spawn(ctx.spawn_dimension, ctx.spawn, ctx.spawn_angle);
         self.guests.update(i, |g| {
             g.send(&spawn);
             g.send(&C::ChangeDifficulty(play::ChangeDifficulty {
@@ -5167,19 +5183,51 @@ fn equipment_source(g: &Guest, index: usize) -> Option<&ItemStack> {
     }
 }
 
+/// The original neighbour check of `next_batch`'s readiness: each of the nine
+/// columns around `c` (itself included) is a full chunk in `chunks` or a proto
+/// chunk `proto` reports.
+fn neighbours_scanned(
+    chunks: &crate::chunk_map::ChunkMap,
+    proto: impl Fn(i32, i32) -> bool,
+    c: &Chunk,
+) -> bool {
+    (-1..=1).all(|dz| {
+        (-1..=1).all(|dx| {
+            let (x, z) = (c.x + dx, c.z + dz);
+            chunks.contains_key(&(x, z)) || proto(x, z)
+        })
+    })
+}
+
+/// `neighbours_scanned`, with the resident-neighbourhood index as a fast path:
+/// a column whose nine columns are all resident (`ChunkMap::surrounded`) is ready
+/// without the nine lookups. Anything else takes the scan, so the answer is the
+/// scan's in every case.
+fn neighbours_ready(
+    chunks: &crate::chunk_map::ChunkMap,
+    proto: impl Fn(i32, i32) -> bool,
+    c: &Chunk,
+) -> bool {
+    chunks.surrounded((c.x, c.z)) || neighbours_scanned(chunks, proto, c)
+}
+
 #[cfg(test)]
 mod tests {
     mod bundle_sound_tests;
     mod cave_air_tests;
+    mod chunk_ready_tests;
     mod collision_exclusion_tests;
     mod effect_meta_tests;
     #[path = "../far_tests.rs"]
     mod far_tests;
+    mod glide_motion_tests;
     mod live_player_limit_tests;
+    mod menu_sync_tests;
     mod ordered_inbox_tests;
     mod pending_move_bound_tests;
     mod pending_move_scope_tests;
     mod pending_move_tests;
+    mod skin_outer_layer_tests;
     mod sound_tests;
     use super::*;
     use crate::fast_hash::FxHashSet;
@@ -5445,6 +5493,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -5918,6 +5967,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -6001,6 +6051,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -6071,6 +6122,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -6117,6 +6169,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -6318,6 +6371,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -6475,6 +6529,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -6589,6 +6644,7 @@ mod tests {
                 next_entity: &mut next_entity,
                 spawn: [0.5, 64.0, 0.5],
                 spawn_angle: [0.0; 2],
+                spawn_dimension: "minecraft:overworld",
                 difficulty: 2,
                 difficulty_locked: false,
                 clock_rate: 1.0,
@@ -6837,6 +6893,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -7247,6 +7304,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -7323,6 +7381,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -7699,6 +7758,7 @@ mod tests {
             next_entity: &mut next_entity,
             spawn: [0.5, 64.0, 0.5],
             spawn_angle: [0.0; 2],
+            spawn_dimension: "minecraft:overworld",
             difficulty: 2,
             difficulty_locked: false,
             clock_rate: 1.0,
@@ -7827,6 +7887,7 @@ mod tests {
                 next_entity: &mut next_entity,
                 spawn: [0.5, 64.0, 0.5],
                 spawn_angle: [0.0; 2],
+                spawn_dimension: "minecraft:overworld",
                 difficulty: 2,
                 difficulty_locked: false,
                 clock_rate: 1.0,

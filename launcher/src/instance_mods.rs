@@ -42,6 +42,24 @@ pub(super) struct ModRow {
     pub(super) kind: Option<(ModKind, String)>,
 }
 
+impl ModRow {
+    /// Its mod id when it is a native mod: one that builds, needs the native permission and has
+    /// a build log. A hand-copied `.hmod` in `horizon-mods/` is not one.
+    pub(super) fn native_id(&self) -> Option<&str> {
+        match (&self.kind, &self.native) {
+            (Some((ModKind::Native, id)), _) => Some(id.as_str()),
+            (_, Some(n)) if n.native() => Some(n.id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Whether it has an on/off switch: a local file has none when switching it could switch
+    /// another mod (`native_status::Installed::switch`).
+    pub(super) fn has_switch(&self) -> bool {
+        self.native.as_ref().is_none_or(|n| n.switch)
+    }
+}
+
 /// Modrinth projects' icon URLs by project id, kept on disk beside the image cache so the icons
 /// show offline too; each id is asked for once a session.
 #[derive(Default)]
@@ -175,6 +193,14 @@ fn read(home: &Path, java_instance: bool) -> Vec<ModRow> {
     if !java_instance {
         rows.extend(native_status::untracked(home).into_iter().map(|native| {
             let icon = mod_icons::load(native.icon.as_ref().map(|i| i.as_deref()));
+            // A hand-copied `.hmod` in `horizon-mods/` is wasm or content: its manifest says which.
+            let kind = if native.native() {
+                Some(ModKind::Native)
+            } else {
+                horizon_platform::mod_package::manifest::Package::read(&home.join(&native.file))
+                    .ok()
+                    .map(|p| ModKind::of(&p.manifest))
+            };
             ModRow {
                 file: native.file.clone(),
                 name: native.id.clone(),
@@ -182,8 +208,8 @@ fn read(home: &Path, java_instance: bool) -> Vec<ModRow> {
                 on: java::is_enabled(home, &native.id),
                 entry: None,
                 icon: icon.image,
-                error: icon.error,
-                kind: Some((ModKind::Native, native.id.clone())),
+                error: native.note().map(String::from).or(icon.error),
+                kind: kind.map(|kind| (kind, native.id.clone())),
                 internals: native.internals.clone(),
                 native: Some(native),
             }
@@ -458,12 +484,16 @@ impl Launcher {
             )
         };
         let native = self.mods.java.is_none()
-            && self.instance_mods.list.iter().any(|r| {
-                r.native.is_some()
-                    || r.entry
-                        .as_ref()
-                        .is_some_and(|e| native_status::is_native_file(&e.file))
-            });
+            && (native_status::asks_for_build(
+                self.instance_mods
+                    .list
+                    .iter()
+                    .filter_map(|r| r.native.as_ref()),
+            ) || self.instance_mods.list.iter().any(|r| {
+                r.entry
+                    .as_ref()
+                    .is_some_and(|e| native_status::is_native_file(&e.file))
+            }));
         let build = native.then(|| self.native_build(cx)).flatten();
         let card = plate::cut(
             night::PIXEL_CORNER,
@@ -722,6 +752,24 @@ mod tests {
     }
 
     #[test]
+    fn a_retired_hnmod_row_says_why_and_asks_for_no_build() {
+        let scratch = TestHome::new();
+        let home = &scratch.0;
+        let installed = home.join(native_mods::INSTALLED);
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::write(installed.join("teem_client-0.1.0.hnmod"), b"old format").unwrap();
+        let rows = read(home, false);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].error.as_deref(),
+            Some("Old format (.hnmod): ask its author to republish it as .hmod")
+        );
+        assert!(!native_status::asks_for_build(
+            rows.iter().filter_map(|r| r.native.as_ref())
+        ));
+    }
+
+    #[test]
     fn native_mod_changes_during_read_trigger_a_fresh_read() {
         let scratch = TestHome::new();
         let home = &scratch.0;
@@ -796,6 +844,111 @@ mod tests {
             "native mods stay out of Java instances"
         );
         std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_hmod_copied_by_hand_into_horizon_mods_is_listed_with_its_switch() {
+        use std::io::Write;
+        let scratch = TestHome::new();
+        let home = &scratch.0;
+        let folder = home.join(horizon_platform::mod_package::mod_list::DIR);
+        std::fs::create_dir_all(&folder).unwrap();
+        // The file name isn't the id: the on/off list is keyed by the manifest's. Two copies
+        // carry the id of another mod: a tracked one and a native one.
+        for (file, id) in [
+            ("tracked", "tracked"),
+            ("my-build", "handmade"),
+            ("copy-of-tracked", "tracked"),
+            ("copy-of-native", "ruby"),
+        ] {
+            let mut zip = zip::ZipWriter::new(
+                std::fs::File::create(folder.join(format!("{file}.hmod"))).unwrap(),
+            );
+            zip.start_file("horizon-mod.toml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            let manifest = format!(
+                "id = '{id}'\nname = '{id}'\nversion = '1.4'\napi = '0.2'\ncapabilities = ['registries']\n"
+            );
+            zip.write_all(manifest.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        let entry: installed::Entry = serde_json::from_value(serde_json::json!({"source":"horizon","project":"tracked","slug":"tracked","title":"Tracked mod","kind":"mod","version":"1","number":"1.4","file":"horizon-mods/tracked.hmod","checksum":"","page":""})).unwrap();
+        installed::Installed {
+            entries: vec![entry],
+        }
+        .save(home)
+        .unwrap();
+        // Unreadable, so its id is only its file name: it keeps its build role, not a switch.
+        let native = home.join(native_mods::INSTALLED);
+        std::fs::create_dir_all(&native).unwrap();
+        std::fs::write(native.join("ruby.hmod"), b"unreadable").unwrap();
+        std::fs::write(home.join("horizon-mods.txt"), "mod.handmade:true\n").unwrap();
+        let rows = read(home, false);
+        let seen: Vec<_> = rows
+            .iter()
+            .map(|r| {
+                (
+                    r.file.as_str(),
+                    r.on,
+                    r.kind.as_ref().map(|(kind, _)| *kind),
+                    r.native_id(),
+                    r.has_switch(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                (
+                    "horizon-mods/my-build.hmod",
+                    true,
+                    Some(ModKind::Content),
+                    None,
+                    true
+                ),
+                (
+                    "horizon-native-mods/ruby.hmod",
+                    false,
+                    Some(ModKind::Native),
+                    Some("ruby"),
+                    false
+                ),
+                (
+                    "horizon-mods/copy-of-native.hmod",
+                    false,
+                    Some(ModKind::Content),
+                    None,
+                    false
+                ),
+                (
+                    "horizon-mods/copy-of-tracked.hmod",
+                    false,
+                    Some(ModKind::Content),
+                    None,
+                    false
+                ),
+                (
+                    "horizon-mods/tracked.hmod",
+                    false,
+                    Some(ModKind::Content),
+                    None,
+                    true
+                ),
+            ]
+        );
+        let local = rows[0]
+            .native
+            .as_ref()
+            .expect("removable like a local native file");
+        assert!(local.origin.is_none());
+        assert!(
+            !native_status::asks_for_build(
+                rows.iter()
+                    .filter_map(|r| r.native.as_ref())
+                    .filter(|n| !n.native())
+            ),
+            "a content mod needs no native build"
+        );
     }
 
     #[test]
