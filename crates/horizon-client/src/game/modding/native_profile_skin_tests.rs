@@ -10,6 +10,14 @@ fn a_new_skin_is_set_and_the_player_sent_again() {
         assert!(game.player_set_profile_property(a, "textures", "new", Some("signed")));
         assert!(!game.player_set_profile_property(a, "", "value", None));
         assert!(!game.player_set_profile_property(a, "textures", &"x".repeat(32768), None));
+        // an astral value counts two UTF-16 units a character: 16400 of them are over the limit
+        assert!(!game.player_set_profile_property(
+            a,
+            "textures",
+            &"\u{1F600}".repeat(16_400),
+            None
+        ));
+        assert!(!game.player_set_profile_property(a, &"\u{1F600}".repeat(33), "v", None));
         let properties = |game: &super::Game<'_>| {
             let g = game.lan.as_ref().unwrap().hub.guest(12).unwrap();
             g.properties
@@ -17,6 +25,11 @@ fn a_new_skin_is_set_and_the_player_sent_again() {
                 .map(|p| (p.name.clone(), p.value.clone(), p.signature.clone()))
                 .collect::<Vec<_>>()
         };
+        assert_eq!(
+            properties(game),
+            [("textures".into(), "new".into(), Some("signed".into()))]
+        );
+        // and the stored properties stayed whole after the refusals above
         assert_eq!(
             properties(game),
             [("textures".into(), "new".into(), Some("signed".into()))]

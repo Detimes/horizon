@@ -22,14 +22,29 @@ fn same_name(a: &str, b: &str) -> bool {
 }
 
 impl Game<'_> {
+    /// The profile of the first online, non-fake player `matches`, with the properties the player list gives
+    /// (the integrated server's owner has the account's, also when they arrived after login, with a mod's
+    /// overrides by name over them).
+    fn online_profile(
+        &self,
+        matches: impl Fn(&horizon_client::lan::guest::Guest) -> bool,
+    ) -> Option<GameProfile> {
+        let host = self.lan.as_ref()?;
+        let g = host
+            .hub
+            .online_players()
+            .find(|g| !g.is_fake() && matches(g))?;
+        let properties = host.hub.guests.connection_index(g.conn).map_or_else(
+            || g.properties.clone(),
+            |i| host.hub.listed_profile_properties(i),
+        );
+        Some(profile_of(g.uuid, &g.name, &properties))
+    }
+
     /// An online player's profile by UUID, else the user cache's name.
     pub(super) fn profile_by_uuid(&self, uuid: u128) -> Option<GameProfile> {
-        if let Some(g) = self.lan.as_ref().and_then(|host| {
-            host.hub
-                .online_players()
-                .find(|g| g.uuid == uuid && !g.is_fake())
-        }) {
-            return Some(profile_of(g.uuid, &g.name, &g.properties));
+        if let Some(profile) = self.online_profile(|g| g.uuid == uuid) {
+            return Some(profile);
         }
         if !self.is_dedicated_server() {
             return None;
@@ -40,12 +55,8 @@ impl Game<'_> {
 
     /// An online player's profile by name (any case), else an unexpired user cache entry.
     pub(super) fn profile_by_name(&self, name: &str) -> Option<GameProfile> {
-        if let Some(g) = self.lan.as_ref().and_then(|host| {
-            host.hub
-                .online_players()
-                .find(|g| same_name(&g.name, name) && !g.is_fake())
-        }) {
-            return Some(profile_of(g.uuid, &g.name, &g.properties));
+        if let Some(profile) = self.online_profile(|g| same_name(&g.name, name)) {
+            return Some(profile);
         }
         if !self.is_dedicated_server() {
             return None;

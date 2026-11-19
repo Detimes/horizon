@@ -18,17 +18,21 @@ fn utf16_len(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
-/// `properties` with `property` in place of the one of its name, or added; None when the profile
-/// already has 16 and the name is new.
-fn with_property(mut properties: Vec<Property>, property: Property) -> Option<Vec<Property>> {
-    if let Some(old) = properties.iter_mut().find(|p| p.name == property.name) {
-        *old = property;
-    } else if properties.len() < MAX_PROPERTIES {
-        properties.push(property);
-    } else {
+/// The overrides a mod set (`overrides`, over the properties the player list gives, `listed`) with `property`
+/// in place of the one of its name, or added; None when the profile already lists 16 and the name is new.
+fn with_property(
+    mut overrides: Vec<Property>,
+    listed: &[Property],
+    property: Property,
+) -> Option<Vec<Property>> {
+    if !listed.iter().any(|p| p.name == property.name) && listed.len() >= MAX_PROPERTIES {
         return None;
     }
-    Some(properties)
+    match overrides.iter_mut().find(|p| p.name == property.name) {
+        Some(old) => *old = property,
+        None => overrides.push(property),
+    }
+    Some(overrides)
 }
 
 impl Game<'_> {
@@ -58,9 +62,12 @@ impl Game<'_> {
             value: value.to_owned(),
             signature: signature.map(str::to_owned),
         };
-        // The profile as the player list gives it now (the integrated server's owner has the account's
-        // properties until a mod sets one), so one property added does not take the others away.
-        let Some(updated) = with_property(host.hub.listed_profile_properties(i), property) else {
+        // What a mod sets is an override by name over the profile the player list gives (the integrated
+        // server's owner has the account's properties, also when they arrive after this call), so one
+        // property added neither takes the others away nor hides a skin fetched later.
+        let listed = host.hub.listed_profile_properties(i);
+        let overrides = host.hub.guests[i].properties.clone();
+        let Some(updated) = with_property(overrides, &listed, property) else {
             return false;
         };
         host.hub.guests.update(i, |g| g.properties = updated);
@@ -108,24 +115,28 @@ mod tests {
         assert!("\u{1F600}".repeat(32).encode_utf16().count() <= MAX_PROPERTY_NAME);
     }
 
-    /// A property of a new name is added next to the others (the owner's skin among them), one of the
-    /// same name replaces, and a full profile refuses a new name only.
+    /// A mod's property is an override by name over what the player list gives: one of a new name is
+    /// added to the overrides (the skin stays in the list), one of the same name replaces, and a full
+    /// listed profile refuses a new name only.
     #[test]
-    fn a_property_is_added_beside_the_others_and_the_sixteenth_is_the_last() {
+    fn a_property_is_an_override_by_name_and_the_sixteenth_is_the_last() {
         let skin = vec![property("textures", "owner")];
-        let added = with_property(skin.clone(), property("example:badge", "1")).unwrap();
-        assert_eq!(added.len(), 2);
-        assert_eq!(added[0].value, "owner", "the skin stays");
-        let replaced = with_property(added, property("textures", "mod")).unwrap();
+        let added = with_property(Vec::new(), &skin, property("example:badge", "1")).unwrap();
+        assert_eq!(
+            added,
+            vec![property("example:badge", "1")],
+            "the skin is not copied in"
+        );
+        let replaced = with_property(added, &skin, property("textures", "mod")).unwrap();
         assert_eq!(replaced.len(), 2);
-        assert_eq!(replaced[0].value, "mod");
-        let full: Vec<_> = (0..MAX_PROPERTIES)
+        assert_eq!(replaced[1].value, "mod");
+        let listed: Vec<_> = (0..MAX_PROPERTIES)
             .map(|i| property(&format!("p{i}"), "v"))
             .collect();
-        assert!(with_property(full.clone(), property("new", "v")).is_none());
+        assert!(with_property(Vec::new(), &listed, property("new", "v")).is_none());
         assert_eq!(
-            with_property(full, property("p3", "w")).unwrap()[3].value,
-            "w"
+            with_property(Vec::new(), &listed, property("p3", "w")).unwrap(),
+            vec![property("p3", "w")]
         );
     }
 }

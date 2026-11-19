@@ -3355,7 +3355,7 @@ impl Hub {
                 );
                 state.spectator = g.spectator();
                 state.watching = g.watching;
-                state.hidden = self.hidden.get(&g.uuid).copied();
+                state.hidden = self.tracker_hidden(g.uuid);
                 stuck_meta(&mut state.meta, &mut state.defaults, g.stuck);
                 frozen_meta(&mut state, g.motion.as_ref().map_or(0, |m| m.ticks_frozen));
                 // Entity.getDeltaMovement: the server copy's, which a glide sends.
@@ -4724,6 +4724,15 @@ impl Hub {
         self.refreshing.push((uuid, self.ticks));
     }
 
+    /// The permission level the entity tracker hides a player from: everyone's while the player is
+    /// being sent again (`refresh_player`, so watching clients get the removal and the respawn around the
+    /// profile update), else the level a mod hid them at.
+    fn tracker_hidden(&self, uuid: u128) -> Option<u8> {
+        if self.refreshing.iter().any(|r| r.0 == uuid) {
+            return Some(u8::MAX);
+        }
+        self.hidden.get(&uuid).copied()
+    }
     /// The profile properties the player list gives the guest at `i` now: those it logged in with, or for
     /// the integrated server's owner the signed-in account's once fetched.
     pub fn listed_profile_properties(
@@ -5208,13 +5217,25 @@ fn shared_flags(sneaking: bool, sprinting: bool, body: &BodyFlags) -> i8 {
 /// The profile properties the player list gives a player: those it logged
 /// in with, or for the integrated server's owner (who logs in with none) the
 /// signed-in account's, once fetched (`IntegratedServer.getSingleplayerProfile`).
+/// A property a mod set on the owner is an override by name over the account's, so it neither
+/// takes the account's other properties away nor, set before the fetch finished, keeps the
+/// fetched skin from showing.
 fn listed_properties(
     logged_in: &[horizon_protocol::packets::login::Property],
     owner: bool,
     profile: Option<&super::OwnerProfile>,
 ) -> Vec<horizon_protocol::packets::login::Property> {
     match profile {
-        Some(profile) if owner && logged_in.is_empty() => profile.properties().to_vec(),
+        Some(profile) if owner => {
+            let mut listed = profile.properties().to_vec();
+            for property in logged_in {
+                match listed.iter_mut().find(|p| p.name == property.name) {
+                    Some(old) => *old = property.clone(),
+                    None => listed.push(property.clone()),
+                }
+            }
+            listed
+        }
         _ => logged_in.to_vec(),
     }
 }
@@ -7582,6 +7603,28 @@ mod tests {
         }
     }
 
+    /// While a player is sent again the entity tracker hides them from everyone (watching clients get the
+    /// removal and the respawn around the profile update); afterwards it hides them at the level a mod set.
+    #[test]
+    fn a_refresh_hides_the_player_from_the_entity_tracker_and_gives_back_the_mods_level() {
+        let (mut hub, _rx) = hub_with_a_guest();
+        assert_eq!(hub.tracker_hidden(1), None);
+        hub.hidden.insert(1, 3);
+        assert_eq!(hub.tracker_hidden(1), Some(3));
+        hub.refresh_player(1);
+        assert_eq!(
+            hub.tracker_hidden(1),
+            Some(u8::MAX),
+            "out of every client's tracking"
+        );
+        assert!(!hub.sees(255, 1));
+        hub.ticks += 2;
+        hub.end_refreshes();
+        assert_eq!(hub.tracker_hidden(1), Some(3), "the mod's level again");
+        hub.hidden.remove(&1);
+        assert_eq!(hub.tracker_hidden(1), None);
+    }
+
     /// The owner is listed with the account's skin once the fetch answered,
     /// with none before (no wait) or when it failed; other players keep the
     /// properties they logged in with, and none of the owner's.
@@ -7592,6 +7635,16 @@ mod tests {
         let start = std::time::Instant::now();
         assert!(listed_properties(&[], true, Some(&profile)).is_empty());
         assert!(start.elapsed() < std::time::Duration::from_millis(500));
+        // A property a mod set before the fetch answered is listed alone, and gives way to nothing later.
+        let badge = horizon_protocol::packets::login::Property {
+            name: "example:badge".into(),
+            value: "1".into(),
+            signature: None,
+        };
+        assert_eq!(
+            listed_properties(std::slice::from_ref(&badge), true, Some(&profile)),
+            vec![badge.clone()]
+        );
         answer.send(vec![textures("owner")]).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while listed_properties(&[], true, Some(&profile)).is_empty() {
@@ -7604,6 +7657,15 @@ mod tests {
         assert_eq!(
             listed_properties(&[], true, Some(&profile)),
             vec![textures("owner")]
+        );
+        // A mod's property is an override by name: the account's others stay, its own textures replace.
+        assert_eq!(
+            listed_properties(std::slice::from_ref(&badge), true, Some(&profile)),
+            vec![textures("owner"), badge.clone()]
+        );
+        assert_eq!(
+            listed_properties(&[textures("mod")], true, Some(&profile)),
+            vec![textures("mod")]
         );
         // A guest: its own properties (online mode), or none (offline mode).
         assert_eq!(
