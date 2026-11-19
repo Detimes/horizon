@@ -4,9 +4,10 @@ use horizon_client::{api_text, lan::data::component_nbt};
 use horizon_core::nbt::{Tag, within_depth};
 use mod_api::{Text, TextFormError};
 
-/// The deepest NBT the writer takes, less the containers the text sits in once it is saved with an item:
-/// the stack's compound, its `components` compound and, for a lore line, the `lore` list.
-const NBT_DEPTH: usize = 512 - 3;
+/// The deepest NBT the writer takes, less the containers the text sits in once it is saved with an item in a
+/// player's inventory: the player's compound, the `Inventory` list, the stack's compound, its `components`
+/// compound and, for a lore line, the `lore` list.
+const NBT_DEPTH: usize = 512 - 5;
 
 /// A component's JSON as item components and block entities store it: a plain literal with no style
 /// and no children is its string (as `ComponentSerialization` saves it, so two stacks that carry the
@@ -89,8 +90,8 @@ mod tests {
             )
         };
         assert_eq!(component_to_nbt(&chain(257)), Err(TextFormError::TooDeep));
-        assert_eq!(component_to_nbt(&chain(255)), Err(TextFormError::TooDeep));
-        assert!(component_to_nbt(&chain(254)).is_ok());
+        assert_eq!(component_to_nbt(&chain(254)), Err(TextFormError::TooDeep));
+        assert!(component_to_nbt(&chain(253)).is_ok());
         assert!(component_to_nbt(&chain(200)).is_ok());
     }
 
@@ -181,7 +182,57 @@ mod tests {
             text_nbt(&text)
         };
         assert!(with(100).is_ok());
-        assert!(with(507).is_ok());
-        assert_eq!(with(508), Err(TextFormError::TooDeep));
+        assert!(with(505).is_ok());
+        assert_eq!(with(506), Err(TextFormError::TooDeep));
+    }
+
+    /// Only the slots this conversion made are restored: a `click_event` inside the opaque components of a
+    /// hover item whose payload is text that looks like a slot (also with the right prefix) stays as written.
+    #[test]
+    fn text_that_looks_like_a_payload_slot_is_not_replaced() {
+        let forged = |payload: &str| {
+            Tag::compound([(
+                "minecraft:custom_data",
+                Tag::compound([(
+                    "click_event",
+                    Tag::compound([
+                        ("action", Tag::String("custom".into())),
+                        ("payload", Tag::String(payload.into())),
+                    ]),
+                )]),
+            )])
+        };
+        for lookalike in [
+            "\0payload:0",
+            "\0payload:0000000000000000:0",
+            "\0payload:ffffffffffffffff:0",
+        ] {
+            let mut hovered = ApiText::literal("hover");
+            hovered.style.hover = Some(TextHover::Item {
+                id: "minecraft:stone".into(),
+                count: 1,
+                components: Some(forged(lookalike)),
+            });
+            let mut root = ApiText::literal("");
+            let mut clicked = ApiText::literal("click");
+            clicked.style.click = Some(TextClick::Custom {
+                id: "test:real".into(),
+                payload: Some(Tag::ByteArray(vec![9])),
+            });
+            root.children = vec![hovered, clicked];
+            let tag = text_nbt(&root).unwrap();
+            let Some(Tag::List(extra)) = tag.get("extra") else {
+                panic!("children");
+            };
+            let found = extra[0]
+                .get("hover_event")
+                .and_then(|event| event.get("components"))
+                .and_then(|c| c.get("minecraft:custom_data"))
+                .and_then(|d| d.get("click_event"))
+                .and_then(|e| e.get("payload"));
+            assert_eq!(found, Some(&Tag::String(lookalike.into())), "{lookalike}");
+            let real = extra[1].get("click_event").and_then(|e| e.get("payload"));
+            assert_eq!(real, Some(&Tag::ByteArray(vec![9])));
+        }
     }
 }
