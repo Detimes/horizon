@@ -110,16 +110,16 @@ pub fn rotation(tag: &Tag) -> [f32; 2] {
 }
 /// A saved Rotation as `Entity.load` takes it (`setRot`, read off vanilla 26.3 by the parity rows): the yaw `% 360`
 /// (so 400 loads as 40 but 270 stays 270 and -190 stays -190: Java's remainder keeps the sign) and the pitch
-/// `% 360` clamped to [-90, 90]; a value that is not finite is left as it is. What a save writes is read with
-/// [`rotation`].
+/// `% 360` clamped to [-90, 90]; a component that is not finite is discarded (`setYRot`/`setXRot`) and loads as
+/// 0. What a save writes is read with [`rotation`].
 pub fn loaded_rotation(tag: &Tag) -> [f32; 2] {
     let [yaw, pitch] = rotation(tag);
     [
-        if yaw.is_finite() { yaw % 360.0 } else { yaw },
+        if yaw.is_finite() { yaw % 360.0 } else { 0.0 },
         if pitch.is_finite() {
             (pitch % 360.0).clamp(-90.0, 90.0)
         } else {
-            pitch
+            0.0
         },
     ]
 }
@@ -11262,6 +11262,9 @@ mod loaded_rotation_tests {
         assert_eq!(loaded_rotation(&tag(-190.0, -100.0)), [-190.0, -90.0]);
         assert_eq!(loaded_rotation(&tag(180.0, 45.0)), [180.0, 45.0]);
         assert_eq!(loaded_rotation(&tag(73.0, -24.0)), [73.0, -24.0]);
+        // a non-finite component is discarded: it loads as 0 and a save writes 0
+        assert_eq!(loaded_rotation(&tag(f32::NAN, 20.0)), [0.0, 20.0]);
+        assert_eq!(loaded_rotation(&tag(30.0, f32::INFINITY)), [30.0, 0.0]);
         // a save writes the raw value (a painting's yaw 270 from its facing) and reads it back as it is
         assert_eq!(rotation(&tag(270.0, 10.0)), [270.0, 10.0]);
         assert_eq!(
