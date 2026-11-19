@@ -4,10 +4,11 @@ use horizon_client::{api_text, lan::data::component_nbt};
 use horizon_core::nbt::{Tag, within_depth};
 use mod_api::{Text, TextFormError};
 
-/// The deepest NBT the writer takes, less the containers the text sits in once it is saved with an item in a
-/// player's inventory: the player's compound, the `Inventory` list, the stack's compound, its `components`
-/// compound and, for a lore line, the `lore` list.
-const NBT_DEPTH: usize = 512 - 5;
+/// The deepest NBT a mod-set text may have. The writer takes 512 containers, but the same item is saved on
+/// many paths that already use a good part of them (a player's `Inventory`, a chest, a dropped item or an item
+/// frame record, an item inside a shulker box or a bundle, and the writer's wrappers for mixed lists), so
+/// the cap is a small number every such path fits: 64 containers.
+const NBT_DEPTH: usize = 64;
 
 /// A component's JSON as item components and block entities store it: a plain literal with no style
 /// and no children is its string (as `ComponentSerialization` saves it, so two stacks that carry the
@@ -90,9 +91,10 @@ mod tests {
             )
         };
         assert_eq!(component_to_nbt(&chain(257)), Err(TextFormError::TooDeep));
-        assert_eq!(component_to_nbt(&chain(254)), Err(TextFormError::TooDeep));
-        assert!(component_to_nbt(&chain(253)).is_ok());
-        assert!(component_to_nbt(&chain(200)).is_ok());
+        assert_eq!(component_to_nbt(&chain(200)), Err(TextFormError::TooDeep));
+        assert_eq!(component_to_nbt(&chain(32)), Err(TextFormError::TooDeep));
+        assert!(component_to_nbt(&chain(31)).is_ok());
+        assert!(component_to_nbt(&chain(1)).is_ok());
     }
 
     /// The NBT reads back as the same component, as an item's name does.
@@ -181,9 +183,9 @@ mod tests {
             });
             text_nbt(&text)
         };
-        assert!(with(100).is_ok());
-        assert!(with(505).is_ok());
-        assert_eq!(with(506), Err(TextFormError::TooDeep));
+        assert!(with(10).is_ok());
+        assert!(with(62).is_ok());
+        assert_eq!(with(63), Err(TextFormError::TooDeep));
     }
 
     /// Only the slots this conversion made are restored: a `click_event` inside the opaque components of a
