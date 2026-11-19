@@ -2022,6 +2022,25 @@ impl Game<'_> {
         }
     }
 
+    /// Asks the permission nodes again for the connection `conn` and stores what they refuse, so the
+    /// next tree it is sent (a dimension change, a respawn) does not reuse an earlier decision.
+    pub(super) fn native_refresh_node_paths(&mut self, conn: u32) {
+        let Some(uuid) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guest(conn))
+            .map(|g| g.uuid)
+        else {
+            return;
+        };
+        let hidden_paths = self.node_hidden_paths(uuid);
+        if let Some(host) = self.lan.as_mut() {
+            let _ = host
+                .hub
+                .update_guest(conn, |g| g.hidden_command_paths = hidden_paths);
+        }
+    }
+
     /// The gated command paths a permission node refuses this player (empty without a custom
     /// permission handler): their tree leaves them out.
     fn node_hidden_paths(&mut self, uuid: u128) -> Vec<Vec<String>> {
