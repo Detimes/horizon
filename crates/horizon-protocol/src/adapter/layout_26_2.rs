@@ -7,6 +7,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::ids::{self, Ids, Way, down_or_substitute};
+use super::pinned_ids::item::BARRIER;
 use crate::{
     Result, State,
     buf::{Codec, Reader, Writer},
@@ -110,9 +111,6 @@ fn respawn(payload: &[u8]) -> Result<Vec<u8>> {
     w.i8(p.keep);
     Ok(w.data)
 }
-
-/// `minecraft:barrier` in the pinned item registry.
-const BARRIER: i32 = 577;
 
 /// 26.3 sends an advancement's tab position after the whole advancement; 26.2 inside its display, after
 /// the background (an advancement without a display has none). The icon takes the client's item ids.
