@@ -16,7 +16,9 @@ no late registration: a node added after that is refused.
   text-component nodes are distinct nodes even under one name.
 - Adding the same typed node twice is a registration error, and no partial service is published.
 - A Boolean node's default is the operator level that grants it by default (`NodeDefault::Level`). Other types
-  take a default value of their own type (`NodeDefault::Value`). A default is data, not a function: there is no
+  take a default value of their own type (`NodeDefault::Value`). A Boolean node declared with
+  `NodeDefault::Nobody` is granted to no one by default, operators included (Bukkit's `default: false`): it
+  answers `false` until a handler grants it. `Nobody` on a node of another type is refused with `WrongType`. A default is data, not a function: there is no
   mod-written resolver yet, so a policy that depends on the player or on contexts belongs in a handler.
 - The built-in handler reads the player's operator level when the query runs: an online player's live level, else
   the dedicated server's operator list by UUID, else level 0. It ignores the contexts. A caller may leave out

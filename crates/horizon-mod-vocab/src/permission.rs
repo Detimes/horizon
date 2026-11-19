@@ -137,14 +137,17 @@ impl std::fmt::Display for PermissionError {
 impl std::error::Error for PermissionError {}
 
 /// What a node answers when no policy of the selected handler decides it: a Boolean node's
-/// operator level, or the value of any other node.
-// exhaustive: one variant per default shape; a Boolean node takes `Level`, the others `Value`.
+/// operator level or nobody, or the value of any other node.
+// exhaustive: one variant per default shape; a Boolean node takes `Level` or `Nobody`, the others `Value`.
 #[derive(Clone, Debug, PartialEq, horizon_mod_api_macros::Wire)]
 pub enum NodeDefault {
     /// A Boolean node: granted to a player whose operator level is at least this.
     Level(PermissionLevel),
     /// Any other node: this value.
     Value(PermissionValue),
+    /// A Boolean node: granted to no one, operators included, until a handler grants it. This is
+    /// Bukkit's `default: false`.
+    Nobody,
 }
 
 /// The collector `permission_gather_nodes` passes: it declares one typed node with its default.
