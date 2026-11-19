@@ -1,6 +1,7 @@
 //! Refusals when a mod shows, places or acknowledges blocks as a player, or asks what a player sees.
 
-/// Why `player.sees`, `player.ack_block_changes`, `player.show_block` or `player.place_block`
+/// Why `player.sees`, `player.ack_block_changes`, `player.show_block`, `player.place_block`,
+/// `entity.set_visible_to` or `entity.visible_to`
 /// answered with nothing done: nothing was sent, written or queued.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -30,6 +31,9 @@ pub enum PlayerWorldRefusal {
     UnknownState,
     /// `place_block`'s level handle is of an earlier open of the world.
     StaleLevel,
+    /// `entity.set_visible_to` or `entity.visible_to`: the entity handle no longer names an
+    /// entity in the world, or names the viewer's own player, which is never tracked to itself.
+    StaleEntity,
     /// `place_block` in a level that is not the one in place, where the player is.
     OtherLevel,
     /// `place_block` above or below the world or outside the 30,000,000 block limit.

@@ -212,6 +212,48 @@ fn player_sees_follows_the_trackers_rules() {
     });
 }
 
+/// An entity a mod hid from one viewer is hidden from that viewer alone, reads back, makes
+/// `sees` answer false for a player and is shown again; the viewer's own player is refused.
+#[test]
+#[ignore = "daily"]
+fn an_entity_is_hidden_from_one_viewer_alone() {
+    with_guests(|game| {
+        let (a, b) = (game.player(12).unwrap(), game.player(13).unwrap());
+        assert_eq!(b.entity().visible_to(game, a), Ok(true));
+        assert_eq!(b.entity().set_visible_to(game, a, false), Ok(true));
+        assert_eq!(
+            b.entity().set_visible_to(game, a, false),
+            Ok(false),
+            "no change"
+        );
+        assert_eq!(b.entity().visible_to(game, a), Ok(false));
+        assert_eq!(
+            a.entity().visible_to(game, b),
+            Ok(true),
+            "the other way is untouched"
+        );
+        assert_eq!(a.sees(game, b), Ok(false));
+        assert_eq!(b.sees(game, a), Ok(true));
+        assert_eq!(
+            a.entity().set_visible_to(game, a, false),
+            Err(Refusal::StaleEntity),
+            "a viewer's own player is never tracked to it"
+        );
+        assert_eq!(b.entity().set_visible_to(game, a, true), Ok(true));
+        assert_eq!(b.entity().visible_to(game, a), Ok(true));
+        assert_eq!(a.sees(game, b), Ok(true));
+        assert_eq!(
+            b.entity().set_visible_to(game, stale(a), false),
+            Err(Refusal::Stale)
+        );
+        let machine = fake(game);
+        assert_eq!(
+            b.entity().set_visible_to(game, machine, false),
+            Err(Refusal::NoConnection)
+        );
+    });
+}
+
 /// `sees` names a stale handle of either player and a fake player, and a client.
 #[test]
 #[ignore = "daily"]
