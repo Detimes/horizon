@@ -2687,14 +2687,20 @@ impl Game<'_> {
         if std::mem::replace(&mut host.players_told_left, true) {
             return;
         }
-        let players: Vec<(u128, String)> = host
+        let players: Vec<(u32, u128, String)> = host
             .hub
             .guests
             .iter()
             .filter(|g| g.placed && g.participates_online())
-            .map(|g| (g.uuid, g.name.clone()))
+            .map(|g| (g.conn, g.uuid, g.name.clone()))
             .collect();
-        for (player, name) in players {
+        // They are all still here: each hears of its leave first, then of its logout.
+        for (conn, player, name) in &players {
+            self.as_guest(*conn, |game| {
+                game.native_player_leaving(*player, name, "Server closed");
+            });
+        }
+        for (_, player, name) in players {
             self.native_player_logged_out(player, &name);
         }
     }
