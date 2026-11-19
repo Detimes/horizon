@@ -254,7 +254,9 @@ pub trait MobsBackendMut {
     /// clients get the synced `DATA_PHASE`. Setting the phase it holds does
     /// nothing, as in vanilla (a strafing dragon keeps its player). No
     /// random draw. False for a stale handle or a client. The new phase
-    /// runs from the dragon's next tick.
+    /// runs from the dragon's next tick. Listeners of `dragon_change_phase`
+    /// are asked first and may cancel the change or begin another phase;
+    /// the call still returns true then.
     #[access(WorldOnly)]
     fn dragon_set_phase(&mut self, dragon: DragonRef, phase: DragonPhase) -> bool;
     /// Side: server.

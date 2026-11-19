@@ -41,10 +41,10 @@ impl Game<'_> {
     /// random draw. False for a stale handle or a client. The new phase
     /// runs from the dragon's next tick.
     pub(super) fn dragon_set_phase(&mut self, dragon: DragonRef, phase: DragonPhase) -> bool {
-        let Some(d) = self.native_dragon_mut(dragon.entity()) else {
+        if self.native_dragon(dragon.entity()).is_none() {
             return false;
-        };
-        d.set_native_phase(phase);
+        }
+        self.change_dragon_phase_to(phase);
         self.end_dragon_flame();
         true
     }
@@ -176,6 +176,77 @@ mod tests {
                 assert!(!dragon.mob().set_target(game, None));
                 assert_eq!(game.dragon.as_ref().unwrap().target, None);
             })
+        });
+    }
+
+    /// `dragon_change_phase` listener of these tests: it records `(current, new_phase)` and
+    /// cancels a change to `Landing`, turns one to `LandingApproach` into `Takeoff`, and lets
+    /// the rest through.
+    struct PhaseRules(std::sync::Arc<std::sync::Mutex<Vec<(DragonPhase, DragonPhase)>>>);
+    #[mod_api::__subscriptions]
+    impl mod_api::Hooks for PhaseRules {
+        fn dragon_change_phase(
+            &self,
+            _: &mut dyn mod_api::ServerHost,
+            event: &mut mod_api::DragonChangePhaseEvent<'_>,
+        ) -> mod_api::Flow {
+            self.0
+                .lock()
+                .unwrap()
+                .push((event.current, *event.new_phase));
+            match *event.new_phase {
+                DragonPhase::Landing => mod_api::Flow::Cancel,
+                DragonPhase::LandingApproach => {
+                    *event.new_phase = DragonPhase::Takeoff;
+                    mod_api::Flow::Continue
+                }
+                _ => mod_api::Flow::Continue,
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_listener_may_cancel_or_replace_a_phase_a_mod_sets() {
+        let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mods = vec![mod_api::ModEntry::new(
+            "phase-rules",
+            Box::new(PhaseRules(heard.clone())),
+        )]
+        .into();
+        mod_platform::testing::with_mods(mods, || {
+            with_game(|game| {
+                let (_, dragon) = dragon_in(game);
+                // A new dragon hovers: a change to the holding pattern goes through.
+                assert!(dragon.set_phase(game, DragonPhase::HoldingPattern));
+                assert_eq!(dragon.phase(game), Some(DragonPhase::HoldingPattern));
+                // Cancelled: it keeps the pattern, and the call still names a live dragon.
+                assert!(dragon.set_phase(game, DragonPhase::Landing));
+                assert_eq!(dragon.phase(game), Some(DragonPhase::HoldingPattern));
+                // Replaced: it takes off instead of approaching.
+                assert!(dragon.set_phase(game, DragonPhase::LandingApproach));
+                assert_eq!(dragon.phase(game), Some(DragonPhase::Takeoff));
+                // The phase it holds is no change and is not asked about.
+                assert!(dragon.set_phase(game, DragonPhase::Takeoff));
+                assert_eq!(
+                    *heard.lock().unwrap(),
+                    vec![
+                        (DragonPhase::Hover, DragonPhase::HoldingPattern),
+                        (DragonPhase::HoldingPattern, DragonPhase::Landing),
+                        (DragonPhase::HoldingPattern, DragonPhase::LandingApproach),
+                    ]
+                );
+            })
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn without_a_listener_a_phase_is_set_as_before() {
+        with_game(|game| {
+            let (_, dragon) = dragon_in(game);
+            assert!(dragon.set_phase(game, DragonPhase::Landing));
+            assert_eq!(dragon.phase(game), Some(DragonPhase::Landing));
         });
     }
 
