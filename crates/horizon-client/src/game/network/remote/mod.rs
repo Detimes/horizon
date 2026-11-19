@@ -2511,9 +2511,8 @@ impl Game<'_> {
             renderer.remove_columns(gone.iter().copied());
         }
         horizon_client::chunk::free_columns(freed, gone.len());
-        self.world
-            .block_entities
-            .unload(|k| gone.contains(&(k.0 >> 4, k.2 >> 4)));
+        let gone_chunks: Vec<(i32, i32)> = gone.iter().copied().collect();
+        self.world.block_entities.unload_chunks(&gone_chunks);
         if let Some(r) = self.remote.as_mut() {
             r.attachments.retain(|holder, _| match *holder {
                 Holder::Chunk([x, z]) => !gone.contains(&(x, z)),
@@ -5692,11 +5691,7 @@ impl Game<'_> {
                     } else {
                         horizon_client::skins::Signature::Unsigned
                     };
-                    horizon_client::skins::unpack(
-                        &t.value,
-                        signature,
-                        horizon_client::skins::texture_uris(),
-                    )
+                    horizon_client::skins::unpack_known(&t.value, signature)
                 } else {
                     // `ResolvableProfile.resolveProfile`: no `textures` and
                     // only a name or an id resolves through the services.
@@ -5710,11 +5705,7 @@ impl Game<'_> {
                     key.and_then(|key| match self.skin_profiles.borrow_mut().state(&key) {
                         horizon_client::skins::Resolve::Done(Some(profile)) => {
                             profile.textures().map(|(value, signature)| {
-                                horizon_client::skins::unpack(
-                                    &value,
-                                    signature,
-                                    horizon_client::skins::texture_uris(),
-                                )
+                                horizon_client::skins::unpack_known(&value, signature)
                             })
                         }
                         _ => None,
