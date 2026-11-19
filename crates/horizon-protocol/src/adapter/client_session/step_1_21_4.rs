@@ -323,6 +323,11 @@ fn text_nbt(mut tag: Tag) -> Tag {
     tag
 }
 
+fn text_nbt(mut tag: Tag) -> Tag {
+    text::component_down(&mut tag);
+    tag
+}
+
 /// An update to a team in 1.21.4's layout: the name tag visibility and collision rule are sent by name.
 fn team_down(payload: &[u8]) -> Result<Vec<u8>> {
     let mut r = Reader::new(payload);
