@@ -4,7 +4,7 @@ use super::Game;
 use horizon_protocol::packets::login::Property;
 use mod_api::PlayerRef;
 
-/// `ExtraCodecs.PROPERTY_MAP`'s limits: 16 properties, names of 64
+/// `ExtraCodecs.PROPERTY_MAP`'s limits: 16 properties (`MAX_LISTED_PROPERTIES`, which the list also keeps), names of 64
 /// characters, values of 32767 and signatures of 1024. The wire counts UTF-16 code units
 /// (`FriendlyByteBuf.writeUtf` and the reader's `readUtf` limits), so a character past the
 /// basic plane counts twice.
@@ -66,11 +66,12 @@ impl Game<'_> {
         // server's owner has the account's properties, also when they arrive after this call), so one
         // property added neither takes the others away nor hides a skin fetched later.
         let listed = host.hub.listed_profile_properties(i);
-        let overrides = host.hub.guests[i].properties.clone();
+        let overrides = host.hub.guests[i].profile_overrides.clone();
         let Some(updated) = with_property(overrides, &listed, property) else {
             return false;
         };
-        host.hub.guests.update(i, |g| g.properties = updated);
+        // Kept apart from the login properties `player_profile` reads.
+        host.hub.guests.update(i, |g| g.profile_overrides = updated);
         true
     }
 

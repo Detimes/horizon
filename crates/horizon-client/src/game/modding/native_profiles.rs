@@ -24,7 +24,7 @@ fn same_name(a: &str, b: &str) -> bool {
 impl Game<'_> {
     /// The profile of the first online, non-fake player `matches`, with the properties the player list gives
     /// (the integrated server's owner has the account's, also when they arrived after login, with a mod's
-    /// overrides by name over them).
+    /// overrides by name over them). `player_profile` keeps the login properties only.
     fn online_profile(
         &self,
         matches: impl Fn(&horizon_client::lan::guest::Guest) -> bool,

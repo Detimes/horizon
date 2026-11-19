@@ -44,9 +44,10 @@ pub trait PlayersServerHost {
     fn server_set_max_players(&mut self, max_players: u32) -> Result<(), PlayerLimitRefusal>;
     /// Side: server.
     /// The profile of the player with this UUID, as the server knows it,
-    /// never asked of Mojang: an online player's whole profile, else the user
-    /// cache's name (`usercache.json`, a dedicated server's), without
-    /// properties. None when neither knows them.
+    /// never asked of Mojang: an online player's whole profile (the properties
+    /// the player list gives, so with those `player_set_profile_property` set),
+    /// else the user cache's name (`usercache.json`, a dedicated server's),
+    /// without properties. None when neither knows them.
     #[access(WorldOnly)]
     fn profile_by_uuid(&self, uuid: u128) -> Option<GameProfile>;
     /// Side: server.
@@ -191,7 +192,10 @@ pub trait PlayersBackend {
     /// Side: server.
     /// `ServerPlayer.getGameProfile`: the UUID, name and login properties (skin
     /// `textures` included) of a connected or acting player. An offline-mode
-    /// player has no properties. None for a stale or unavailable player.
+    /// player has no properties, and `player_set_profile_property` does not
+    /// change them: what a mod sets is published to other players and read by
+    /// `profile_by_uuid` and `profile_by_name`. None for a stale or unavailable
+    /// player.
     #[access(WorldOnly)]
     fn player_profile(&self, player: PlayerRef) -> Option<GameProfile>;
     /// Side: both.
@@ -1188,7 +1192,8 @@ pub trait PlayersBackendMut {
     /// the basic plane counts twice), and a name the profile does not have yet
     /// when it already holds 16 properties (replacing one of its own names
     /// still works). The integrated server's owner keeps the account's other
-    /// properties.
+    /// properties, of which a profile lists at most 16 in all (the mod's win).
+    /// The player's login properties (`player_profile`) stay as they are.
     #[access(WorldOnly)]
     fn player_set_profile_property(
         &mut self,
