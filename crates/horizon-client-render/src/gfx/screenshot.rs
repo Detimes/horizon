@@ -144,7 +144,7 @@ impl PendingScreenshot {
 
 /// A relative, portable path. Refuse Windows separators/prefixes on every OS,
 /// not just on Windows, and inspect every component including the output file.
-fn screenshot_destination(root: &Path, file_name: &str) -> Result<PathBuf> {
+pub(super) fn screenshot_destination(root: &Path, file_name: &str) -> Result<PathBuf> {
     if file_name.is_empty()
         || file_name.contains(['\\', ':', '\0'])
         || file_name.split('/').any(|part| {
