@@ -43,6 +43,28 @@ fn no_pack_hdr_gain(layered: bool, pack: bool, world: bool) -> bool {
     layered && !pack && world
 }
 
+/// Whether the player's TAA may run this frame: not at the title, not under a `shaders/` pack
+/// (`shaders_pack`), and under a native one only where the renderer resolves its world
+/// (`Capabilities::engine_resolve`: no post chain, a frame of gamma light).
+fn taa_allowed(title: bool, shaders_pack: bool, executor: Option<external::Capabilities>) -> bool {
+    !title && !shaders_pack && executor.is_none_or(|c| c.engine_resolve)
+}
+
+/// What TAA's history is drawn under this frame: a native pack's world frame (`pack`) is lit
+/// for the display its `Frame` describes; any other frame keys as without a pack.
+fn taa_light_key(
+    pack: bool,
+    display: output::DisplayValues,
+    gain: bool,
+    settings: [f32; 4],
+) -> world_post::LightKey {
+    if pack {
+        world_post::LightKey::Pack(display)
+    } else {
+        world_post::LightKey::engine(gain, settings)
+    }
+}
+
 pub(in crate::gfx) fn terrain_shader() -> String {
     wgsl_prefix::HDR_LIGHT.to_owned() + include_str!("terrain.wgsl")
 }
@@ -1335,6 +1357,9 @@ pub struct Renderer {
     msaa: msaa::Msaa,
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
+    /// Watched only while HDR is On or Auto, including Auto in SDR; before `surface` and
+    /// `window`, so it's dropped first: its reader thread holds the surface.
+    display: Option<DisplayWatch>,
     /// The window's swapchain; `None` when rendering offscreen (`--offscreen`). Shared
     /// with frame generation's present thread while it runs.
     surface: Option<Arc<wgpu::Surface<'static>>>,
@@ -1364,9 +1389,6 @@ pub struct Renderer {
     pub last_wait: std::time::Duration,
     /// CPU time of the last `render`, waits excluded.
     pub last_encode: std::time::Duration,
-    /// Watched only while HDR is On or Auto, including Auto in SDR;
-    /// before `window`, so it's dropped first.
-    display: Option<DisplayWatch>,
     /// What this renderer's display last reported (`DisplayWatch`), its own: another
     /// renderer's watch never changes it.
     reading: output::DisplayReading,
@@ -4775,6 +4797,7 @@ impl Renderer {
     #[horizon_mod_api_macros::replaceable]
     pub fn release_surface(&mut self) {
         self.frame_gen.stop();
+        self.stop_display_reader();
         self.queue.wait();
         *self
             .spare_surface
@@ -4797,6 +4820,7 @@ impl Renderer {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         self.frame_gen.stop_to_configure();
+        self.stop_display_reader();
         self.surface = None;
         let surface = match spare {
             Some(surface) => surface,
@@ -6095,7 +6119,12 @@ impl Renderer {
     ) -> std::result::Result<(), String> {
         let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-        surface.configure(device, config);
+        {
+            let _queries = output_apply::SURFACE_QUERY
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            surface.configure(device, config);
+        }
         let memory = pollster::block_on(memory.pop());
         if let Some(e) = memory.or(pollster::block_on(validation.pop())) {
             return Err(e.to_string());
@@ -7474,10 +7503,12 @@ impl Renderer {
         let pose = frame.bob * frame.spin;
         let view_proj = views.primary().view_proj(pose);
         laps.lap("r_acquire");
-        // TAA runs where the world post pass does, not under a shader pack's own.
-        let taa = !frame.title
-            && self.pack_post.as_ref().is_none_or(|p| p.1.is_none())
-            && self.executor.is_none();
+        // TAA runs where the world post pass does, and where it resolves a native pack's world.
+        let taa = taa_allowed(
+            frame.title,
+            self.pack_post.as_ref().is_some_and(|p| p.1.is_some()),
+            self.executor,
+        );
         let hdr_lighting = self.shader_pack_kind().is_none();
         if let Some(hdr) = &mut self.hdr {
             hdr.lighting = hdr_lighting && hdr.look;
@@ -7491,7 +7522,12 @@ impl Renderer {
             .hdr
             .as_ref()
             .map_or([0.0; 4], |h| h.draw_params(!frame.title));
-        self.world_post.baked_light(hdr_gain, hdr_settings);
+        self.world_post.baked_light(taa_light_key(
+            !frame.title && self.executor.is_some(),
+            output.display(),
+            hdr_gain,
+            hdr_settings,
+        ));
         let jitter = self.world_post.jitter(
             [self.config.width, self.config.height],
             taa,
@@ -9374,6 +9410,7 @@ impl Renderer {
                 sky_visible,
                 scene: self.ray_scene.as_ref(),
                 lightmap: &self.lightmap_pixels,
+                jitter: self.world_post.jitter_clip(),
             });
         }
         // One of Horizon's own packs: its shadow passes, from the shadow camera's lists.
@@ -9475,8 +9512,16 @@ impl Renderer {
                 // (only entity.wgsl reads the glint strength there, and no entity draws here).
                 let mut fog_ends = globals.fog_ends;
                 fog_ends[3] = plane;
+                // Water samples the mirror at its jittered screen position: the mirror takes the
+                // world's jitter, while TAA runs.
+                let mirrored = view::mirror_view_projection(view_proj, plane);
+                let mirrored = if taa && self.world_post.taa {
+                    jitter * mirrored
+                } else {
+                    mirrored
+                };
                 let mirror_globals = Globals {
-                    view_proj: view::mirror_view_projection(view_proj, plane).to_cols_array_2d(),
+                    view_proj: mirrored.to_cols_array_2d(),
                     inverse_view,
                     fog_ends,
                     hdr_light: [0.0, 0.0, globals.hdr_light[2], 0.0],
@@ -10873,20 +10918,27 @@ impl Renderer {
                 scene: self.ray_scene.as_ref().map(|s| (s, frame.camera)),
             });
             // The engine's resolve of the pack's world goes here, between its chain and its
-            // output (#16126): the player's FXAA, at the world's size, where no chain draws
-            // the picture. TAA, its upscaling and sharpening stay off under every pack.
-            let resolved = (self.executor.is_some_and(|c| c.engine_fxaa)
-                && self.world_post.antialias)
-                .then(|| self.world_post.resolved(&self.device))
+            // output (#16126), where no chain draws the picture: the player's TAA, whose
+            // history the output reads straight, or FXAA onto a target of the world's size.
+            // TAA's upscaling and sharpening stay off (`hold_upscale`).
+            let engine_resolve = self.executor.is_some_and(|c| c.engine_resolve);
+            let taa_resolved = engine_resolve
+                .then(|| {
+                    (self.world_post).resolve_taa(
+                        &self.queue,
+                        &mut encoder,
+                        self.own_timing.as_mut(),
+                    )
+                })
                 .flatten();
-            if let Some(resolved) = &resolved {
-                self.world_post.finish(
-                    &self.queue,
-                    &mut encoder,
-                    resolved,
-                    self.own_timing.as_mut(),
-                );
-            }
+            let resolved = taa_resolved.or_else(|| {
+                let fxaa = (engine_resolve && self.world_post.antialias)
+                    .then(|| self.world_post.resolved(&self.device))
+                    .flatten()?;
+                self.world_post
+                    .finish(&self.queue, &mut encoder, &fxaa, self.own_timing.as_mut());
+                Some(fxaa)
+            });
             native.run_output(external::WorldOutput {
                 device: &self.device,
                 encoder: &mut encoder,
@@ -13445,6 +13497,8 @@ struct DisplayWatch {
     /// Without Wayland's event, when to read wgpu's values again: the OS sends no event for
     /// a moved window or a changed SDR brightness slider.
     polled: Option<std::time::Instant>,
+    /// The thread that makes those reads for a window surface (`output_apply::DisplayReader`).
+    reader: Option<output_apply::DisplayReader>,
 }
 
 impl DisplayReading {
@@ -13497,6 +13551,7 @@ impl DisplayWatch {
             let watch = Self {
                 wayland: Some(wayland),
                 polled: None,
+                reader: None,
             };
             return (watch, wayland_reading(now));
         }
@@ -13507,6 +13562,7 @@ impl DisplayWatch {
             #[cfg(target_os = "linux")]
             wayland: None,
             polled: Some(std::time::Instant::now() + DISPLAY_POLL),
+            reader: None,
         };
         (watch, now)
     }

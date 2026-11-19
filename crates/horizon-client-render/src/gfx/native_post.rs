@@ -365,8 +365,8 @@ pub struct NativeFrame {
     /// (`NativePack::new`): else they stay 1×1 and unwritten, and the world pass doesn't break
     /// before translucent terrain to copy them.
     pub reads_opaque: bool,
-    /// Last frame's view-projection, camera and time (`write`).
-    last: Option<([[f32; 4]; 4], glam::DVec3, std::time::Instant)>,
+    /// Last frame's view-projection, camera, time and jitter (`write`).
+    last: Option<LastFrame>,
     /// The eased eye light (block, sky) and being in water and lava (`write`); NaN until the
     /// first frame sets them.
     eye: [f32; 4],
@@ -375,6 +375,8 @@ pub struct NativeFrame {
     pub(super) ray_distance: Option<f32>,
     /// `frame.full_lightmap`, set before `write` from this frame's lightmap (`full_lightmap`).
     pub(super) full_lightmap: [f32; 3],
+    /// `frame.jitter`, set before `write` from the world's jitter this frame.
+    pub(super) jitter: [f32; 2],
     /// A pack with kept resources: their epochs (`NativePack::carry` moves them on).
     pub(super) epochs: Option<kept::Epochs>,
     start: std::time::Instant,
@@ -607,6 +609,7 @@ impl NativeFrame {
             eye: [f32::NAN; 4],
             ray_distance: None,
             full_lightmap: [0.0; 3],
+            jitter: [0.0; 2],
             epochs: None,
             start: std::time::Instant::now(),
             frames: 0,
@@ -850,6 +853,7 @@ impl NativeFrame {
         let mut inputs = frame_inputs(frame, size, seconds, index, self.shadow_camera.as_ref());
         inputs.wetness = self.wetness.0;
         inputs.full_lightmap = self.full_lightmap;
+        inputs.jitter = self.jitter;
         if let Some(distance) = self.ray_distance {
             (inputs.has_ray_tracing, inputs.ray_distance) = (1, distance);
         }
@@ -873,11 +877,10 @@ impl NativeFrame {
         // `write` skips title frames, so a gap means a pause or another world: the frame
         // before says nothing about this one, and the eased values start over.
         // A scripted clock's frames follow each other however long one takes to draw.
-        match self.last {
-            Some((previous, camera, time))
-                if timing.is_some() || (now - time).as_secs_f32() < MAX_FRAME_GAP =>
-            {
+        match carried(self.last, now, timing.is_some()) {
+            Some((previous, camera, time, jitter)) => {
                 inputs.previous_view_projection = previous;
+                inputs.previous_jitter = jitter;
                 inputs.camera_motion = (frame.camera - camera).as_vec3().to_array();
                 inputs.delta_time = (now - time).as_secs_f32();
             }
@@ -886,7 +889,7 @@ impl NativeFrame {
                 self.eye = [f32::NAN; 4];
             }
         }
-        self.last = Some((view_proj, frame.camera, now));
+        self.last = Some((view_proj, frame.camera, now, inputs.jitter));
         if let Some(epochs) = &mut self.epochs {
             let moved = last.map_or(0.0, |l| frame.camera.distance(l.1));
             [inputs.view_epoch, inputs.world_epoch, inputs.reset_reasons] =
@@ -928,6 +931,16 @@ impl NativeFrame {
         self.wetness = (0.0, None);
         self.start = std::time::Instant::now();
     }
+}
+
+/// A frame's view-projection, camera, time and `frame.jitter`, kept for the next one.
+type LastFrame = ([[f32; 4]; 4], glam::DVec3, std::time::Instant, [f32; 2]);
+
+/// `last` where it carries over into a frame drawn at `now`: always under a scripted clock,
+/// else when it was drawn less than `MAX_FRAME_GAP` before. Without it the frame's
+/// `previous_view_projection` is its own and `previous_jitter` zero, as after a reset.
+fn carried(last: Option<LastFrame>, now: std::time::Instant, scripted: bool) -> Option<LastFrame> {
+    last.filter(|&(_, _, time, _)| scripted || (now - time).as_secs_f32() < MAX_FRAME_GAP)
 }
 
 /// The option values of `constants` that `module` declares as overrides (wgpu refuses others).
@@ -1678,6 +1691,9 @@ pub fn frame_inputs(
         // `NativeFrame::write` sets it from the renderer's lightmap.
         full_lightmap: [0.0; 3],
         full_lightmap_padding: [0; 1],
+        // `NativeFrame::next_inputs` sets them from the world's jitter.
+        jitter: [0.0; 2],
+        previous_jitter: [0.0; 2],
     }
 }
 
@@ -1860,6 +1876,28 @@ mod tests {
         assert_eq!(wetness(0.25, 0.25, 5.0), 0.25);
     }
 
+    /// `previous_jitter` is last frame's jitter where last frame carries over, as
+    /// `previous_view_projection` is, and zero after a gap or a reset (`last` is `None`).
+    #[test]
+    fn the_previous_jitter_is_last_frame_s_unless_a_gap_or_reset_came_between() {
+        let now = std::time::Instant::now();
+        let jitter = [0.25, -0.125];
+        let drawn = |ago: f32| {
+            let time = now - std::time::Duration::from_secs_f32(ago);
+            Some((
+                Mat4::IDENTITY.to_cols_array_2d(),
+                glam::DVec3::ZERO,
+                time,
+                jitter,
+            ))
+        };
+        let previous = |last, scripted| carried(last, now, scripted).map_or([0.0; 2], |l| l.3);
+        assert_eq!(previous(drawn(0.016), false), jitter);
+        assert_eq!(previous(drawn(2.0), false), [0.0; 2]);
+        assert_eq!(previous(drawn(2.0), true), jitter);
+        assert_eq!(previous(None, false), [0.0; 2]);
+    }
+
     /// A scripted clock comes before STILL's ticks, eased values and wetness move by its
     /// delta, and a long wait between its frames is not a gap that starts them over.
     #[test]
@@ -1903,7 +1941,8 @@ mod tests {
     }
 
     /// After a reset, the same frames give the same inputs, to the bit, as a pack just made,
-    /// however the frames before moved the eased values, wetness and the frame count.
+    /// however the frames before moved the eased values, wetness and the frame count, and
+    /// whatever their jitter (`previous_jitter` starts at zero).
     #[test]
     fn a_reset_frame_gives_a_fresh_pack_s_inputs() {
         let _gpu = crate::gfx::test_gpu::lock();
@@ -1924,6 +1963,7 @@ mod tests {
         frame.pack.rain = 1.0;
         frame.pack.eye_light = [12, 3];
         frame.pack.eye_in = 1;
+        used.jitter = [0.25, -0.125];
         for n in 1..=5 {
             frame.pack.frame_timing = Some(FrameTiming::nth(n, 700.0));
             used.next_inputs(&frame, [4, 4], SDR);
@@ -1931,6 +1971,8 @@ mod tests {
         used.reset_history();
         frame.pack.eye_light = [2, 15];
         frame.pack.eye_in = 0;
+        used.jitter = [0.5, 0.5];
+        fresh.jitter = used.jitter;
         for n in 1..=3 {
             frame.pack.frame_timing = Some(FrameTiming::nth(n, 50.0));
             let inputs = [&mut used, &mut fresh].map(|f| f.next_inputs(&frame, [4, 4], SDR));
@@ -2617,15 +2659,13 @@ api = \"0.2\"
         }
     }
 
-    /// A pack without `[[post]]` shows the player's FXAA when the renderer hands it the world
-    /// resolved (#16126): a staircase edge comes out blended, and without the resolve the
-    /// output is the world exactly.
-    #[test]
-    fn a_pack_without_a_chain_shows_the_world_through_fxaa_only_when_it_is_on() {
-        let _gpu = crate::gfx::test_gpu::lock();
-        let Some((device, queue)) = device(true) else {
-            return;
-        };
+    /// A pack without `[[post]]` whose `[tonemap]` returns its input, over an SDR frame: its
+    /// output is the world it reads, or the world the renderer resolved in its place.
+    fn identity_tonemap_pack(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+    ) -> (NativePost, NativeFrame) {
         let manifest = "schema = 1\nid = \"t\"\nname = \"T\"\nversion = \"1\"\napi = \"0.2\"\n\
                         [sky]\nfile = \"s.wgsl\"\n[tonemap]\nfile = \"t.wgsl\"\n";
         let files = [
@@ -2644,10 +2684,9 @@ api = \"0.2\"
         .collect();
         let report = check(&Pack::from_files(files).unwrap()).unwrap();
         let tonemap = report.stages.iter().find(|s| s.kind == StageKind::Tonemap);
-        let format = wgpu::TextureFormat::Rgba8Unorm;
-        let frame = sdr_frame(&device, &queue);
-        let mut post = NativePost::new(
-            &device,
+        let frame = sdr_frame(device, queue);
+        let post = NativePost::new(
+            device,
             Vec::new(),
             &report.manifest,
             &[],
@@ -2657,14 +2696,55 @@ api = \"0.2\"
         )
         .unwrap();
         assert!(!post.chain());
-        // An 8×8 world, black left of the diagonal and white from it on: a staircase edge.
-        const SIZE: u32 = 8;
-        let world_pixels: Vec<u8> = (0..SIZE * SIZE)
+        (post, frame)
+    }
+
+    /// A square world of `size` in RGBA8, black left of the diagonal moved right by `shift`
+    /// and white from it on: a staircase edge.
+    fn staircase(size: u32, shift: u32) -> Vec<u8> {
+        (0..size * size)
             .flat_map(|i| {
-                let v = if i % SIZE >= i / SIZE { 255 } else { 0 };
+                let v = if i % size >= i / size + shift { 255 } else { 0 };
                 [v, v, v, 255]
             })
-            .collect();
+            .collect()
+    }
+
+    /// The rows of the square `screen` of `size`, once the commands in `encoder` ran.
+    fn read_screen(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mut encoder: wgpu::CommandEncoder,
+        screen: &wgpu::Texture,
+        size: u32,
+    ) -> Vec<u8> {
+        let buffer = crate::gfx::copy_frame(device, &mut encoder, screen, [size, size]);
+        queue.submit([encoder.finish()]);
+        buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, |r| r.unwrap());
+        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        let row = crate::gfx::padded_row(size) as usize;
+        let mapped = buffer.slice(..).get_mapped_range().unwrap();
+        (0..size as usize)
+            .flat_map(|y| mapped[y * row..y * row + size as usize * 4].to_vec())
+            .collect()
+    }
+
+    /// A pack without `[[post]]` shows the player's FXAA when the renderer hands it the world
+    /// resolved (#16126): a staircase edge comes out blended, and without the resolve the
+    /// output is the world exactly.
+    #[test]
+    fn a_pack_without_a_chain_shows_the_world_through_fxaa_only_when_it_is_on() {
+        let _gpu = crate::gfx::test_gpu::lock();
+        let Some((device, queue)) = device(true) else {
+            return;
+        };
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let (mut post, frame) = identity_tonemap_pack(&device, &queue, format);
+        // An 8×8 world with a staircase edge.
+        const SIZE: u32 = 8;
+        let world_pixels = staircase(SIZE, 0);
         let sized = |format, usage| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: None,
@@ -2717,17 +2797,7 @@ api = \"0.2\"
             post.run_chain(&device, &mut encoder, inputs, size, size, None, None);
             let resolved = fxaa.then_some(&resolved);
             post.run_display(&device, &mut encoder, &screen_view, resolved, None);
-            let buffer = crate::gfx::copy_frame(&device, &mut encoder, &screen, size);
-            queue.submit([encoder.finish()]);
-            buffer
-                .slice(..)
-                .map_async(wgpu::MapMode::Read, |r| r.unwrap());
-            device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-            let row = crate::gfx::padded_row(SIZE) as usize;
-            let mapped = buffer.slice(..).get_mapped_range().unwrap();
-            (0..SIZE as usize)
-                .flat_map(|y| mapped[y * row..y * row + SIZE as usize * 4].to_vec())
-                .collect::<Vec<u8>>()
+            read_screen(&device, &queue, encoder, &screen, SIZE)
         };
         let off = show(false);
         assert_eq!(
@@ -2737,6 +2807,82 @@ api = \"0.2\"
         let on = show(true);
         let blended = on.chunks(4).filter(|p| (16..=239).contains(&p[0])).count();
         assert!(blended > 0, "FXAA left the edge as it was: {on:?}");
+    }
+
+    /// A pack without `[[post]]` shows the player's TAA when the renderer hands it TAA's
+    /// history (#16126): the first frame after a reset is the world exactly, and the next,
+    /// drawn with another jitter that moved the edge a pixel, comes out blended with it.
+    #[test]
+    fn a_pack_without_a_chain_shows_the_world_through_taa() {
+        use glam::{DVec3, Mat4};
+        let _gpu = crate::gfx::test_gpu::lock();
+        let Some((device, queue)) = device(true) else {
+            eprintln!("TAA under a pack GPU skipped: no test device");
+            return;
+        };
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let mut world_post = crate::gfx::world_post::Post::new(&device, format);
+        if !world_post.supports_taa() {
+            eprintln!("TAA under a pack GPU skipped: TAA unsupported");
+            return;
+        }
+        world_post.taa = true;
+        world_post.hold_upscale(true);
+        let (mut post, frame) = identity_tonemap_pack(&device, &queue, format);
+        const SIZE: u32 = 8;
+        let window = [SIZE, SIZE];
+        let sized = |usage| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d {
+                    width: SIZE,
+                    height: SIZE,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            })
+        };
+        let source = sized(wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST);
+        let source_view = source.create_view(&Default::default());
+        let screen = sized(wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC);
+        let screen_view = screen.create_view(&Default::default());
+        let mut show = |pixels: &[u8]| {
+            world_post.jitter(window, true, Mat4::IDENTITY, DVec3::ZERO);
+            let (color, depth) = world_post.prepare(&device, window, true, false).unwrap();
+            queue.write_texture(
+                source.as_image_copy(),
+                pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(SIZE * 4),
+                    rows_per_image: None,
+                },
+                source.size(),
+            );
+            // The world as drawn this frame, copied onto the target TAA reads.
+            let mut encoder = device.create_command_encoder(&Default::default());
+            let group = world_post.bind(&device, &source_view);
+            world_post.finish_with(&mut encoder, &color, &group, None);
+            let resolved = world_post.resolve_taa(&queue, &mut encoder, None);
+            let resolved = resolved.expect("TAA resolves the pack's world");
+            let inputs = (&color, &depth, &frame.surface_view);
+            post.run_chain(&device, &mut encoder, inputs, window, window, None, None);
+            post.run_display(&device, &mut encoder, &screen_view, Some(&resolved), None);
+            read_screen(&device, &queue, encoder, &screen, SIZE)
+        };
+        let first = staircase(SIZE, 0);
+        assert_eq!(show(&first), first, "the reset frame is the world");
+        let next = show(&staircase(SIZE, 1));
+        let blended = next
+            .chunks(4)
+            .filter(|p| (16..=239).contains(&p[0]))
+            .count();
+        assert!(blended > 0, "TAA kept nothing of the first frame: {next:?}");
     }
 
     /// A pack's `Frame` describes the HDR display its picture goes to, and SDR

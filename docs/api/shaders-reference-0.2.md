@@ -759,6 +759,8 @@ The frame, as `frame` in every stage. Positions and directions are in world axes
 | `fog_render` | `vec2<f32>` | 816 | Where the render distance's fog starts and where it is full (x, y), in blocks along the larger of the horizontal distance and the height difference from the camera. Vanilla's fog is the larger of the two (`vanilla_fog`, under `[frame] fog = "pack"`). |
 | `moon_phase` | `u32` | 824 | The moon's phase, as Horizon draws the moon: 0 full, 1 waning gibbous, 2 third quarter, 3 waning crescent, 4 new, 5 waxing crescent, 6 first quarter, 7 waxing gibbous. It moves on by one each day. Only a pack whose files name `moon_phase` has this field. |
 | `full_lightmap` | `vec3<f32>` | 832 | Vanilla's light colour at full block and sky light (15 and 15) this frame, linear: what `MaterialInput.lightmap` and `EntityInput.lightmap` are where light is full. Its brightest channel is 1 unless something dims all light (the Darkness effect, a wither's bar). Only a pack whose files name `full_lightmap` has this field. |
+| `jitter` | `vec2<f32>` | 848 | This frame's sub-pixel offset of the world, added to clip `xy / w` (y up): the offset `projection` leaves out. Rebuilding a point from the depth subtracts it before `projection_inverse` (`vec4<f32>(ndc.xy - frame.jitter, depth, 1.0)`); projecting a point to sample what the world drew this frame adds it to `xy / w` after `projection`. `(0, 0)` while the world isn't jittered. Only a pack whose files name `jitter` or `previous_jitter` has this field. |
+| `previous_jitter` | `vec2<f32>` | 856 | Last frame's `jitter`: reprojecting a `keep = "view"` resource adds it to `xy / w` after `previous_view_projection`. `(0, 0)` where `previous_view_projection` is this frame's (the first frame, after a pause or a reset) and while the world isn't jittered. Only a pack whose files name `jitter` or `previous_jitter` has this field. |
 
 ## Anti-aliasing
 
@@ -773,9 +775,13 @@ A pack that wants smooth edges draws them itself, in a post pass: a spatial filt
 frame to the next, so a still camera gives it the same picture twice and there is no sub-pixel detail to gather.
 
 A pack without `[[post]]` whose frame holds gamma light (not `blend = "linear"` on the float frame) gets the
-player's FXAA: with `fxaa` on, Horizon anti-aliases the world at the world's size, in the frame's encoding, before
-the pack's `[tonemap]` (or Horizon's curve) reads it. TAA, TAA upscaling and its sharpening stay off under every
-pack, and `resolutionScale` still reaches the window through the tone curve's read.
+player's FXAA or TAA: with `fxaa` or `taa` on, Horizon anti-aliases the world at the world's size, in the frame's
+encoding, before the pack's `[tonemap]` (or Horizon's curve) reads it. TAA jitters the world's projection by
+`frame.jitter`, and its history starts over when the pack is loaded or rebuilt and when the display's values
+change. TAA upscaling and its sharpening stay off, and `resolutionScale` still reaches the window through the tone
+curve's read. Under any other pack TAA is off.
+
+A pack must never write an infinite value into the world's frame: TAA's history would carry it.
 
 Without a pack the settings apply as the player set them.
 

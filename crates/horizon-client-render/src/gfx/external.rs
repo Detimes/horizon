@@ -191,9 +191,10 @@ pub struct Capabilities {
     /// Its terrain pipelines bind the arenas' quad looks (`looks::wanted`): sections carry them.
     pub looks: bool,
     /// The renderer anti-aliases its world before the output reads it
-    /// (`WorldOutput::resolved`): it has no post passes (`[[post]]`) that draw the picture, and
-    /// its frame holds gamma light, which FXAA's blend is made for (not `blend = "linear"`).
-    pub engine_fxaa: bool,
+    /// (`WorldOutput::resolved`), with the player's TAA or FXAA: it has no post passes
+    /// (`[[post]]`) that draw the picture, and its frame holds gamma light, which their blends
+    /// are made for (not `blend = "linear"`).
+    pub engine_resolve: bool,
 }
 
 /// What the renderer hands the pack's post stage (`ExternalPipeline::run_post`).
@@ -215,8 +216,9 @@ pub struct WorldOutput<'a> {
     pub encoder: &'a mut wgpu::CommandEncoder,
     /// The window's frame, which the output draws.
     pub screen: &'a wgpu::TextureView,
-    /// The world as the renderer resolved it (the player's FXAA), at the world's size and in
-    /// its format, for the output to read in its place; `None`: the world as drawn.
+    /// The world as the renderer resolved it (the player's TAA or FXAA), at the world's size,
+    /// for the output to read in its place; `None`: the world as drawn. TAA's is its
+    /// `Rgba16Float` history, FXAA's in the world's format.
     pub resolved: Option<&'a wgpu::TextureView>,
 }
 
@@ -248,6 +250,9 @@ pub struct FrameStart<'a> {
     pub scene: Option<&'a RayScene>,
     /// This frame's lightmap, RGBA rows of sky level by block level (`Renderer::lightmap_pixels`).
     pub lightmap: &'a [u8; 16 * 16 * 4],
+    /// The world's sub-pixel jitter this frame in clip space (`world_post::Post::jitter_clip`),
+    /// zero while TAA is off.
+    pub jitter: [f32; 2],
 }
 
 /// What the renderer hands the pack after the water mirror (`ExternalPipeline::prepare_world_targets`).
