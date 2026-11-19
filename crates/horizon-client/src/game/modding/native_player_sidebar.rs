@@ -49,12 +49,17 @@ impl Game<'_> {
                 }
                 // The network form: a string over 65,535 modified UTF-8 bytes, or a tag past the
                 // network limits, is not written (an End tag goes out instead).
-                // A write that fits is also read back under the receiver's own limits (its 2 MiB heap
-                // quota and tag count): `check_network_nbt` is that round trip.
-                if tags
-                    .iter()
-                    .any(|tag| horizon_protocol::buf::check_network_nbt(tag).is_err())
-                {
+                // What is written must also be read by the client under vanilla's heap quota (2 MiB of
+                // `NbtAccounter` bytes): the written bytes are read back with `from_network_bytes(.., None)`,
+                // which accounts the heap (the reader inside `check_network_nbt` does not).
+                if tags.iter().any(|tag| {
+                    horizon_core::nbt::write_network(tag, horizon_core::nbt::Limits::network())
+                        .ok()
+                        .and_then(|bytes| {
+                            horizon_core::nbt::Tag::from_network_bytes(&bytes, None).ok()
+                        })
+                        .is_none()
+                }) {
                     return Err(TextFormError::Malformed);
                 }
                 Some(NativeSidebar { title, lines })
@@ -188,10 +193,10 @@ mod tests {
             // A title or a line over 65,535 modified UTF-8 bytes is refused before anything is sent
             // (the writer would put an End tag), and the sidebar shown before stays.
             let long = || Text::literal("a".repeat(65_536));
-            // forty 60,000-character segments: each string and the whole fit the writer, but not the
+            // twenty 60,000-character segments: each string and the whole fit the writer, but not the
             // reader's 2 MiB quota
             let heavy = || {
-                (0..40).fold(Text::literal(""), |text, _| {
+                (0..20).fold(Text::literal(""), |text, _| {
                     text.append(Text::literal("a".repeat(60_000)))
                 })
             };
