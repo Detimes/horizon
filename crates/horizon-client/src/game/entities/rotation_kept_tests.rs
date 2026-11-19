@@ -79,3 +79,28 @@ fn a_teleported_cloud_reads_back_the_rotation_the_teleport_set() {
         );
     });
 }
+
+/// `/tp <victim> <cloud>` takes the cloud's rotation (its saved one, as loaded: yaw `% 360`).
+#[test]
+#[ignore = "daily"]
+fn a_teleport_to_a_cloud_takes_the_clouds_rotation() {
+    with_game(|game| {
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.summon_with_nbt(
+            "minecraft:area_effect_cloud",
+            [8.5, 70.0, 0.5],
+            "{Rotation:[400f,20f]}",
+        )
+        .unwrap();
+        game.summon_with_nbt("minecraft:pig", [2.5, 70.0, 0.5], "{}")
+            .unwrap();
+        assert!(game.run_command("tp @e[type=pig,limit=1] @e[type=area_effect_cloud,limit=1]"));
+        let pig = game
+            .mobs
+            .iter()
+            .find(|m| m.kind.id == "minecraft:pig")
+            .unwrap();
+        assert_eq!([pig.yaw, pig.head_pitch], [40.0, 20.0]);
+    });
+}

@@ -108,33 +108,20 @@ pub fn loaded_motion(tag: &Tag) -> Vec3 {
 pub fn rotation(tag: &Tag) -> [f32; 2] {
     read_doubles::<2>(tag.get("Rotation")).map_or([0.0; 2], |r| [r[0] as f32, r[1] as f32])
 }
-/// A saved Rotation as `Entity.load` takes it: the yaw wrapped into [-180, 180) (`Mth.wrapDegrees`) and the pitch
-/// clamped to [-90, 90]; a value that is not finite is left as it is. What a save writes is read with [`rotation`].
+/// A saved Rotation as `Entity.load` takes it (`setRot`, read off vanilla 26.3 by the parity rows): the yaw `% 360`
+/// (so 400 loads as 40 but 270 stays 270 and -190 stays -190: Java's remainder keeps the sign) and the pitch
+/// `% 360` clamped to [-90, 90]; a value that is not finite is left as it is. What a save writes is read with
+/// [`rotation`].
 pub fn loaded_rotation(tag: &Tag) -> [f32; 2] {
     let [yaw, pitch] = rotation(tag);
     [
-        if yaw.is_finite() {
-            wrap_degrees(yaw)
-        } else {
-            yaw
-        },
+        if yaw.is_finite() { yaw % 360.0 } else { yaw },
         if pitch.is_finite() {
-            pitch.clamp(-90.0, 90.0)
+            (pitch % 360.0).clamp(-90.0, 90.0)
         } else {
             pitch
         },
     ]
-}
-/// `Mth.wrapDegrees`.
-fn wrap_degrees(degrees: f32) -> f32 {
-    let mut wrapped = degrees % 360.0;
-    if wrapped >= 180.0 {
-        wrapped -= 360.0;
-    }
-    if wrapped < -180.0 {
-        wrapped += 360.0;
-    }
-    wrapped
 }
 /// `TagValueInput.getBooleanOr`: a numeric tag's byteValue is nonzero, with a false default.
 pub fn flag(tag: &Tag, key: &str) -> bool {
@@ -3635,7 +3622,7 @@ pub fn cushion_to_nbt(c: &Cushion, uuid: [i32; 4], raw: Option<&Tag>) -> Tag {
         position: c.position,
         motion: Vec3::ZERO,
         // The cushion never turns: its saved pitch is the one it was loaded with.
-        rotation: [c.yaw, raw.map_or(0.0, |t| rotation(t)[1])],
+        rotation: [c.yaw, raw.map_or(0.0, |t| loaded_rotation(t)[1])],
         on_ground,
         fall_distance,
     };
@@ -3658,13 +3645,8 @@ pub fn cushion_from_nbt(tag: &Tag, id: u32) -> Option<Cushion> {
             position.z.floor() as i32,
         ],
     };
-    let yaw = match tag.get("Rotation") {
-        Some(Tag::List(l)) => l
-            .first()
-            .and_then(|v| crate::save::float(Some(v)))
-            .unwrap_or(0.0) as f32,
-        _ => 0.0,
-    };
+    // `Entity.load`: the yaw `% 360` (a cushion keeps no pitch of its own: the saved one is read as loaded).
+    let yaw = loaded_rotation(tag)[0];
     let color =
         crate::entities::dye_index(&text(tag.get("color")).unwrap_or_else(|| "white".into()));
     Some(Cushion {
@@ -11272,12 +11254,13 @@ mod loaded_rotation_tests {
         )])
     }
 
-    /// vanilla 26.3 reads `Rotation:[400f,100f]` back as `[40f, 90f]`.
+    /// vanilla 26.3's values (the parity rows): yaw `% 360`, pitch `% 360` clamped to +-90.
     #[test]
-    fn a_saved_rotation_loads_wrapped_and_clamped() {
+    fn a_saved_rotation_loads_like_vanilla() {
         assert_eq!(loaded_rotation(&tag(400.0, 100.0)), [40.0, 90.0]);
-        assert_eq!(loaded_rotation(&tag(-190.0, -100.0)), [170.0, -90.0]);
-        assert_eq!(loaded_rotation(&tag(180.0, 0.0)), [-180.0, 0.0]);
+        assert_eq!(loaded_rotation(&tag(270.0, 370.0)), [270.0, 10.0]);
+        assert_eq!(loaded_rotation(&tag(-190.0, -100.0)), [-190.0, -90.0]);
+        assert_eq!(loaded_rotation(&tag(180.0, 45.0)), [180.0, 45.0]);
         assert_eq!(loaded_rotation(&tag(73.0, -24.0)), [73.0, -24.0]);
         // a save writes the raw value (a painting's yaw 270 from its facing) and reads it back as it is
         assert_eq!(rotation(&tag(270.0, 10.0)), [270.0, 10.0]);

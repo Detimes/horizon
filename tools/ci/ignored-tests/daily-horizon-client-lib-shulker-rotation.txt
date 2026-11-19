@@ -1,2 +1,1 @@
 horizon-client-lib mobs::shulker::tests::loaded_rotation_survives_a_shulker_tick lib daily resources
-horizon-client game::spawn_yaw_tests::a_new_shulker_faces_yaw_zero_and_a_loaded_one_keeps_its_rotation lib daily resources

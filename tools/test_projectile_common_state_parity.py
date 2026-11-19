@@ -140,7 +140,8 @@ def groups():
     extra = []
     for kind in extra_kinds:
         target = f'@e[type={kind},tag=rot_row,limit=1]'
-        for saved in ('', ',Rotation:[90f,10f]', ',Rotation:[400f,100f]', ',Rotation:[0f,0f]'):
+        for saved in ('', ',Rotation:[90f,10f]', ',Rotation:[400f,100f]', ',Rotation:[0f,0f]',
+                      ',Rotation:[270f,370f]', ',Rotation:[-190f,-100f]', ',Rotation:[180f,45f]'):
             extra.extend([
                 cmd(f'/summon {kind} 12.5 234 8.5 {{NoGravity:1b,Tags:["rot_row"]{saved}}}'),
                 cmd(f'/data get entity {target} Rotation'),
