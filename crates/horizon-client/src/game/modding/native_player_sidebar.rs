@@ -49,10 +49,12 @@ impl Game<'_> {
                 }
                 // The network form: a string over 65,535 modified UTF-8 bytes, or a tag past the
                 // network limits, is not written (an End tag goes out instead).
-                if tags.iter().any(|tag| {
-                    horizon_core::nbt::write_network(tag, horizon_core::nbt::Limits::network())
-                        .is_err()
-                }) {
+                // A write that fits is also read back under the receiver's own limits (its 2 MiB heap
+                // quota and tag count): `check_network_nbt` is that round trip.
+                if tags
+                    .iter()
+                    .any(|tag| horizon_protocol::buf::check_network_nbt(tag).is_err())
+                {
                     return Err(TextFormError::Malformed);
                 }
                 Some(NativeSidebar { title, lines })
@@ -186,9 +188,17 @@ mod tests {
             // A title or a line over 65,535 modified UTF-8 bytes is refused before anything is sent
             // (the writer would put an End tag), and the sidebar shown before stays.
             let long = || Text::literal("a".repeat(65_536));
+            // forty 60,000-character segments: each string and the whole fit the writer, but not the
+            // reader's 2 MiB quota
+            let heavy = || {
+                (0..40).fold(Text::literal(""), |text, _| {
+                    text.append(Text::literal("a".repeat(60_000)))
+                })
+            };
             let line = SidebarLine::new(Text::literal("Kills"), None);
             for oversized in [
                 Sidebar::new(long(), vec![line.clone()]),
+                Sidebar::new(heavy(), vec![line.clone()]),
                 Sidebar::new(Text::literal("Stats"), vec![SidebarLine::new(long(), None)]),
                 Sidebar::new(
                     Text::literal("Stats"),
