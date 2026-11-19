@@ -182,21 +182,6 @@ pub enum PositionSource {
     Entity { id: i32, y_offset: f32 },
 }
 impl Particle {
-    /// A pinned particle as a client through 1.21.8 knows it: `effect`, `instant_effect`, `dragon_breath` and
-    /// `flash` have no options there (1.21.9 added them), so they carry none.
-    pub fn without_plain_options(&mut self) {
-        // pinned ids of dragon_breath, effect, instant_effect and flash
-        if matches!(self.id, 15 | 23 | 56 | 52)
-            && matches!(
-                self.data,
-                Some(
-                    ParticleData::Scalar(_) | ParticleData::ColorPower(..) | ParticleData::Color(_)
-                )
-            )
-        {
-            self.data = None;
-        }
-    }
     /// A native mod's particle travels as `MOD_PARTICLE_ID` (-1) plus its name.
     /// Vanilla reads the id with `IdMap.byIdOrThrow`, which throws on -1 and
     /// drops the connection, so such a particle may only go to Horizon clients.
