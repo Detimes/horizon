@@ -266,7 +266,7 @@ impl Game<'_> {
                         .or_else(|| {
                             entity_nbt::spit_or_bullet_to_nbt(p, uuid, owner, target, raw)
                         })?;
-                self.save_portal_cooldown(p.id, &mut tag);
+                self.save_projectile_portal_cooldown(p, &mut tag);
                 tag
             }
             Target::Crystal(id) => {
