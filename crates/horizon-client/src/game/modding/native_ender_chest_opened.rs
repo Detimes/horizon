@@ -5,7 +5,7 @@ use super::Game;
 impl Game<'_> {
     /// A guest opened the ender chest at `pos`; `player` is the guest's UUID. Server-side.
     #[inline(always)]
-    pub(in crate::game) fn native_ender_chest_opened(&self, player: u128, pos: [i32; 3]) {
-        self.fire_ender_chest_opened(player, pos);
+    pub(in crate::game) fn native_ender_chest_opened(&mut self, player: u128, pos: [i32; 3]) {
+        mod_api::dispatch_ender_chest_opened(self, player, pos);
     }
 }

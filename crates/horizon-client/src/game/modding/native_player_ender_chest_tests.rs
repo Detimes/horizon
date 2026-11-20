@@ -205,8 +205,8 @@ fn an_ender_chest_open_is_heard_and_a_chest_open_is_not() {
         struct Enders(Arc<Mutex<Vec<(u128, [i32; 3])>>>);
         #[mod_api::__subscriptions]
         impl mod_api::Hooks for Enders {
-            fn ender_chest_opened(&self, _: &mut dyn mod_api::ServerHost, player: u128, pos: [i32; 3]) {
-                self.0.lock().unwrap().push((player, pos));
+            fn ender_chest_opened(&self, _: &mut dyn mod_api::ServerHost, event: &mut mod_api::EnderChestOpenedEvent) {
+                self.0.lock().unwrap().push((event.player, event.pos));
             }
         }
         let listener = Enders(seen.clone());
