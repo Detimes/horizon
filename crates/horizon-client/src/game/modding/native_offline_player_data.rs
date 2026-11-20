@@ -76,7 +76,7 @@ mod tests {
             playerdata::directory(dir.path());
             write_dat(&playerdata::path(dir.path(), 42), Tag::Compound(data)).unwrap();
             let read = game.offline_player_data(42).unwrap();
-            assert_eq!(read.get("Score"), Some(&Tag::Int(7)));
+            assert_eq!(read.get(&"Score".into()), Some(&Tag::Int(7)));
             assert_eq!(game.offline_player_data(43), None, "another UUID");
         });
     }

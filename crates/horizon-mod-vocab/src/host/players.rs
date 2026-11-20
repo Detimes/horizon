@@ -544,8 +544,11 @@ pub trait PlayersBackend {
     /// may call it. On a client, for the local player only. None for an unknown state, a
     /// stale or unavailable player.
     #[access(WorldOnly)]
-    fn player_has_correct_tool_for_drops(&self, player: PlayerRef, state: BlockState)
-    -> Option<bool>;
+    fn player_has_correct_tool_for_drops(
+        &self,
+        player: PlayerRef,
+        state: BlockState,
+    ) -> Option<bool>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
