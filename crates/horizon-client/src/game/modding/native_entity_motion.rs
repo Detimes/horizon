@@ -195,6 +195,27 @@ impl Game<'_> {
         with_entity_mut!(self, h, e => e.reset_fall_distance());
         true
     }
+    /// Sets whether a server player or guest is swimming (`Entity.setSwimming`): the flag
+    /// the next water update reads, as `Player` keeps it. False for a mob or another kind,
+    /// and for a stale handle.
+    pub(super) fn entity_set_swimming(&mut self, entity: EntityRef, swimming: bool) -> bool {
+        let Some(target) = self.native_entity_target(entity) else {
+            return false;
+        };
+        let motion = match target {
+            Target::Player => self.player.as_mut(),
+            Target::Guest(conn) => self
+                .lan
+                .as_mut()
+                .and_then(|host| host.hub.guests.motion_mut(conn)),
+            _ => None,
+        };
+        let Some(motion) = motion else {
+            return false;
+        };
+        motion.swimming = swimming;
+        true
+    }
     /// Whether the entity stands on a block (`Entity.onGround`).
     /// Whether the entity stands on a block (`Entity.onGround`). API
     /// 379.
@@ -528,6 +549,40 @@ mod tests {
             // An entity that is gone: nothing.
             game.mobs.clear();
             assert!(!game.entity_reset_fall_distance(zombie));
+        });
+    }
+
+    #[test]
+    fn entity_set_swimming_writes_a_players_flag_and_refuses_a_mob() {
+        fn fake_swimming<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut bool {
+            let host = game.lan.as_mut().unwrap();
+            let conn = host.hub.guests.iter().find(|g| g.uuid == 2).unwrap().conn;
+            &mut host
+                .hub
+                .guests
+                .motion_mut(conn)
+                .expect("a fake has a motion")
+                .swimming
+        }
+        super::super::native_entity_refs::tests::with_game(|game| {
+            super::super::bossbars::audience_tests::add_real_and_fake(game);
+            game.options.dedicated = Some(Vec::new());
+            let kind = game
+                .res
+                .mob_types()
+                .get("minecraft:zombie")
+                .unwrap()
+                .clone();
+            game.mobs.push(Mob::new(40, kind, Vec3::ZERO, 0.0));
+            // A mob refuses: its swim is its own AI's.
+            assert!(!game.entity_set_swimming(game.entity(40).unwrap(), true));
+            // A fake guest takes the flag, then gives it up.
+            let level = game.level(game.dim.id()).unwrap();
+            let fake = game.fake_player(level, 2, "fake").unwrap().entity();
+            assert!(game.entity_set_swimming(fake, true));
+            assert!(*fake_swimming(game));
+            assert!(game.entity_set_swimming(fake, false));
+            assert!(!*fake_swimming(game));
         });
     }
 

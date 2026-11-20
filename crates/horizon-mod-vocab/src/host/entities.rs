@@ -592,6 +592,13 @@ pub trait EntitiesBackendMut {
     #[access(WorldOnly)]
     fn entity_reset_fall_distance(&mut self, entity: EntityRef) -> bool;
     /// Side: server.
+    /// Sets whether a player is swimming (`Entity.setSwimming`), the flag the next water
+    /// update reads: a swimming player keeps the swimming pose and its swim speed until the
+    /// water says otherwise. Server players and guests; a mob's swim is its own AI's and
+    /// refuses here. False for a mob, another kind or a stale handle.
+    #[access(WorldOnly)]
+    fn entity_set_swimming(&mut self, entity: EntityRef, swimming: bool) -> bool;
+    /// Side: server.
     /// The entity's UUID (`Entity.getUUID`), the one it is saved with; an
     /// entity that has none yet gets it now, as a new vanilla entity does.
     /// On a client, the one the server added it with (a player's is its
