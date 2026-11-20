@@ -244,3 +244,9 @@ a client. `player.set_statistics(host, json)` replaces all of them with a JSON o
 changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
 goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
 `player_stat_award` is not heard.
+
+## Entity broadcast range
+
+`ConfigServerHost::entity_range_percent()` (server side) returns the entity broadcast range the server hosts with,
+in percent of vanilla's (`entity-broadcast-range-percentage` of server.properties). It is `100` when no server is
+hosting a world, which is vanilla's default. Read only.
