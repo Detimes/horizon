@@ -1554,6 +1554,22 @@ pub trait LevelsBackendMut {
     /// once per column. Outside a transaction they run immediately.
     #[access(WorldOnly)]
     fn level_set_biome(&mut self, level: LevelRef, pos: [i32; 3], biome: &str) -> bool;
+    /// Side: server.
+    /// Set the biome of every 4x4x4 cell that holds a block of the half-open box `min <= pos < max`
+    /// to `biome` (`minecraft:plains`), as `/fillbiome` does, and return how many cells changed.
+    /// Each changed column is sent again (`chunk_resend`'s effect) as `level_set_biome` does, once
+    /// per commit. Reading the biomes back is `level_biome_at`. An empty box (any minimum at or
+    /// above its maximum) changes nothing. Refusals are whole and named by `BiomeFillRefusal`:
+    /// `Stale`, `Client`, `NotInPlace`, `UnknownBiome`, `NotLoaded` (a column of the box is not
+    /// loaded, or the box leaves the world's height) and `TooManyCells` (over 16,384 cells a call).
+    #[access(WorldOnly)]
+    fn level_fill_biome(
+        &mut self,
+        level: LevelRef,
+        min: [i32; 3],
+        max: [i32; 3],
+        biome: &str,
+    ) -> Result<u32, BiomeFillRefusal>;
 }
 /// The handles' client writes of the `levels` area, implemented by the game and reached through [`ClientBackendMut`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
