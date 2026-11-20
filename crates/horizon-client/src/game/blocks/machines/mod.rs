@@ -1337,9 +1337,23 @@ impl Game<'_> {
     }
     /// `InventoryMoveItemEvent` for `item` going from `source` to `destination`, where one end
     /// is a capability part: whether a mod canceled the move.
-    fn part_move_canceled(&mut self, source: [i32; 3], destination: [i32; 3], item: &str) -> bool {
+    fn part_move_canceled(
+        &mut self,
+        source: [i32; 3],
+        destination: [i32; 3],
+        item: &str,
+        slot: usize,
+    ) -> bool {
         let mut cancel = false;
-        self.native_inventory_move_item(source, destination, item, &mut cancel);
+        // A hopper transfer moves one item from one slot.
+        self.native_inventory_move_item(
+            source,
+            destination,
+            item,
+            Some(slot as u32),
+            1,
+            &mut cancel,
+        );
         cancel
     }
     /// `HopperBlockEntity.ejectItems`: one root attempt across source slots, restoring each
@@ -1370,7 +1384,7 @@ impl Game<'_> {
                 };
                 let resource = ItemResource::of(&snapshot);
                 let item = mod_api::__private::item_key_id(snapshot.item()).unwrap();
-                if game.part_move_canceled(from, at, item) {
+                if game.part_move_canceled(from, at, item, slot) {
                     continue;
                 }
                 let (source, index) = hopper.locate(slot).ok_or(())?;
@@ -1411,7 +1425,7 @@ impl Game<'_> {
             let Ok(one) = resource.as_stack().try_into_engine(self.items()) else {
                 continue;
             };
-            if part.amount(self, slot) == 0 || self.part_move_canceled(at, into, &one.item) {
+            if part.amount(self, slot) == 0 || self.part_move_canceled(at, into, &one.item, slot) {
                 continue;
             }
             let moved = mod_api::run_transaction(self, |game, tx| {
@@ -1518,10 +1532,13 @@ impl Game<'_> {
             return false;
         };
         let mut cancel = false;
+        // A hopper transfer moves one item from one slot of the holder (its source).
         self.native_inventory_move_item(
             self.container_world_pos(source),
             self.container_world_pos(destination),
             &stack.item,
+            Some(slot as u32),
+            1,
             &mut cancel,
         );
         cancel
@@ -1634,10 +1651,13 @@ impl Game<'_> {
             let bone_meal = bone_meal_stack().clone();
             if mod_api::__private::listened(mod_api::HookId::InventoryMoveItem) {
                 let mut cancel = false;
+                // The composter's output container is one slot, and a hopper takes one item.
                 self.native_inventory_move_item(
                     [above.0, above.1, above.2],
                     self.container_world_pos(hopper),
                     &bone_meal.item,
+                    Some(0),
+                    1,
                     &mut cancel,
                 );
                 if cancel {

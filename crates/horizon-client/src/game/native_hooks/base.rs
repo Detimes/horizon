@@ -3055,9 +3055,11 @@ impl Game<'_> {
         source: [i32; 3],
         destination: [i32; 3],
         item: &str,
+        source_slot: Option<u32>,
+        amount: u32,
         cancel: &mut bool,
     ) {
-        self.fire_inventory_move_item(source, destination, item, cancel);
+        self.fire_inventory_move_item(source, destination, item, source_slot, amount, cancel);
     }
     /// A hopper selected a container while searching for items to push or
     /// pull. Exactly one of `container` and `entity` identifies the target.

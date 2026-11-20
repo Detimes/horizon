@@ -367,7 +367,7 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
 - **`player_ready_arrow(player, name, arrow)`**: a server player released a drawn bow, by the use-item key or a
   mod's `release_using_item`, with `arrow` naming the selected projectile item. The player's state is swapped in.
 - **`prepare_hopper_transfer(pos)`**: a hopper at `pos` begins a transfer attempt, after its cooldown and enabled checks and before pushing or pulling items.
-- **`inventory_move_item(source, destination, item, cancel)`**: a hopper is about to move one item between containers (a composter's bone meal too). Set `cancel` to leave it in the source slot. A chest boat or minecart is reported at the block it is in.
+- **`inventory_move_item(source, destination, item, source_slot, amount, cancel)`**: a hopper is about to move one item between containers (a composter's bone meal too). Set `cancel` to leave it in the source slot. A chest boat or minecart is reported at the block it is in.
 - **`hopper_inventory_search(hopper, container, entity)`**: a hopper selects a block container or container entity while searching for items.
 - **`vault_loot(pos, item)`**: a vault is about to eject a loot item, before the item entity spawns.
 - **`world_border_bounds_change_finish()`**: a timed world border size change finished on the server, after the border reached its final size.
@@ -2694,7 +2694,7 @@ registration path.
 
 - A hopper selects a container while searching for items: `hopper_inventory_search(hopper, container, entity)` identifies the hopper and the selected block container or container entity.
 
-- A hopper is about to move one item between containers: `inventory_move_item(source, destination, item, cancel)` runs before the source slot is changed, a composter's bone meal included; a chest boat or minecart is reported at the block it is in. Set `cancel` to keep the item in its source slot.
+- A hopper is about to move one item between containers: `inventory_move_item(source, destination, item, source_slot, amount, cancel)` runs before the source slot is changed, a composter's bone meal included; a chest boat or minecart is reported at the block it is in. Set `cancel` to keep the item in its source slot.
 
 - A dropped item entity reached its 6000-tick lifetime and is about to be removed: `item_despawn(entity, item, count, pos)`.
 
