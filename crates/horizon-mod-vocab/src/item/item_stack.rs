@@ -458,6 +458,36 @@ impl ItemStack {
         }
         Ok(())
     }
+    /// The enchantments the stack carries itself (`minecraft:enchantments`, Bukkit's
+    /// `ItemMeta.getEnchants`): each registry id with its level, in id order. A prototype's
+    /// enchantments are not the stack's own, and an entry whose level is not a nonnegative
+    /// integer is left out.
+    pub fn enchantments(&self) -> Vec<(String, u32)> {
+        self.enchantment_levels("minecraft:enchantments")
+    }
+    /// The enchantments an enchanted book stores (`minecraft:stored_enchantments`, Bukkit's
+    /// `EnchantmentStorageMeta.getStoredEnchants`), read as [`ItemStack::enchantments`] reads them.
+    pub fn stored_enchantments(&self) -> Vec<(String, u32)> {
+        self.enchantment_levels("minecraft:stored_enchantments")
+    }
+    /// The `id: level` compound of an enchantment component, as (id, level) pairs.
+    fn enchantment_levels(&self, id: &str) -> Vec<(String, u32)> {
+        let Some(Tag::Compound(levels)) = self
+            .components()
+            .and_then(|c| c.as_nbt().get(&JavaString::from(id)))
+        else {
+            return Vec::new();
+        };
+        levels
+            .iter()
+            .filter_map(|(key, level)| match level {
+                Tag::Int(level) => u32::try_from(*level)
+                    .ok()
+                    .map(|level| (key.to_string_lossy(), level)),
+                _ => None,
+            })
+            .collect()
+    }
     /// Encode the item NBT escape using this host's canonical id, never a process-local key.
     /// Returns None when id metadata is unavailable. Only components present on the
     /// stack are written; effective defaults and maxima belong to the items host area.
@@ -633,6 +663,55 @@ mod tests {
         let patch = named.components().unwrap().as_nbt();
         assert!(patch.contains_key(&JavaString::from("!minecraft:custom_name")));
         assert!(patch.contains_key(&JavaString::from("!minecraft:lore")));
+    }
+
+    /// The enchantments read back in id order with their levels, a book's stored ones from their own
+    /// component, a negative or non-integer level left out, and a stack with none reads empty.
+    #[test]
+    fn enchantments_read_the_stacks_own_levels() {
+        let levels = |entries: &[(&str, Tag)]| {
+            Tag::Compound(
+                entries
+                    .iter()
+                    .map(|(id, level)| (JavaString::from(*id), level.clone()))
+                    .collect(),
+            )
+        };
+        let mut stack = ItemStack::of(ItemKey(0));
+        assert!(stack.enchantments().is_empty());
+        assert!(stack.stored_enchantments().is_empty());
+        stack
+            .set_component_value(
+                "minecraft:enchantments",
+                levels(&[
+                    ("minecraft:sharpness", Tag::Int(5)),
+                    ("minecraft:mending", Tag::Int(1)),
+                    ("minecraft:unbreaking", Tag::Int(-2)),
+                    ("minecraft:efficiency", Tag::String("3".into())),
+                ]),
+            )
+            .unwrap();
+        assert_eq!(
+            stack.enchantments(),
+            [
+                ("minecraft:mending".to_owned(), 1),
+                ("minecraft:sharpness".to_owned(), 5),
+            ]
+        );
+        assert!(stack.stored_enchantments().is_empty());
+        stack
+            .set_component_value(
+                "minecraft:stored_enchantments",
+                levels(&[("minecraft:silk_touch", Tag::Int(1))]),
+            )
+            .unwrap();
+        assert_eq!(
+            stack.stored_enchantments(),
+            [("minecraft:silk_touch".to_owned(), 1)]
+        );
+        // A removal marker reads empty.
+        stack.remove_component_value("minecraft:enchantments", true);
+        assert!(stack.enchantments().is_empty());
     }
 
     struct Number;

@@ -59,6 +59,12 @@ to component NBT by `host.text_to_nbt(&text)`; `None` removes the name and an em
 removes the lore. A refused text returns `TextFormError` and changes nothing. Vanilla draws a
 custom name in italics unless its style sets `italic: false`.
 
+The enchantments a stack carries are its `minecraft:enchantments` component, a map from registry id to
+level. `ItemStack::enchantments()` returns them as `(id, level)` pairs in id order, and
+`ItemStack::stored_enchantments()` returns an enchanted book's `minecraft:stored_enchantments` the same way.
+Only the stack's own patch is read: a prototype's enchantments are not reported, and an entry whose level is
+negative or not an integer is left out.
+
 ## Game boundaries
 
 A consume or death-protection override whose opaque native effect payload cannot be decoded
