@@ -4129,7 +4129,16 @@ impl Hub {
                             }
                         });
                         let rot = (p.yaw, p.pitch);
-                        self.position_change(i, at, rot, 0, Hearing::Confirmation, ctx, events);
+                        self.position_change(
+                            i,
+                            at,
+                            rot,
+                            0,
+                            (true, true),
+                            Hearing::Confirmation,
+                            ctx,
+                            events,
+                        );
                     }
                 }
                 // handlePlayerAbilities: the client flies only if it may.
@@ -4428,6 +4437,7 @@ impl Hub {
         ctx: &TickCtx,
         events: &mut Vec<HostEvent>,
     ) {
+        let shape = (pos.is_some(), rot.is_some());
         let conn = self.guests[i].conn;
         // containsInvalidValues, on the packet's values (0 where it has none).
         let (yaw, pitch) = rot.unwrap_or_default();
@@ -4469,7 +4479,7 @@ impl Hub {
         }
         let to = pos.unwrap_or(g.position);
         let rot = rot.unwrap_or((g.yaw, g.pitch));
-        self.position_change(i, to, rot, flags, Hearing::Heard, ctx, events);
+        self.position_change(i, to, rot, flags, shape, Hearing::Heard, ctx, events);
     }
 
     /// ServerGamePacketListenerImpl.handlePlayerPositionChange.
@@ -4479,6 +4489,7 @@ impl Hub {
         to: [f64; 3],
         (yaw, pitch): (f32, f32),
         flags: u8,
+        (has_position, has_rotation): (bool, bool),
         hearing: Hearing,
         ctx: &TickCtx,
         events: &mut Vec<HostEvent>,
@@ -4560,6 +4571,7 @@ impl Hub {
         }
         // The anticheat's `ground`: a claim of the ground with nothing to
         // stand on is dropped (no-fall, walking on water).
+        let client_on_ground = flags & 1 != 0;
         let (mut flags, mut corrected) = (flags, false);
         if flags & 1 != 0 && self.anticheat.is_some() {
             match self.anticheat_ground(i, to, stands, ctx, events) {
@@ -4604,6 +4616,9 @@ impl Hub {
             flags,
             stands,
             floating,
+            on_ground: client_on_ground,
+            has_position,
+            has_rotation,
         };
         self.accept_move(i, accepted, hearing, events);
     }

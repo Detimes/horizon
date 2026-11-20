@@ -301,11 +301,14 @@ fn a_report_equal_to_the_baseline_fires_nothing_though_the_accepted_look_differs
     assert!(moves(&drain(&mut hub)).is_empty());
     assert_eq!(look(&hub), [90.0, 0.0], "accepted");
     assert_eq!(baseline(&hub).1, [0.0, 0.0], "baseline");
-    // Back to the destination's look: equal to the baseline, so nothing fires, and it is committed.
+    // Back to the destination's look: equal to the baseline, but still a validated report, so it is heard
+    // (vanilla's flying packet) and held, like any report that changes nothing.
     hub.ticks = 12;
     push(&mut hub, vec![turned(0.0)]);
-    assert!(moves(&drain(&mut hub)).is_empty());
-    assert_eq!(look(&hub), [0.0, 0.0]);
+    let conn = hub.guests[0].conn;
+    assert_eq!(moves(&drain(&mut hub)), [conn]);
+    assert!(hub.pending_move_report(conn).is_some());
+    assert_eq!(look(&hub), [90.0, 0.0], "still the accepted look until the held report is ruled");
 }
 
 #[test]

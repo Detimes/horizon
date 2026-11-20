@@ -1,7 +1,7 @@
 //! A movement report the mods may veto (`player_move`): held on the guest, ruled on by the game.
 //!
-//! With a listener, a validated report that changes the player's position or look is not committed
-//! in the poll. The hub keeps it on the guest, tells the game ([`HostEvent::PlayerMove`]) and stops
+//! With a listener, every validated report (also one that changes nothing, as vanilla's flying
+//! packet) is not committed in the poll. The hub keeps it on the guest, tells the game ([`HostEvent::PlayerMove`]) and stops
 //! reading that guest's inbox, so the player's later reports stay in order behind it; the game rules
 //! on it in the same tick and the inbox goes on from there (the turn pauses as it does for a raw
 //! payload). The game
@@ -44,6 +44,13 @@ pub struct Accepted {
     pub stands: bool,
     /// `clientIsFloating`, from this report.
     pub floating: bool,
+    /// The packet's own on-ground flag, as the client sent it: `flags` may have lost the bit to
+    /// the anticheat's ground check, this keeps the claim.
+    pub on_ground: bool,
+    /// The packet carried a position (`MovePlayerPos`, `MovePlayerPosRot`).
+    pub has_position: bool,
+    /// The packet carried a rotation (`MovePlayerRot`, `MovePlayerPosRot`).
+    pub has_rotation: bool,
 }
 
 /// An [`Accepted`] report waiting for the mods, and what it was accepted against.
@@ -70,11 +77,15 @@ pub struct MoveReport {
     pub from_rotation: [f32; 2],
     pub to: [f64; 3],
     pub to_rotation: [f32; 2],
+    /// The client's on-ground flag of the packet.
+    pub on_ground: bool,
+    pub has_position: bool,
+    pub has_rotation: bool,
 }
 
 impl Hub {
-    /// Commits the validated report `m` of guest `i`, or holds it for the mods when one listens, it
-    /// is `Heard` and it changes the position or the look. A passenger never gets here (its vehicle
+    /// Commits the validated report `m` of guest `i`, or holds it for the mods when one listens and
+    /// it is `Heard`, whether or not it changes anything (vanilla's flying packet). A passenger never gets here (its vehicle
     /// carries it).
     pub(super) fn accept_move(
         &mut self,
@@ -83,7 +94,7 @@ impl Hub {
         hearing: Hearing,
         events: &mut Vec<HostEvent>,
     ) {
-        if hearing == Hearing::Heard && self.moves_listened && self.move_changes(i, &m) {
+        if hearing == Hearing::Heard && self.moves_listened && self.move_heard(i) {
             let (since, conn) = (self.ticks, self.guests[i].conn);
             let (teleports, dimension) = {
                 let g = &self.guests[i];
@@ -115,13 +126,10 @@ impl Hub {
         }
     }
 
-    /// The report differs from the last reported location, and is not of the player's first tick
-    /// in its level: the tick after it entered (a join, a level change) is not heard, the next is.
-    fn move_changes(&self, i: usize, m: &Accepted) -> bool {
-        let g = &self.guests[i];
-        self.ticks > g.level_entered + 1
-            && (m.to != g.last_reported.0
-                || [m.yaw, m.pitch.clamp(-90.0, 90.0)] != g.last_reported.1)
+    /// The report is not of the player's first tick in its level: the tick after it entered (a
+    /// join, a level change) is not heard, the next is.
+    fn move_heard(&self, i: usize) -> bool {
+        self.ticks > self.guests[i].level_entered + 1
     }
 
     /// `handlePlayerPositionChange`'s commit: the report becomes the player's state.
@@ -133,6 +141,7 @@ impl Hub {
             flags,
             stands,
             floating,
+            ..
         } = m;
         self.guests.update(i, |g| {
             g.client_is_floating = floating;
@@ -229,6 +238,9 @@ impl Hub {
             from_rotation: p.from.1,
             to: p.report.to,
             to_rotation: [p.report.yaw, p.report.pitch.clamp(-90.0, 90.0)],
+            on_ground: p.report.on_ground,
+            has_position: p.report.has_position,
+            has_rotation: p.report.has_rotation,
         })
     }
 

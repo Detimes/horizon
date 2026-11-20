@@ -3,8 +3,12 @@
 pub trait Hooks {
     /// A player's movement report is about to be applied: they would move from
     /// `from` to `to`, or turn from `from_rotation` to `to_rotation` (`[yaw,
-    /// pitch]`). Heard once for each validated report whose position or
-    /// rotation differs from the player's last reported location, after the
+    /// pitch]`). `on_ground` is the packet's own on-ground flag as the client
+    /// sent it, `has_position` and `has_rotation` say whether the packet
+    /// carried a position and a rotation (a status-only packet carries
+    /// neither, and `to` / `to_rotation` then repeat the player's own). Heard
+    /// once for each validated report, also one that changes nothing (vanilla's
+    /// flying packet, the stand-still and ground-flag packets included), after the
     /// server's own validation and before the report is committed. That
     /// location is kept on the player's connection, apart from the accepted
     /// position: it is the position given to the listener before it runs, and
@@ -51,7 +55,7 @@ pub trait Hooks {
     /// covers only a report held pending across ticks. Server-side.
     #[notes = r#"## Player move
 
-- **`player_move(host, event)`**: Bukkit's `PlayerMoveEvent` for a guest's own movement, fired from `ServerGamePacketListenerImpl.handlePlayerPositionChange`'s place: after the server validated the report, before it is committed. Cancelling vetoes it; the client is sent back to the accepted position and rotation. The engine applies no threshold: a mod that wants Paper's 1/256 square block or ten degrees compares `from` and `to` itself."#]
+- **`player_move(host, event)`**: Bukkit's `PlayerMoveEvent` for a guest's own movement, fired from `ServerGamePacketListenerImpl.handlePlayerPositionChange`'s place: after the server validated the report, before it is committed. The event carries the packet's `on_ground` flag as the client sent it and `has_position` / `has_rotation`, and it is fired for every move packet, also one that changes nothing, as vanilla's flying packet. Cancelling vetoes it; the client is sent back to the accepted position and rotation. The engine applies no threshold: a mod that wants Paper's 1/256 square block or ten degrees compares `from` and `to` itself."#]
     #[hook(
         side = "server",
         contract = "cancel",
@@ -60,5 +64,15 @@ pub trait Hooks {
         paper = "PlayerMoveEvent",
         cancellable = true
     )]
-    fn player_move();
+    fn player_move(
+        player: u128,
+        from: [f64; 3],
+        from_rotation: [f32; 2],
+        to: [f64; 3],
+        to_rotation: [f32; 2],
+        on_ground: bool,
+        has_position: bool,
+        has_rotation: bool,
+        cancel: &mut bool,
+    );
 }

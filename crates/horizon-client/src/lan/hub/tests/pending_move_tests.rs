@@ -221,11 +221,45 @@ fn a_veto_drops_the_report_and_corrects_the_client() {
 }
 
 #[test]
-fn a_report_that_changes_nothing_is_not_held() {
+fn a_report_that_changes_nothing_is_held_with_the_packets_shape() {
     let mut hub = standing(true, vec![at(0.0)]);
-    let events = drain(&mut hub);
-    assert!(moves(&events).is_empty(), "the same position is not heard");
-    assert!(hub.guests[0].pending_move.is_none());
+    let conn = hub.guests[0].conn;
+    assert_eq!(
+        moves(&drain(&mut hub)),
+        [conn],
+        "heard as vanilla's flying packet"
+    );
+    let report = hub.pending_move_report(conn).unwrap();
+    assert_eq!(report.from, report.to);
+    assert_eq!(
+        (report.on_ground, report.has_position, report.has_rotation),
+        (true, true, false)
+    );
+}
+
+#[test]
+fn a_status_only_packet_is_held_with_neither_position_nor_rotation() {
+    let status = S::MovePlayerStatus(play::MovePlayerStatus { flags: 0 });
+    let mut hub = standing(true, vec![status]);
+    let conn = hub.guests[0].conn;
+    assert_eq!(moves(&drain(&mut hub)), [conn]);
+    let report = hub.pending_move_report(conn).unwrap();
+    assert_eq!(
+        (report.on_ground, report.has_position, report.has_rotation),
+        (false, false, false)
+    );
+}
+
+#[test]
+fn a_turn_reports_a_rotation_and_no_position() {
+    let mut hub = standing(true, vec![turned(30.0)]);
+    let conn = hub.guests[0].conn;
+    drain(&mut hub);
+    let report = hub.pending_move_report(conn).unwrap();
+    assert_eq!(
+        (report.on_ground, report.has_position, report.has_rotation),
+        (true, false, true)
+    );
 }
 
 #[test]
