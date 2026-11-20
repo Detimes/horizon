@@ -429,6 +429,9 @@ pub(in crate::game) struct Dragon {
     /// hook host inside a hit, so the game asks mods and applies them as soon as the hit
     /// is over ([`Game::settle_dragon_phases`]).
     phase_requests: Vec<Phase>,
+    /// True from the moment `dragon_change_phase` listeners are asked until the change
+    /// commits: a change asked meanwhile is not asked of the hook again.
+    changing_phase: bool,
     /// `LivingEntity.equipment`: nothing in the fight reads it; it is kept
     /// for mods and saves.
     pub equipment: horizon_items::equipment::Equipment,
@@ -649,6 +652,7 @@ impl Dragon {
             flame_count: 0,
             sitting_damage: 0.0,
             phase_requests: Vec::new(),
+            changing_phase: false,
             equipment: Default::default(),
             live: Default::default(),
             growl: 100,
@@ -3190,12 +3194,18 @@ impl Game<'_> {
     /// `EnderDragonPhaseManager.setPhase`, with mods asked first (`dragon_change_phase`):
     /// they may cancel the change or begin another phase instead. A phase the dragon
     /// already holds is no change and is not asked about (`set_phase` keeps its rule for
-    /// it). True when the dragon now begins a phase.
+    /// it). The dying flight is never offered: it always happens, and a listener's
+    /// replacement with `Dying` is refused (the asked phase stays). A change asked while the
+    /// hook runs for this dragon (a listener hurting it, say) is applied at once without
+    /// asking again, so a listener cannot recurse; the guard holds until the outer change
+    /// commits. A mod's own `set_phase` never comes here. True when the dragon now begins a
+    /// phase.
     fn change_dragon_phase(&mut self, wanted: Phase) -> bool {
         let Some(d) = self.dragon.as_mut() else {
             return false;
         };
-        if d.phase.id() == wanted.id() {
+        if d.phase.id() == wanted.id() || d.changing_phase || matches!(wanted, Phase::Dying { .. })
+        {
             d.set_phase(wanted);
             return true;
         }
@@ -3207,7 +3217,16 @@ impl Game<'_> {
             && let Some(epoch) = self.native_lifecycle.epoch()
         {
             let dragon = DragonRef::new(mod_api::EntityRef::new(epoch, id));
+            if let Some(d) = self.dragon.as_mut() {
+                d.changing_phase = true;
+            }
             self.native_dragon_change_phase(dragon, current, &mut new_phase, &mut cancel);
+            if let Some(d) = self.dragon.as_mut() {
+                d.changing_phase = false;
+            }
+        }
+        if new_phase == DragonPhase::Dying {
+            new_phase = asked;
         }
         // A listener cannot remove the dragon, but it may have hurt it dead meanwhile.
         let Some(d) = self.dragon.as_mut() else {
@@ -3222,16 +3241,6 @@ impl Game<'_> {
             Phase::from_id(new_phase.id())
         });
         true
-    }
-    /// A mod's `set_phase`: the same change, asked of `dragon_change_phase` listeners too.
-    pub(super) fn change_dragon_phase_to(&mut self, phase: DragonPhase) {
-        if self
-            .dragon
-            .as_ref()
-            .is_some_and(|d| d.native_phase() != phase)
-        {
-            self.change_dragon_phase(Phase::from_id(phase.id()));
-        }
     }
     /// Asks mods about, then applies, the phases a hit requested (`Dragon::request_phase`).
     fn settle_dragon_phases(&mut self) {
@@ -6113,7 +6122,7 @@ mod tests {
 
     #[test]
     #[ignore = "daily"]
-    fn a_hit_that_would_make_the_dragon_take_off_or_die_asks_mods_first() {
+    fn a_hit_that_would_make_the_dragon_take_off_asks_mods_but_dying_is_never_offered() {
         let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let mods = vec![mod_api::ModEntry::new(
             "keep-phase",
@@ -6143,13 +6152,44 @@ mod tests {
                 assert_eq!(hit(game, 60.0), Hurt::Landed { full: true });
                 assert_eq!(game.dragon.as_ref().unwrap().phase.id(), 5);
                 assert_eq!(*asked.lock().unwrap(), vec![(5, 4)]);
-                // Flying with its last health: the killing blow asks for the dying flight (9).
+                // Flying with its last health: the killing blow starts the dying flight (9)
+                // whatever the listener says, and is not asked about.
                 asked.lock().unwrap().clear();
                 game.dragon.replace(dragon(flying()));
                 game.dragon.as_mut().unwrap().health = 1.0;
                 hit(game, 5.0);
-                assert_eq!(game.dragon.as_ref().unwrap().phase.id(), 0);
-                assert_eq!(*asked.lock().unwrap(), vec![(0, 9)]);
+                assert_eq!(game.dragon.as_ref().unwrap().phase.id(), 9);
+                assert!(asked.lock().unwrap().is_empty());
+            })
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_phase_asked_while_the_hook_runs_is_applied_without_asking_again() {
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mods = vec![mod_api::ModEntry::new(
+            "keep-phase",
+            Box::new(KeepPhase(asked.clone())),
+        )]
+        .into();
+        mod_platform::testing::with_mods(mods, || {
+            super::super::native_entity_refs::tests::with_game(|game| {
+                game.dragon.replace(dragon(flying()));
+                // What a listener's nested change sees: the guard is up.
+                game.dragon.as_mut().unwrap().changing_phase = true;
+                assert!(game.change_dragon_phase(Phase::Flaming { ticks: 0 }));
+                assert_eq!(game.dragon.as_ref().unwrap().phase.id(), 5);
+                assert!(asked.lock().unwrap().is_empty());
+                // Down again, the same change is asked about (and the listener cancels it).
+                game.dragon.as_mut().unwrap().changing_phase = false;
+                assert!(!game.change_dragon_phase(Phase::Takeoff {
+                    first: true,
+                    path: None,
+                    target: None,
+                }));
+                assert_eq!(asked.lock().unwrap().len(), 1);
+                assert!(!game.dragon.as_ref().unwrap().changing_phase);
             })
         });
     }
