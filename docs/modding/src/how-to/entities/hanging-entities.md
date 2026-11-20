@@ -11,3 +11,5 @@ new one. Both writes are server-only handle methods on `EntityRef`, taking `&mut
   value wraps modulo 8 as vanilla's does (8 is 0, 13 is 5). Comparators reading the frame update afterwards.
 
 Both return `false` for a stale handle or an entity of another kind. Players see the change through entity synchronization, including a painting or frame turned to south.
+
+`entity.is_valid(host)` is `Entity.isValid` for any handle: `true` while the entity is in the world and not removed, so a frame or painting that is broken answers `false`, as does a stale handle.

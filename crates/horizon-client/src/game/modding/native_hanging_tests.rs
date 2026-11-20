@@ -110,6 +110,20 @@ fn a_frames_item_turns_with_vanillas_wrap_and_other_kinds_are_refused() {
     });
 }
 
+/// `Entity.isValid`: a frame is valid while it hangs, a stale handle never is.
+#[test]
+#[ignore = "daily"]
+fn a_hanging_entity_is_valid_until_it_is_gone() {
+    with_hanging(|game| {
+        let frame = game.entity(FRAME).expect("the frame's handle");
+        assert!(game.entity_is_valid(frame));
+        let stale = mod_api::EntityRef::new(frame.epoch().wrapping_add(1), FRAME);
+        assert!(!game.entity_is_valid(stale));
+        game.item_frames.clear();
+        assert!(!game.entity_is_valid(frame));
+    });
+}
+
 /// The facing (`HangingEntity.DATA_DIRECTION`, entry 8) the tracker holds for entity `id`: its
 /// value, or the default it sends once the value is left out (`ServerEntity.sendDirtyEntityData`).
 fn tracked_facing(game: &mut super::Game<'_>, id: u32) -> Option<i32> {
