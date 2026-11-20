@@ -1360,6 +1360,16 @@ pub trait PlayersBackendMut {
         signature: Option<&str>,
     ) -> bool;
     /// Side: server.
+    /// Drops the property `name` that a mod set with `player_set_profile_property`, so the player's
+    /// profile shows the one the player list gives again (Paper's `PlayerProfile#removeProperty`): a
+    /// reset to the default skin needs no empty value. Only a mod's own property can go; the
+    /// properties the account gives (`textures` of the player's own skin) stay as they are. True for a
+    /// connected player whether or not the mod had set `name` (nothing to remove is done); false for a
+    /// stale or unavailable player, a fake player, an empty name or one past 64 characters, and on a
+    /// client. The player is not sent to the others again: call `player_refresh` for that.
+    #[access(WorldOnly)]
+    fn player_remove_profile_property(&mut self, player: PlayerRef, name: &str) -> bool;
+    /// Side: server.
     /// Sends the player to the other players again, as Paper's
     /// `hidePlayer` then `showPlayer` does: over the next two ticks they
     /// leave every other player's Tab list and world and come back with
