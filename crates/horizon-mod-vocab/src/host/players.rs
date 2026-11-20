@@ -1145,6 +1145,21 @@ pub trait PlayersBackendMut {
         state: BlockState,
     ) -> Result<(), PlayerWorldRefusal>;
     /// Side: server.
+    /// Sends that player the block the world has at `pos` in `level` now, as a
+    /// `ClientboundBlockUpdatePacket` (Paper's `Player.sendBlockChange` with the block's own
+    /// data): the undo of an earlier `show_block` at that position. The world is not changed.
+    /// Refuses, sending nothing, with `PlayerWorldRefusal`: `Client`, `Stale` (no player behind
+    /// the handle), `NoConnection` (a fake player), `StaleLevel` (a level of an earlier open of
+    /// the world), `OtherLevel` (not the level in place, where the player is), `OutOfWorld` (y
+    /// outside the world), `NotLoaded` (the chunk at `pos` is not loaded) and `PositionNotSendable`.
+    #[access(WorldOnly)]
+    fn player_revert_block_change(
+        &mut self,
+        player: PlayerRef,
+        level: LevelRef,
+        pos: [i32; 3],
+    ) -> Result<(), PlayerWorldRefusal>;
+    /// Side: server.
     /// Writes `state` at `pos` in `level` for the player, for a state the mod already chose
     /// (an editor's or a schematic's). It is `level_set_block` with a placement's flags
     /// (`NEIGHBORS | CLIENTS`, plus `KNOWN_SHAPE` when `update_neighbour_shapes` is false; without
