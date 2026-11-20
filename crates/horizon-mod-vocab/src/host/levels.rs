@@ -1010,6 +1010,20 @@ pub trait LevelsBackendMut {
     #[access(WorldOnly)]
     fn level_set_map_data(&mut self, level: LevelRef, id: i32, colors: &[u8]) -> bool;
     /// Side: server.
+    /// `Bukkit.createMap(world)` / `MapItem.create`: a new unlocked map in the level's dimension,
+    /// centred on `center` (`[x, z]`, kept as given, not snapped to the map grid as `createFresh`
+    /// snaps it), at `scale` (0 to 4) and with `colors` (128 by 128 colour ids, row by row). Its
+    /// markers are on and it saves with the next save. Returns the new map id. None for a scale
+    /// over 4, another colour length, a stale handle and a client.
+    #[access(WorldOnly)]
+    fn level_new_map(
+        &mut self,
+        level: LevelRef,
+        center: [i32; 2],
+        scale: u8,
+        colors: &[u8],
+    ) -> Option<i32>;
+    /// Side: server.
     /// Run the block at `pos`'s scheduled tick now (`ServerLevel.tickBlock`): the path a due
     /// tick from the queue takes, the block's part first, else `BlockState.tick`, with the same
     /// random draws and level events. The queue is not read or changed; `schedule_block_tick`
