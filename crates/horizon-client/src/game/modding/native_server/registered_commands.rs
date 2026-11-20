@@ -5,7 +5,10 @@
 
 use super::{CommandArguments, Game, command_arguments, command_tree, register_dispatcher};
 use serde_json::Value;
-use std::{collections::{BTreeSet, HashMap}, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+};
 
 /// The commands the mods registered, as the session's tree holds them.
 pub(in crate::game) struct NativeCommands {
@@ -141,7 +144,8 @@ impl Game<'_> {
             .as_ref()
             .map(|commands| commands.usages.as_slice())
             .unwrap_or(&[]);
-        mod_command_info(usages, label).or_else(|| vanilla_command_info(&self.ui.dispatcher.0, label))
+        mod_command_info(usages, label)
+            .or_else(|| vanilla_command_info(&self.ui.dispatcher.0, label))
     }
 
     /// `Commands::command_names`: the root names of the mods' usages and of vanilla's roots
@@ -184,10 +188,16 @@ fn mod_command_info(usages: &[mod_api::Command], label: &str) -> Option<mod_api:
 
 /// Vanilla's root command `label` names in `d`, an alias (a root literal that only redirects to
 /// another root command, `tp`) resolved to its target. Its aliases are the roots redirecting to it.
-fn vanilla_command_info(d: &horizon_client::command::Dispatcher, label: &str) -> Option<mod_api::CommandInfo> {
+fn vanilla_command_info(
+    d: &horizon_client::command::Dispatcher,
+    label: &str,
+) -> Option<mod_api::CommandInfo> {
     let roots = &d.nodes[0].children;
     let mut node = d.find(label)?;
-    if let Some(target) = d.nodes[node].redirect.filter(|target| roots.contains(target)) {
+    if let Some(target) = d.nodes[node]
+        .redirect
+        .filter(|target| roots.contains(target))
+    {
         node = target;
     }
     let aliases = roots
@@ -243,7 +253,10 @@ mod tests {
         assert_eq!(info.aliases, ["tp"]);
         assert_eq!(info.level, 2);
         assert!(info.vanilla);
-        assert_eq!(vanilla_command_info(&d, "teleport").unwrap().aliases, ["tp"]);
+        assert_eq!(
+            vanilla_command_info(&d, "teleport").unwrap().aliases,
+            ["tp"]
+        );
         assert_eq!(vanilla_command_info(&d, "missing"), None);
     }
 }

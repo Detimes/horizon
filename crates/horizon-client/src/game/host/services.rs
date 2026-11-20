@@ -63,12 +63,15 @@ impl Commands for Game<'_> {
         );
         self.native_run_command_with_output(line)
     }
-    fn command_info(&self, label: &str) -> Option<mod_api::CommandInfo> {
+    fn command_info(&mut self, label: &str) -> Option<mod_api::CommandInfo> {
         mod_api::__private::check_access("command_info", mod_api::__private::LoadAccess::WorldOnly);
         self.native_command_info(label)
     }
-    fn command_names(&self) -> Vec<String> {
-        mod_api::__private::check_access("command_names", mod_api::__private::LoadAccess::WorldOnly);
+    fn command_names(&mut self) -> Vec<String> {
+        mod_api::__private::check_access(
+            "command_names",
+            mod_api::__private::LoadAccess::WorldOnly,
+        );
         self.native_command_names()
     }
 }

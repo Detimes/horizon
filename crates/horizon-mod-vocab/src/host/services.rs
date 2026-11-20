@@ -181,7 +181,7 @@ pub trait Commands {
     /// `tp`). `level` is the lowest a mod's usages ask, or vanilla's permission for the root.
     /// None when neither has the name. Reads only; it runs nothing. Horizon has no permission
     /// nodes: the level is the answer.
-    fn command_info(&self, label: &str) -> Option<CommandInfo> {
+    fn command_info(&mut self, label: &str) -> Option<CommandInfo> {
         crate::world::phase::unprovided(
             "Commands::command_info",
             "command_info",
@@ -191,7 +191,7 @@ pub trait Commands {
     /// Side: server.
     /// The root names of every command the server answers, mods' and vanilla's (aliases
     /// included), sorted, each once. Empty without a server world.
-    fn command_names(&self) -> Vec<String> {
+    fn command_names(&mut self) -> Vec<String> {
         crate::world::phase::unprovided(
             "Commands::command_names",
             "command_names",
