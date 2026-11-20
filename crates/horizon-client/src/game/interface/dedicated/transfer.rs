@@ -321,12 +321,13 @@ impl Game<'_> {
         written?;
         let announced = host.hub.confirm_arrival(uuid, id)?;
         // Placed now: its tree again, with the nodes asked while the player can be found.
-        if let Some(i) = self
+        if let Some(conn) = self
             .lan
             .as_ref()
-            .and_then(|host| host.hub.guests.iter().position(|g| g.uuid == uuid))
+            .and_then(|host| host.hub.guests.iter().find(|g| g.uuid == uuid))
+            .map(|g| g.conn)
         {
-            self.send_tree_with_fresh_nodes(i);
+            self.send_tree_with_fresh_nodes(conn);
         }
         let directory = horizon_client::lan::playerdata::directory(&self.world_root);
         self.native_player_save_to_file(uuid, &name, &directory);

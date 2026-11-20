@@ -2058,15 +2058,15 @@ impl Game<'_> {
         }
     }
 
-    /// Sends guest `i` its command tree with the permission nodes asked again first, for a tree a
-    /// join or `Hub::change_level_with` left out: the nodes see the player placed, in its new
-    /// level.
-    pub(super) fn send_tree_with_fresh_nodes(&mut self, i: usize) {
-        let Some(conn) = self.lan.as_ref().map(|host| host.hub.guests[i].conn) else {
-            return;
-        };
+    /// Sends the guest on connection `conn` its command tree with the permission nodes asked
+    /// again first, for a tree a join, `Hub::change_level_with` or `Hub::respawn_with` left out:
+    /// the nodes see the player placed, in its new level. The guest is looked up again after
+    /// the nodes answered, since a handler may change the guest list (a fake player removed).
+    pub(super) fn send_tree_with_fresh_nodes(&mut self, conn: u32) {
         self.native_refresh_node_paths(conn);
-        if let Some(host) = self.lan.as_ref() {
+        if let Some(host) = self.lan.as_ref()
+            && let Some(i) = host.hub.guests.iter().position(|g| g.conn == conn)
+        {
             host.hub.send_commands(i);
         }
     }

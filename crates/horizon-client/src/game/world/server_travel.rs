@@ -955,7 +955,15 @@ impl Game<'_> {
                 .change_level_with(i, at, yaw, None, true, PLAYER_DELAY, &ctx, false);
         }
         // The permission nodes are asked with the player in the new level, then its tree is sent.
-        self.send_tree_with_fresh_nodes(i);
+        self.send_tree_with_fresh_nodes(conn);
+        // A handler may have changed the guest list: the guest's index is found again.
+        let Some(i) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().position(|g| g.conn == conn))
+        else {
+            return;
+        };
         if credits_respawn && let Some(host) = self.lan.as_mut() {
             host.hub.guests.update(i, |g| {
                 g.load_timeout = horizon_client::lan::guest::CLIENT_LOADED_TIMEOUT;
@@ -1541,7 +1549,7 @@ impl Game<'_> {
                 });
             }
             // The permission nodes are asked with the player in the new level, then its tree is sent.
-            self.send_tree_with_fresh_nodes(i);
+            self.send_tree_with_fresh_nodes(t.conn);
             self.bind_player_attachments(t.conn, false);
             self.as_guest(t.conn, |g| {
                 g.trigger_dimension(source, t.dim, origin);
