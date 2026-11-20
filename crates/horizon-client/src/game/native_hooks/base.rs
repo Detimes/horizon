@@ -179,15 +179,17 @@ impl GameLevel<'_> {
     }
 
     /// On an authoritative server, fire is about to burn the block at `pos`
-    /// away. Set `cancel` to keep that block.
+    /// away; `igniting` is the fire block that burns it. Set `cancel` to keep
+    /// that block.
     #[inline(always)]
     pub(in crate::game) fn native_block_burn(
         &self,
         dimension: LevelDimension,
         pos: BlockPos,
+        igniting: Option<BlockPos>,
         cancel: &mut bool,
     ) {
-        self.fire_block_burn(dimension, pos, cancel);
+        self.fire_block_burn(dimension, pos, igniting, cancel);
     }
 
     /// On an authoritative server, a bell at `pos` is about to ring. Set
