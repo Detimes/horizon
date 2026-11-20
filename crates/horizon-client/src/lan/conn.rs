@@ -295,6 +295,9 @@ pub struct PlayerSender {
     /// The `horizon:menu_extra` payload layout the client reads: its revision answer,
     /// 0 for one that did not answer (the legacy layout, a menu of a block only).
     pub menu_extra_rev: u8,
+    /// The play packets sent and received, by id, while a mod counts them; shared with the
+    /// connection's network thread, which counts what it receives.
+    pub packet_counts: Arc<super::packet_counts::PacketCounts>,
     /// The host and port the client typed in its handshake ([`typed_address`]), None for a
     /// connection that sent none.
     pub connect: Option<(Arc<str>, u16)>,
@@ -370,6 +373,7 @@ impl PlayerSender {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         }
     }
@@ -409,6 +413,7 @@ impl PlayerSender {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         };
         (sender, move || inspect.queued_contents())
@@ -427,6 +432,7 @@ impl PlayerSender {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         }
     }
@@ -527,6 +533,7 @@ impl PlayerSender {
             self.close();
             return;
         }
+        self.packet_counts.add_body(&body);
         if HOLDING.get() {
             self.held().push(body);
         } else {
@@ -571,6 +578,7 @@ impl PlayerSender {
                 self.close();
                 return;
             }
+            self.packet_counts.add_body(&body);
             held.push(body);
         }
     }
@@ -600,6 +608,7 @@ impl PlayerSender {
                     self.close();
                     return;
                 }
+                self.packet_counts.add_body(&body);
                 outbox.send(vec![body], Some(io_pool::End::Disconnect));
             }
         }
@@ -2099,6 +2108,7 @@ fn play(
         alive: Arc::new(AtomicI64::new(-1)),
     });
     let undrained = Arc::<Undrained>::default();
+    let packet_counts = Arc::<super::packet_counts::PacketCounts>::default();
     let sender = PlayerSender {
         undrained: undrained.clone(),
         pending,
@@ -2111,6 +2121,7 @@ fn play(
         announced: parts.channels.announced.clone().unwrap_or_default(),
         viewed_levels: parts.channels.viewed_levels.answer(),
         menu_extra_rev: parts.channels.menu_extra_rev.revision(),
+        packet_counts: packet_counts.clone(),
         connect: typed,
     };
     let required_pack = shared
@@ -2133,6 +2144,7 @@ fn play(
         watch,
         counted,
         undrained,
+        packet_counts,
     };
     // The ServerPlayer is made with the configuration's client information (updateOptions).
     shared.set_listed(parts.uuid, parts.info.allows_listing);
@@ -2182,7 +2194,16 @@ struct PlayConn {
     counted: Option<super::Counted>,
     /// Shared with the player's [`PlayerSender`]: what the hub hasn't taken yet.
     undrained: Arc<Undrained>,
+    /// Shared with the player's [`PlayerSender`]: the packets counted while a mod asks.
+    packet_counts: Arc<super::packet_counts::PacketCounts>,
 }
+/// The id an inbound play packet is counted under: its own when the protocol has it, else -1.
+fn counted_id(id: i32) -> i32 {
+    let known = usize::try_from(id)
+        .is_ok_and(|id| id < horizon_protocol::ids::play::serverbound::NAMES.len());
+    if known { id } else { -1 }
+}
+
 impl PlayConn {
     /// `IntegratedServer.isSingleplayerOwner`: the integrated server's own player,
     /// by name (ignoring case).
@@ -2200,13 +2221,23 @@ impl io_pool::Session for PlayConn {
     /// nobody asked for, a malformed packet.
     fn packet(&mut self, id: i32, payload: Vec<u8>) -> io_pool::Verdict {
         use io_pool::Verdict;
-        let kick = |(reason, text): (horizon_core::nbt::Tag, String)| {
+        // The disconnect the I/O thread sends for a kick does not pass the player's sender: counted here.
+        let counts = self.packet_counts.clone();
+        let kick = move |(reason, text): (horizon_core::nbt::Tag, String)| {
             let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
+            counts.add_body(&body);
             Verdict::Kick(text, body)
         };
         if self.payload_transport.closed() {
             return Verdict::Go;
         }
+        // Only the ids the protocol has: a client sending others (up to 2^31 of them) must not grow the
+        // connection's table, so all of those are counted under one id, -1.
+        self.packet_counts.add(
+            false,
+            counted_id(id),
+            horizon_protocol::buf::varint_size(id) + payload.len(),
+        );
         let now = Instant::now();
         if let Some(average) = self.rate.as_mut().and_then(|r| r.received(now)) {
             return kick(rate_exceeded(&self.shared, average));
@@ -2330,7 +2361,10 @@ impl io_pool::Session for PlayConn {
     /// after the last was answered. The game thread times a client out
     /// ([`PlayerSender::timed_out`]).
     fn tick(&mut self, now: Instant) -> Option<Vec<u8>> {
-        self.payload_tick(now)
+        // The keep-alive goes out through the I/O thread, not the player's sender: counted here.
+        let body = self.payload_tick(now)?;
+        self.packet_counts.add_body(&body);
+        Some(body)
     }
     fn left(&mut self, reason: String) {
         let _ = self.shared.events.send(NetEvent::Left(self.conn, reason));
@@ -3698,6 +3732,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            packet_counts: Arc::default(),
         };
         // The bodies after the packets' one-byte VarInt ids.
         let packets = |sequence: i32| {
@@ -3836,6 +3871,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            packet_counts: Arc::default(),
         };
         let answer = |c: &mut PlayConn, id: i64| c.packet(KEEP_ALIVE, id.to_be_bytes().to_vec());
         // The pending one: accepted.
@@ -3889,6 +3925,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            packet_counts: Arc::default(),
         };
         // The body after the packet's one-byte VarInt id.
         let response = play::Serverbound::CookieResponse(cfg::CookieResponse {
@@ -3971,6 +4008,7 @@ mod outgoing_budget_tests {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         }
     }
@@ -4189,5 +4227,20 @@ mod handshake_hook_tests {
             status::Clientbound::StatusResponse(_)
         ));
         assert!(lan.shared.handshake.take().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod counted_id_tests {
+    use super::counted_id;
+
+    #[test]
+    fn unknown_inbound_ids_share_one_counter() {
+        let last = horizon_protocol::ids::play::serverbound::NAMES.len() as i32 - 1;
+        assert_eq!(counted_id(0), 0);
+        assert_eq!(counted_id(last), last);
+        for unknown in [last + 1, 1_000_000, i32::MAX, -5] {
+            assert_eq!(counted_id(unknown), -1, "{unknown}");
+        }
     }
 }
