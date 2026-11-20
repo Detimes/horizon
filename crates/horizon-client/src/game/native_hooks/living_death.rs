@@ -14,6 +14,14 @@ impl Game<'_> {
         cancel: &mut bool,
     ) {
         self.fire_living_death(entity, kind, source, weapon, cancel);
+        if *cancel {
+            return;
+        }
+        // The death is decided; the loot and the message follow. `causing` is 0
+        // when the blow has no attacker.
+        let killer = u32::try_from(source.causing).unwrap_or(0);
+        let weapon = weapon.map_or("", |stack| stack.item.as_ref());
+        self.fire_mob_died(entity, kind, killer, source.damage_type, weapon);
     }
 }
 /// `native_living_incoming_damage`'s entity, entity type and source for a hit.
