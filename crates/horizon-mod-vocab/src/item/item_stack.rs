@@ -671,7 +671,11 @@ mod tests {
         stack
             .set_component_value(
                 "minecraft:lore",
-                Tag::List(vec![Tag::String("a".into()), Tag::Int(3), Tag::String("b".into())]),
+                Tag::List(vec![
+                    Tag::String("a".into()),
+                    Tag::Int(3),
+                    Tag::String("b".into()),
+                ]),
             )
             .unwrap();
         assert_eq!(
@@ -681,7 +685,10 @@ mod tests {
         let mut data = Compound::new();
         data.insert(
             JavaString::from("floats"),
-            Tag::List(vec![Tag::Float(1.5f32.to_bits()), Tag::Float(7.0f32.to_bits())]),
+            Tag::List(vec![
+                Tag::Float(1.5f32.to_bits()),
+                Tag::Float(7.0f32.to_bits()),
+            ]),
         );
         data.insert(
             JavaString::from("strings"),
