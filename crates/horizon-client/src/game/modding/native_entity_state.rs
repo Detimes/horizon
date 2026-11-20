@@ -478,6 +478,20 @@ impl Game<'_> {
             true
         })
     }
+    /// `PrimedTnt.setFuse` (Paper's `TNTPrimed#setFuseTicks`): the ticks left before this primed TNT
+    /// explodes. False for a negative count, a stale handle or an entity that is not primed TNT.
+    pub(super) fn entity_set_fuse(&mut self, entity: EntityRef, ticks: i32) -> bool {
+        if ticks < 0 {
+            return false;
+        }
+        let Some(Target::Tnt(id)) = self.native_entity_target(entity) else {
+            return false;
+        };
+        self.tnts.iter_mut().find(|t| t.id == id).is_some_and(|t| {
+            t.fuse = ticks;
+            true
+        })
+    }
     /// Sets the mob's no-gravity flag (`Entity.setNoGravity`). Returns false for players and guests.
     pub(super) fn entity_set_no_gravity(&mut self, entity: EntityRef, no_gravity: bool) -> bool {
         let Some(Target::Mob(id)) = self.native_entity_target(entity) else {
@@ -1388,5 +1402,47 @@ mod tests {
         assert_eq!(max_air(Some(Species::Dolphin)), 4800);
         assert_eq!(max_air(Some(Species::Axolotl)), 6000);
         assert_eq!(max_air(Some(Species::Zombie)), 300);
+    }
+}
+
+#[cfg(test)]
+mod fuse_tests {
+    use super::super::native_entity_refs::tests::with_game;
+    use horizon_core::geometry::Vec3;
+
+    #[test]
+    #[ignore = "daily"]
+    fn entity_set_fuse_writes_primed_tnt_and_refuses_a_negative_count() {
+        with_game(|game| {
+            game.options.dedicated = Some(Vec::new());
+            game.tnts.push(super::super::tnt::PrimedTnt {
+                attachment_lifetime: Default::default(),
+                rotation: [0.0, 0.0],
+                join: Default::default(),
+                id: 0,
+                position: Vec3::ZERO,
+                previous: Vec3::ZERO,
+                velocity: Vec3::ZERO,
+                fuse: 80,
+                on_ground: false,
+                in_water: false,
+                stuck: Vec3::ZERO,
+                fall_distance: 0.0,
+                owner: None,
+                guest: None,
+                no_gravity: false,
+                power: 4.0,
+                used_portal: false,
+                block_state: None,
+            });
+            game.native_joins_flush(false, 0);
+            game.native_joins_flush(false, 0);
+            let id = game.tnts.last().unwrap().id;
+            let entity = game.entity(id).unwrap();
+            assert!(game.entity_set_fuse(entity, 37));
+            assert_eq!(game.tnts.last().unwrap().fuse, 37);
+            assert!(!game.entity_set_fuse(entity, -1));
+            assert_eq!(game.tnts.last().unwrap().fuse, 37);
+        });
     }
 }

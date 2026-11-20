@@ -920,6 +920,13 @@ pub trait EntitiesBackendMut {
     #[access(WorldOnly)]
     fn entity_set_glowing(&mut self, entity: EntityRef, glowing: bool) -> bool;
     /// Side: server.
+    /// Sets the fuse of a primed TNT: the ticks left before it explodes (`PrimedTnt.setFuse`;
+    /// Paper's `TNTPrimed#setFuseTicks`). A fuse at 0 or below explodes it on its next tick,
+    /// as vanilla's does. False for a stale handle, an entity that is not primed TNT, or a
+    /// negative count (this API refuses it and changes nothing).
+    #[access(WorldOnly)]
+    fn entity_set_fuse(&mut self, entity: EntityRef, ticks: i32) -> bool;
+    /// Side: server.
     /// Turns a painting, item frame or glow item frame in place to face `direction`
     /// (`HangingEntity.setDirection`, `ItemFrame.setDirection`): its facing, the yaw and pitch
     /// that follow from it and its bounds, nothing else. Like vanilla it doesn't check that the
