@@ -10,12 +10,15 @@ pub trait Hooks {
     /// inventory, drop items, kill or send them a last message; what it does
     /// is part of what is saved. Once for each placed network player, before
     /// `player_logged_out`. A fake player and a player held before the
-    /// join was announced are not told of. A kick is heard by `player_kicked`
-    /// first; `player_disconnect` of the leaving player refuses.
+    /// join was announced are not told of, nor is a player whose transfer to
+    /// another server has committed: their state already belongs there, so
+    /// nothing done here could travel with them. A kick is heard by `player_kicked`
+    /// first; `player_disconnect` of the leaving player refuses, whatever ended the
+    /// connection.
     /// Server-side.
     #[notes = r#"## Player leaving
 
-- **`player_leaving(host, event)`**: the moment before a player is removed, as Paper's `PlayerQuitEvent` fires (the player is still a `Player` in the world), which `player_logged_out` cannot give: it is heard after the player left `server_players()`. A combat-log mod kills a tagged player here; an audit mod reads their inventory. `event.reason` is the plain text the connection ended with. The hook is listen-only: the quit message cannot be changed. When the server stops, each player is told here, then by `player_logged_out`, before the server saves."#]
+- **`player_leaving(host, event)`**: the moment before a player is removed, as Paper's `PlayerQuitEvent` fires (the player is still a `Player` in the world), which `player_logged_out` cannot give: it is heard after the player left `server_players()`. A combat-log mod kills a tagged player here; an audit mod reads their inventory. `event.reason` is the plain text the connection ended with. The hook is listen-only: the quit message cannot be changed. It is not heard for a player whose transfer to another server has committed: their state already belongs there. When the server stops, each player is told here, then by `player_logged_out`, before the server saves."#]
     #[hook(
         side = "server",
         contract = "listen",

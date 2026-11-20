@@ -194,6 +194,9 @@ pub struct Guest {
     /// A disconnect was started ([`Guest::begin_disconnect`]); the connection closes when the
     /// server next polls it, and until then no other disconnect is sent.
     pub disconnect_pending: bool,
+    /// The mods are hearing `player_leaving` for this guest right now; a disconnect asked for
+    /// inside the hook is refused, as one is while [`Guest::disconnect_pending`].
+    pub leaving: bool,
     /// A mod's personal sidebar is on this client (`Game::native_sidebar`); it is gone with the
     /// connection.
     pub personal_sidebar: bool,
@@ -716,6 +719,7 @@ impl Guest {
             left_reason: String::new(),
             pending_move: None,
             disconnect_pending: false,
+            leaving: false,
             personal_sidebar: false,
             uuid: j.uuid,
             name: j.name,
