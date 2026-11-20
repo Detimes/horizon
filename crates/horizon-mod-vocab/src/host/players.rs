@@ -472,6 +472,14 @@ pub trait PlayersBackend {
     #[access(WorldOnly)]
     fn player_client_brand(&self, player: PlayerRef) -> Option<String>;
     /// Side: server.
+    /// The language the player's client announced in its client information
+    /// (`ServerPlayer.language`, Paper's `Player#locale`), as the client writes it: lower case
+    /// with an underscore (`en_us`, `de_de`). It follows the client's latest information
+    /// packet; `en_us` until it sends one. None for a stale or unavailable player and for a
+    /// fake player.
+    #[access(WorldOnly)]
+    fn player_locale(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
     /// The plugin channels the player's client announced in `minecraft:register`, less those
     /// it withdrew in `minecraft:unregister`, during configuration and play, in announcement
     /// order (Bukkit's `Player.getListeningPluginChannels`). Malformed entries are skipped and

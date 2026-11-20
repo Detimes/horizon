@@ -98,6 +98,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+The read `player.locale(host)` returns the language the player's client announced (`Option<String>`, as the client writes it: `en_us`, `de_de`). It follows the client's latest information packet, so a player who changes the language in the options menu reads the new one, and it is `en_us` until the client has sent any. `None` means a stale or unavailable player, or a fake one.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`
