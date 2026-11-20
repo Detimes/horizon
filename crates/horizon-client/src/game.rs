@@ -3933,7 +3933,7 @@ impl Game<'_> {
         // the block, and a guest's acknowledgement puts it back in its world.
         let mut canceled = false;
         let mut exp_to_drop = None;
-        self.native_break_block(pos, state, &mut canceled, &mut exp_to_drop);
+        self.native_break_block(pos, state, self.lan_acting_uuid, &mut canceled, &mut exp_to_drop);
         if canceled {
             return Ok(false);
         }

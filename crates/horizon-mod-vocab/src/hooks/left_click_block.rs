@@ -9,7 +9,9 @@ pub trait Hooks {
     /// Set `canceled` to ignore the click: the block isn't attacked, dug or
     /// broken on the server, and the player's client gets it back (its own
     /// predicted crack still shows to the clicking player). Server-side, for
-    /// every player of the world (the helpers read the acting one).
+    /// every player of the world (the helpers read the acting one). `player`
+    /// is the clicking guest's uuid (`PlayerInteractEvent.getEntity`); a click
+    /// by the game's own player is not asked.
     #[hook(
         side = "server",
         contract = "cancel",
