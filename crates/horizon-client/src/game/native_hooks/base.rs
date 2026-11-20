@@ -2177,6 +2177,18 @@ impl Game<'_> {
         self.fire_vault_change_state(dimension, pos, state);
     }
 
+    /// A dispenser at `pos` is about to dispense `stack`, before any answer is
+    /// asked. Set `cancel` and the stack stays in the dispenser. Server-side.
+    pub(in crate::game) fn native_block_dispense(
+        &mut self,
+        dimension: &str,
+        pos: [i32; 3],
+        stack: &ItemStack,
+        cancel: &mut bool,
+    ) {
+        self.fire_block_dispense(dimension, pos, stack, cancel);
+    }
+
     /// A dispenser at `pos` failed to dispense `item`. Server-side.
     pub(in crate::game) fn native_block_failed_dispense(
         &mut self,

@@ -602,6 +602,12 @@ impl Game<'_> {
     ) -> Result<Option<ItemStack>> {
         let mut answer = None;
         if self.serving.is_some() || self.options.dedicated.is_some() {
+            // BlockDispenseEvent: heard before anything leaves; a cancel keeps the stack.
+            let mut cancel = false;
+            self.native_block_dispense(self.dim.id(), [pos.0, pos.1, pos.2], &stack, &mut cancel);
+            if cancel {
+                return Ok(Some(stack));
+            }
             // The block the dispenser faces has the first say (`dispense_method`), then the
             // item's own part (`dispense_item`); the first answer wins.
             let front = self.block_at(offset(pos, facing));
