@@ -844,6 +844,12 @@ pub trait LevelsBackendMut {
     #[access(WorldOnly)]
     fn level_set_spawn_limits(&mut self, level: LevelRef, limits: SpawnLimits) -> bool;
     /// Side: server.
+    /// Sets one category's natural spawning limit (a [`SpawnLimits`] field) from the next
+    /// spawn pass on, as `set_spawn_limits` does for all of them, with the same keeping and
+    /// refusals. `MobCategory::Misc` has no limit: false, with nothing set.
+    #[access(WorldOnly)]
+    fn level_set_spawn_limit(&mut self, level: LevelRef, category: MobCategory, limit: u32) -> bool;
+    /// Side: server.
     /// Sets which categories the level's natural spawning may spawn
     /// ([`SpawnFlags`]), from the next spawn pass on. Kept and refused as
     /// `set_spawn_limits`.

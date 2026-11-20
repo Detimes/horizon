@@ -533,6 +533,7 @@ client they do nothing, and the readers give nothing). Each takes the `dimension
 `native_set_block` does, and is refused when another level is in place. The per-level tick hooks run with a defined level in
 place; `server_tick` does not define one, so name the dimension and expect a refusal there.
 
+- `LevelRef::set_spawn_limit(host, category, limit)` sets one category's natural spawning limit (`MobCategory`, a `u32`), from the next spawn pass on, as `set_spawn_limits` does for all of them. `MobCategory::Misc` has no limit and is refused (false). Paper's `World#setSpawnLimit` for one category.
 - `LevelRef::spawn_mob(host, kind, pos, reason)` spawns a mob and returns an `EntityRef`, or `None` when refused.
   `SpawnReason` controls finalization; the new mob is not persistent, as for a natural spawn. Spawn limits and natural
   spawn rules do not apply, as for `/summon`. A non-mob kind, invalid or out-of-bounds position, unloaded chunk,
