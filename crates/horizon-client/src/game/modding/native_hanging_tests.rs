@@ -69,6 +69,26 @@ fn a_frame_turns_to_every_direction_and_its_bounds_follow() {
         assert_eq!(game.item_frames[0].facing, 0);
         assert!(game.entity_set_hanging_direction(frame, Direction::South));
         assert_eq!(game.item_frames[0].facing, 3);
+        assert_eq!(game.entity_hanging_direction(frame), Some(Direction::South));
+        assert!(game.entity_set_hanging_direction(frame, Direction::Up));
+        assert_eq!(game.entity_hanging_direction(frame), Some(Direction::Up));
+    });
+}
+
+#[test]
+#[ignore = "daily"]
+fn the_facing_is_read_back_and_other_kinds_answer_none() {
+    with_hanging(|game| {
+        let frame = game.entity(FRAME).expect("the frame's handle");
+        let painting = game.entity(PAINTING).expect("the painting's handle");
+        // Both start south (data value 3 for the frame, 0 for the painting).
+        assert_eq!(game.entity_hanging_direction(frame), Some(Direction::South));
+        assert_eq!(game.entity_hanging_direction(painting), Some(Direction::South));
+        assert!(game.entity_set_hanging_direction(painting, Direction::East));
+        assert_eq!(game.entity_hanging_direction(painting), Some(Direction::East));
+        // A stale handle answers None, as a set does.
+        let stale = mod_api::EntityRef::new(frame.epoch().wrapping_add(1), FRAME);
+        assert_eq!(game.entity_hanging_direction(stale), None);
     });
 }
 
