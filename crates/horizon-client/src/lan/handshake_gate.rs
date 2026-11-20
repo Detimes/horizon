@@ -185,7 +185,7 @@ mod tests {
             let gate = gate.clone();
             std::thread::spawn(move || {
                 loop {
-                    for ask in gate.take() {
+                    if let Some(ask) = gate.take().into_iter().next() {
                         ask.answer(Answer {
                             host: "a".repeat(HOST_LIMIT + 5),
                             refusal: None,
