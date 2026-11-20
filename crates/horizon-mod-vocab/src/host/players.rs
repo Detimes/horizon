@@ -43,6 +43,14 @@ pub trait PlayersServerHost {
     #[access(WorldOnly)]
     fn server_set_max_players(&mut self, max_players: u32) -> Result<(), PlayerLimitRefusal>;
     /// Side: server.
+    /// Whether `uuid` has an entry on the dedicated server's whitelist (`white-list.json`), read
+    /// live (Bukkit's `OfflinePlayer.isWhitelisted`). It answers for the entry, not the gate: an
+    /// unlisted player is false even while the whitelist is off, and an entry stays true even when
+    /// the whitelist is off. False on a client, on an integrated server and anywhere no server list
+    /// is loaded. Read only; adding or removing entries is not part of this method.
+    #[access(WorldOnly)]
+    fn server_is_whitelisted(&self, uuid: u128) -> bool;
+    /// Side: server.
     /// The profile of the player with this UUID, as the server knows it,
     /// never asked of Mojang: an online player's whole profile (the properties
     /// the player list gives, so with those `player_set_profile_property` set),
