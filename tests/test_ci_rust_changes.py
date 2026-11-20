@@ -44,6 +44,14 @@ class RustChangesTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(needs_launcher(["README.md", path]))
 
+    def test_the_rust_parts_setup_script_runs_every_part_that_calls_it(self):
+        # verify's launcher, lint, server build and Rust tests set up with it; a change to it alone runs them all.
+        ci = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
+        self.assertIn("tools/ci/install_rust.sh", ci)
+        self.assertTrue(needs_launcher(["tools/ci/install_rust.sh"]))
+        self.assertTrue(needs_rust(["tools/ci/install_rust.sh"]))
+        self.assertEqual(selections([("M", "tools/ci/install_rust.sh")])["rust_required"], True)
+
     def test_the_server_build_clippy_follows_the_client_crates_and_manifests(self):
         for path in ["crates/horizon-world/src/lib.rs", "crates/horizon-perf/src/lib.rs", "tools/parity.py",
                      "docs/setup.md", "launcher/src/main.rs"]:
@@ -235,7 +243,9 @@ class ModPointSelectionTests(unittest.TestCase):
         for path in ["crates/horizon-client/src/game/tick.rs", "crates/horizon-client/src/game.rs",
                      "crates/horizon-mod-api-gen/src/points.rs", "crates/horizon-mod-api-macros/src/lib.rs",
                      "tools/check_mod_points_unchanged.py", "crates/horizon-world/Cargo.toml", "Cargo.lock",
-                     UNKNOWN_CHANGE, ".github/workflows/ci.yml"]:
+                     UNKNOWN_CHANGE, ".github/workflows/ci.yml", "tools/ci/surface_report.py",
+                     "tools/ci/surface.toml", "crates/horizon-mod-vocab/changes/a-note.toml",
+                     "crates/horizon-core/src/nbt.rs"]:
             with self.subTest(path=path):
                 self.assertTrue(needs_mod_points(["README.md", path]))
 
