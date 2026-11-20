@@ -197,7 +197,9 @@ impl Renderer {
         frame: &Frame,
         radius: i32,
     ) {
-        let cube = (!frame.title).then(|| self.cube_view(frame.camera)).flatten();
+        let cube = (!frame.title)
+            .then(|| self.cube_view(frame.camera))
+            .flatten();
         let sections = &mut self.world_views.sections;
         if frame.title && sections.asked {
             sections

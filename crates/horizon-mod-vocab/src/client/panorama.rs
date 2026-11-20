@@ -23,6 +23,7 @@ pub struct PanoramaRequest {
     pub path: String,
     /// Each cube face's side in pixels, 16 to 4096.
     pub size: u32,
+    /// One equirectangular picture or six cube faces.
     pub format: PanoramaFormat,
 }
 

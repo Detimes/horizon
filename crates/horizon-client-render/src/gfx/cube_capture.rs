@@ -74,7 +74,11 @@ impl Face {
     /// The face's camera in the world: where it looks, its right and its up, as unit vectors.
     pub fn basis(self) -> (Vec3, Vec3, Vec3) {
         let (yaw, pitch) = (self.yaw.to_radians(), self.pitch.to_radians());
-        let forward = Vec3::new(-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
+        let forward = Vec3::new(
+            -yaw.sin() * pitch.cos(),
+            -pitch.sin(),
+            yaw.cos() * pitch.cos(),
+        );
         let right = Vec3::new(-yaw.cos(), 0.0, -yaw.sin());
         (forward, right, right.cross(forward))
     }
@@ -114,17 +118,16 @@ pub fn equirect(
         for column in 0..width {
             let lon = ((column as f32 + 0.5) / width as f32 - 0.5) * std::f32::consts::TAU;
             let yaw = center_yaw.to_radians() + lon;
-            let direction = Vec3::new(
-                -yaw.sin() * lat.cos(),
-                lat.sin(),
-                yaw.cos() * lat.cos(),
-            );
+            let direction = Vec3::new(-yaw.sin() * lat.cos(), lat.sin(), yaw.cos() * lat.cos());
             // The face the direction is most along sees it inside its 90 degrees.
             let (face, ahead) = bases
                 .iter()
                 .map(|(forward, ..)| direction.dot(*forward))
                 .enumerate()
-                .fold((0, f32::MIN), |best, (k, d)| if d > best.1 { (k, d) } else { best });
+                .fold(
+                    (0, f32::MIN),
+                    |best, (k, d)| if d > best.1 { (k, d) } else { best },
+                );
             let (_, right, up) = bases[face];
             let u = direction.dot(right) / ahead;
             let v = direction.dot(up) / ahead;
@@ -356,8 +359,9 @@ impl Renderer {
             wgpu::TextureFormat::Bgra8Unorm => true,
             wgpu::TextureFormat::Rgba8Unorm => false,
             other => {
-                let error =
-                    format!("the panorama needs an 8-bit frame, and this one is {other:?} (HDR on?)");
+                let error = format!(
+                    "the panorama needs an 8-bit frame, and this one is {other:?} (HDR on?)"
+                );
                 self.cube.fail(error);
                 return;
             }
@@ -423,7 +427,10 @@ impl Renderer {
         if let Some(error) = failed {
             self.cube.fail(error);
         } else if active.faces.iter().all(Option::is_some) {
-            let faces = active.faces.each_mut().map(|f| f.take().unwrap_or_default());
+            let faces = active
+                .faces
+                .each_mut()
+                .map(|f| f.take().unwrap_or_default());
             let capture = CubeCapture {
                 size,
                 center_yaw: active.center_yaw,
@@ -596,7 +603,10 @@ mod tests {
             result: None,
         };
         let first = job.view(DVec3::new(1.0, 70.0, 2.0)).unwrap();
-        assert_eq!((first.yaw, first.pitch, first.fov_degrees), (0.0, 0.0, 90.0));
+        assert_eq!(
+            (first.yaw, first.pitch, first.fov_degrees),
+            (0.0, 0.0, 90.0)
+        );
         assert_eq!(first.size, [64, 64]);
         // asked again before the face is drawn: the same face, the same eye
         job.active.as_mut().unwrap().next = 4;

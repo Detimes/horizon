@@ -554,6 +554,7 @@ pub mod translucency;
 pub(crate) mod upload;
 mod upload_retry;
 use upload_retry::UploadRetries;
+pub mod cube_capture;
 mod view;
 mod view_sections;
 mod visbuffer;
@@ -562,7 +563,6 @@ mod world_handover;
 mod world_post;
 pub mod world_primitives;
 mod world_views;
-pub mod cube_capture;
 
 /// A section's instance: its camera-relative origin and, in `w`, the step of
 /// its fixed-point UVs (`terrain.wgsl`'s `terrain_uv`).
