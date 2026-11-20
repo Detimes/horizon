@@ -463,11 +463,12 @@ impl Game<'_> {
             self.ominous_spawners,
             self.resident_entities.knots,
         );
-        if let Some(id) = (self.dragon.as_ref())
+        let added_dragons: Vec<u32> = (self.dragon.iter())
             .filter(|dragon| added(dragon.id, dragon.join_seq()))
             .map(|dragon| dragon.id)
-        {
-            self.discard_resident_dragon();
+            .collect();
+        for id in added_dragons {
+            self.discard_resident_dragon_id(id);
             gone.push(id);
         }
         if let Some(id) = (self.hook.as_ref())

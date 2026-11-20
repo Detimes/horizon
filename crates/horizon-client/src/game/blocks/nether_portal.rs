@@ -1320,7 +1320,7 @@ impl Game<'_> {
                 Target::Other(_) => self.others.retain(|e| e.id != id),
                 Target::Fangs(_) => self.fangs.list.retain(|e| e.id != id),
                 Target::Crystal(_) => self.crystals.retain(|e| e.id != id),
-                Target::Dragon(_) => self.discard_resident_dragon(),
+                Target::Dragon(id) => self.discard_resident_dragon_id(id),
                 Target::Spawner(_) => self.ominous_spawners.retain(|e| e.id != id),
                 Target::Cloud(_) => self.breath_clouds.retain(|e| e.id != id),
                 _ => unreachable!("lone traveller kind selected above"),

@@ -9,7 +9,9 @@ impl Game<'_> {
     /// first dragon's egg, and no new dragon. No experience: `tickDeath`
     /// drops it, and a killed dragon never gets there.
     pub(in crate::game) fn kill_dragon(&mut self, id: u32) {
-        if self.dragon.as_ref().is_some_and(|d| d.id == id) {
+        if let Some(index) = self.dragon.iter().position(|d| d.id == id) {
+            // The id-less dragon methods address the first one.
+            self.dragon.swap_first(index);
             // Only the fight's own dragon (`dragonFight`) ends it.
             let fight = self.is_fight_dragon();
             let _save_lease = horizon_client::join_seq::visibility::PassLease::enter();

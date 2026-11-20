@@ -27,8 +27,12 @@ impl Game<'_> {
             }
             keep
         });
-        if self.dragon.as_ref().is_some_and(|d| gone(d.position)) {
-            self.discard_resident_dragon();
+        for id in (self.dragon.iter())
+            .filter(|d| gone(d.position))
+            .map(|d| d.id)
+            .collect::<Vec<_>>()
+        {
+            self.discard_resident_dragon_id(id);
         }
         self.carts.retain(|c| {
             let keep = !gone(c.position) || Some(c.id) == riding;

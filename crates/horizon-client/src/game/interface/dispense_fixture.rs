@@ -156,7 +156,7 @@ impl Game<'_> {
         self.tick_chunks.clear();
         self.sync_tick_chunks();
         self.mobs.clear();
-        self.dragon.discard();
+        self.dragon.clear();
         self.dropped.clear();
         self.creatures.projectiles.clear();
         self.tnts.clear();

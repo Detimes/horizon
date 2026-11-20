@@ -159,7 +159,7 @@ enum Apart {
     Cushion(usize),
     Painting(usize),
     Frame(usize),
-    Dragon,
+    Dragon(usize),
 }
 
 /// One entity a mod is told of: in the walk, or apart from it.
@@ -354,8 +354,8 @@ impl Game<'_> {
         for (i, f) in self.item_frames.iter().enumerate() {
             offer(Slot::Apart(Apart::Frame(i)), f.id, f.join);
         }
-        if let Some(d) = self.dragon.as_ref() {
-            offer(Slot::Apart(Apart::Dragon), d.id, d.join);
+        for (i, d) in self.dragon.iter().enumerate() {
+            offer(Slot::Apart(Apart::Dragon(i)), d.id, d.join);
         }
         // A toss still being asked (`item_toss`) ends the flush: it and what joined after wait.
         best.filter(|&(_, id, _)| !self.native_lifecycle.held_joins.contains(&id))
@@ -401,9 +401,9 @@ impl Game<'_> {
                 };
                 (kind.into(), block(f.pos))
             }
-            Slot::Apart(Apart::Dragon) => (
+            Slot::Apart(Apart::Dragon(i)) => (
                 "minecraft:ender_dragon".into(),
-                self.dragon.as_ref().map_or(Vec3::ZERO, |d| d.position),
+                self.dragon.at(i).map_or(Vec3::ZERO, |d| d.position),
             ),
         }
     }
@@ -415,7 +415,7 @@ impl Game<'_> {
             Slot::Apart(Apart::Cushion(i)) => drop(self.cushions.remove(i)),
             Slot::Apart(Apart::Painting(i)) => drop(self.paintings.remove(i)),
             Slot::Apart(Apart::Frame(i)) => drop(self.item_frames.remove(i)),
-            Slot::Apart(Apart::Dragon) => self.discard_resident_dragon(),
+            Slot::Apart(Apart::Dragon(i)) => self.discard_resident_dragon_at(i),
         }
     }
     /// Entities that were moved, not added (a portal's arrival keeps being
@@ -497,9 +497,7 @@ impl Game<'_> {
         self.cushions.iter().for_each(|c| seen(c.id));
         self.paintings.iter().for_each(|p| seen(p.id));
         self.item_frames.iter().for_each(|f| seen(f.id));
-        if let Some(d) = self.dragon.as_ref() {
-            seen(d.id);
-        }
+        self.dragon.iter().for_each(|d| seen(d.id));
         while let Some(i) = self.persist.live.iter().position(|l| !l.2) {
             let (id, kind, _) = self.persist.live.remove(i);
             self.entity_section_forget(id);

@@ -356,7 +356,7 @@ impl Game<'_> {
                 }
             }
             Target::Dragon(id) => {
-                if let Some(e) = self.dragon.as_mut().filter(|e| e.id == id) {
+                if let Some(e) = self.dragon.get_mut(id) {
                     e.position = at;
                 }
             }
@@ -425,8 +425,10 @@ impl Game<'_> {
         self.crystals.retain(|e| !gone.contains(&e.id));
         self.breath_clouds.retain(|e| !gone.contains(&e.id));
         self.ominous_spawners.retain(|e| !gone.contains(&e.id));
-        if self.dragon.as_ref().is_some_and(|e| gone.contains(&e.id)) {
-            self.dragon.discard();
+        for id in self.dragon.iter().map(|e| e.id).collect::<Vec<_>>() {
+            if gone.contains(&id) {
+                self.discard_resident_dragon_id(id);
+            }
         }
         for &id in gone {
             self.release_vehicle_container(id);

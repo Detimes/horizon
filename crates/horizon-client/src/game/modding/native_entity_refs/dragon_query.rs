@@ -3,22 +3,26 @@ use super::*;
 
 impl Game<'_> {
     pub(super) fn append_dragon_query_ids(&self, bounds: Aabb, parts: bool, ids: &mut Vec<u32>) {
-        let Some(dragon) = self.dragon.as_ref().filter(|d| d.id != 0) else {
-            return;
-        };
         if parts {
+            // The level's one parts table, in its own order; a part belongs to
+            // the dragon whose `id + 1..=id + 8` holds it.
             ids.extend(self.dragon.parts_table().iter().filter(|&id| {
-                bounds.intersects(dragon.part_geometry((id - dragon.id - 1) as usize).1)
+                self.dragon
+                    .iter()
+                    .find(|d| d.id != 0 && (d.id + 1..=d.id + 8).contains(&id))
+                    .is_some_and(|d| bounds.intersects(d.part_geometry((id - d.id - 1) as usize).1))
             }));
         } else {
-            // EntityType.ENDER_DRAGON dimensions: 16 wide, 8 high.
-            let p = dragon.position;
-            let body = Aabb::new(
-                Vec3::new(p.x - 8.0, p.y, p.z - 8.0),
-                Vec3::new(p.x + 8.0, p.y + 8.0, p.z + 8.0),
-            );
-            if bounds.intersects(body) {
-                ids.push(dragon.id);
+            for dragon in self.dragon.iter().filter(|d| d.id != 0) {
+                // EntityType.ENDER_DRAGON dimensions: 16 wide, 8 high.
+                let p = dragon.position;
+                let body = Aabb::new(
+                    Vec3::new(p.x - 8.0, p.y, p.z - 8.0),
+                    Vec3::new(p.x + 8.0, p.y + 8.0, p.z + 8.0),
+                );
+                if bounds.intersects(body) {
+                    ids.push(dragon.id);
+                }
             }
         }
     }

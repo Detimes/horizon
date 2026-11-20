@@ -44,9 +44,21 @@ impl Game<'_> {
     /// Physical retirement must forget sidecar data before IDs can be reused,
     /// not merely unregister the attachment index when the parts are dropped.
     pub(in crate::game) fn discard_resident_dragon(&mut self) {
+        self.discard_resident_dragon_at(0);
+    }
+
+    /// As [`Self::discard_resident_dragon`] for the dragon with entity id `id`.
+    pub(in crate::game) fn discard_resident_dragon_id(&mut self, id: u32) {
+        if let Some(index) = self.dragon.iter().position(|d| d.id == id) {
+            self.discard_resident_dragon_at(index);
+        }
+    }
+
+    /// As [`Self::discard_resident_dragon`] for the dragon at `index`.
+    pub(in crate::game) fn discard_resident_dragon_at(&mut self, index: usize) {
         if let Some(id) = self
             .dragon
-            .as_ref()
+            .at(index)
             .map(|dragon| dragon.id)
             .filter(|id| *id != 0)
         {
@@ -59,7 +71,7 @@ impl Game<'_> {
             // included; the parts above are its separate entity ids.
             self.forget_entity(id);
         }
-        self.dragon.discard();
+        self.dragon.discard_at(index);
     }
 
     /// The dragon the level holds and the index (`getSubEntities` order) of
@@ -80,7 +92,8 @@ impl Game<'_> {
         let Source::DragonPart(offset) = location.source else {
             return None;
         };
-        Some((self.dragon.as_ref()?, usize::from(offset)))
+        let index = self.dragon.locate(location.join)?;
+        Some((self.dragon.at(index)?, usize::from(offset)))
     }
 
     pub(super) fn assign_resident_crystal_ids(&mut self) {
@@ -98,8 +111,10 @@ impl Game<'_> {
     /// (`EnderDragonPart`s follow the dragon's id).
     pub(in crate::game) fn tracked_special_box(&self, id: i32) -> Option<Aabb> {
         let id = u32::try_from(id).ok().filter(|&id| id != 0)?;
-        if let Some(d) = self.dragon.as_ref().filter(|d| d.alive() && d.id != 0)
-            && (d.id + 1..=d.id + 8).contains(&id)
+        if let Some(d) = self
+            .dragon
+            .iter()
+            .find(|d| d.alive() && d.id != 0 && (d.id + 1..=d.id + 8).contains(&id))
         {
             return Some(d.part_box((id - d.id - 1) as usize));
         }

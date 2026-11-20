@@ -3391,7 +3391,7 @@ impl Game<'_> {
             }
             seen.insert(m.id, (m.hurt_time, dead, swing));
         }
-        if let Some(d) = self.dragon.as_ref().filter(|d| d.id != 0) {
+        for d in self.dragon.iter().filter(|d| d.id != 0) {
             let id = d.id;
             let dead = !d.alive();
             let old = host

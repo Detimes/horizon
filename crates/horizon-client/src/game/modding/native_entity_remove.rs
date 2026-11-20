@@ -223,9 +223,7 @@ impl Game<'_> {
             match t {
                 Target::Crystal(id) => self.crystals.retain(|c| c.id != id),
                 Target::Dragon(id) => {
-                    if self.dragon.as_ref().is_some_and(|d| d.id == id) {
-                        self.discard_resident_dragon();
-                    }
+                    self.discard_resident_dragon_id(id);
                 }
                 Target::Boat(id) | Target::Cart(id) => {
                     let marked = !already_marked.contains(&t);

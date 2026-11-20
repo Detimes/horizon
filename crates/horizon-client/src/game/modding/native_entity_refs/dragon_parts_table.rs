@@ -260,7 +260,7 @@ impl DragonSet {
     }
     /// Replace the set by one dragon, retiring the old ones.
     pub(in crate::game) fn replace(&mut self, dragon: crate::game::dragon::Dragon) {
-        self.discard();
+        self.clear();
         self.push(dragon);
     }
     // Preserve the ownership-returning refusal contract without allocating.
@@ -275,13 +275,41 @@ impl DragonSet {
         self.push(dragon);
         Ok(())
     }
-    /// Retire every dragon and forget their parts.
+    /// Retire the first dragon and forget its parts.
     pub(in crate::game) fn discard(&mut self) {
+        self.discard_at(0);
+    }
+    /// Retire the dragon at `index` and forget its parts.
+    pub(in crate::game) fn discard_at(&mut self, index: usize) {
+        if let Some(join) = self.list.get(index).map(|d| d.join) {
+            self.unregister(join);
+            self.list.remove(index);
+        }
+    }
+    /// Retire every dragon and forget their parts.
+    pub(in crate::game) fn clear(&mut self) {
         let joins: Vec<_> = self.list.iter().map(|d| d.join).collect();
         for join in joins {
             self.unregister(join);
         }
         self.list.clear();
+    }
+    pub(in crate::game) fn at(&self, index: usize) -> Option<&crate::game::dragon::Dragon> {
+        self.list.get(index)
+    }
+    pub(in crate::game) fn at_mut(&mut self, index: usize) -> Option<&mut crate::game::dragon::Dragon> {
+        self.list.get_mut(index)
+    }
+    /// The joins of every dragon, in list order (a snapshot to tick through).
+    pub(in crate::game) fn joins(&self) -> Vec<horizon_client::join_seq::JoinSeq> {
+        self.list.iter().map(|d| d.join).collect()
+    }
+    /// Swap the dragon at `index` with the first one, so that the id-less
+    /// methods address it; call again with the same index to swap back.
+    pub(in crate::game) fn swap_first(&mut self, index: usize) {
+        if index != 0 && index < self.list.len() {
+            self.list.swap(0, index);
+        }
     }
     /// Report the allocator's delayed zero-to-live id assignment.
     pub(in crate::game) fn id_assigned(&self) {

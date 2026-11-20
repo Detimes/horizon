@@ -183,17 +183,17 @@ macro_rules! define_resident_access {
                 $(Kind::$kind => $crate::game::entity_residency::resident_lifetime_slot!($kind, $this$(.$field)+, at.join, visit),)*
                 Kind::Projectile => $crate::game::entity_residency::resident_lifetime_slot!(Projectile, $this$(.$projectiles)+, at.join, visit),
                 Kind::Dragon => {
-                    $this.dragon.locate(at.join).map_or(SlotAccess::Missing, |_| {
+                    $this.dragon.locate(at.join).map_or(SlotAccess::Missing, |index| {
                         use horizon_mod_runtime::attachments::HasAttachmentLifetime;
-                        SlotAccess::Done(visit($this.dragon.as_mut().unwrap().attachment_lifetime()))
+                        SlotAccess::Done(visit($this.dragon.at_mut(index).unwrap().attachment_lifetime()))
                     })
                 },
                 Kind::DragonPart => {
                     use horizon_client::join_seq::residency::Source;
                     use horizon_mod_runtime::attachments::HasAttachmentLifetime;
                     let Source::DragonPart(offset) = at.source else { return SlotAccess::Missing; };
-                    if $this.dragon.locate(at.join).is_none() { return SlotAccess::Missing; }
-                    let Some(part) = $this.dragon.as_mut().and_then(|dragon| dragon.parts.get_mut(usize::from(offset))) else { return SlotAccess::Missing; };
+                    let Some(index) = $this.dragon.locate(at.join) else { return SlotAccess::Missing; };
+                    let Some(part) = $this.dragon.at_mut(index).and_then(|dragon| dragon.parts.get_mut(usize::from(offset))) else { return SlotAccess::Missing; };
                     SlotAccess::Done(visit(part.attachment_lifetime()))
                 },
                 Kind::Player | Kind::Hook => SlotAccess::UnsupportedKind(at.owner.kind),
@@ -214,14 +214,14 @@ macro_rules! define_resident_access {
                     Some(SourceEntity { id, value: (Target::Projectile(id), true) })
                 }
                 Kind::Dragon => {
-                    $this.dragon.locate(at.join)?;
-                    let id = $this.dragon.as_ref()?.id;
+                    let index = $this.dragon.locate(at.join)?;
+                    let id = $this.dragon.at(index)?.id;
                     Some(SourceEntity { id, value: (Target::Dragon(id), true) })
                 }
                 Kind::DragonPart => {
                     let horizon_client::join_seq::residency::Source::DragonPart(offset) = at.source else { return None; };
-                    $this.dragon.locate(at.join)?;
-                    let dragon = $this.dragon.as_ref()?;
+                    let index = $this.dragon.locate(at.join)?;
+                    let dragon = $this.dragon.at(index)?;
                     if dragon.id == 0 { return None; }
                     dragon.parts.get(usize::from(offset))?;
                     let id = dragon.id.checked_add(u32::from(offset) + 1)?;
@@ -235,7 +235,7 @@ macro_rules! define_resident_access {
         pub(super) fn locate_resident_owner(&$this, at: Location) -> Option<SourceEntity<(Target, bool)>> {
             let source = $this.locate_resident_attachment_owner(at).map(|mut source| {
                 if let Target::DragonPart(_) = source.value.0 {
-                    source.value.1 &= $this.dragon.as_ref().is_some_and(|dragon| !$this.persist.removals.contains(&Target::Dragon(dragon.id)));
+                    source.value.1 &= $this.dragon.iter().any(|dragon| dragon.id.checked_add(1).is_some_and(|first| matches!(source.value.0, Target::DragonPart(part) if (first..=first + 7).contains(&part))) && !$this.persist.removals.contains(&Target::Dragon(dragon.id)));
                 }
                 source
             });

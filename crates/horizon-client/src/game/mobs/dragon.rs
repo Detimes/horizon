@@ -1361,7 +1361,7 @@ impl Game<'_> {
         // A dragon outside the End (`/summon`) has no fight: `ServerLevel.getDragonFight` is
         // null there, but `EnderDragon.aiStep` still flies it.
         if !self.dimension_type().has_ender_dragon_fight {
-            self.tick_dragon();
+            self.tick_dragons();
             return;
         }
         self.load_fight();
@@ -1415,7 +1415,7 @@ impl Game<'_> {
         if ticks && self.is_fight_dragon() {
             self.fight.dragon_unseen = 0;
         }
-        self.tick_dragon();
+        self.tick_dragons();
     }
 
     pub(super) fn assign_dragon_and_crystal_ids(&mut self) {
@@ -2682,6 +2682,22 @@ impl Game<'_> {
         }
     }
     /// `EnderDragon.aiStep` (and `tickDeath`) for the dragon.
+    /// Every dragon of the level ticks on its own: each in turn is swapped to
+    /// the front, where the id-less dragon methods address it, then back.
+    fn tick_dragons(&mut self) {
+        for join in self.dragon.joins() {
+            let Some(index) = self.dragon.locate(join) else {
+                continue;
+            };
+            self.dragon.swap_first(index);
+            self.tick_dragon();
+            // A dragon that finished dying left the list; the others kept their order.
+            if self.dragon.locate(join) == Some(0) {
+                self.dragon.swap_first(index);
+            }
+        }
+    }
+
     fn tick_dragon(&mut self) {
         // Entity.baseTick: the saved invulnerability window counts down
         // (arismoko/horizon#916), before the dragon's own borrow of the game.
@@ -6369,6 +6385,9 @@ mod residency_tests;
 #[cfg(test)]
 #[path = "dragon/thorns_tests.rs"]
 mod thorns_tests;
+#[cfg(test)]
+#[path = "dragon/multi_tests.rs"]
+mod multi_tests;
 #[cfg(test)]
 #[path = "dragon/walls_tests.rs"]
 mod walls_tests;
