@@ -244,3 +244,10 @@ a client. `player.set_statistics(host, json)` replaces all of them with a JSON o
 changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
 goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
 `player_stat_award` is not heard.
+
+## Team of an entity
+
+`ScoreboardServerHost::entity_team(entity)` (server side) reads the scoreboard team an entity is on, as
+Paper's `Entity#getScoreboardTeam` does. It returns the team's name, `None` when the entity is on no team.
+The scoreboard keys an entity by its UUID, so the answer follows the team the entity's UUID joined. A stale
+entity, a client, or an entity without a UUID gives `None`.
