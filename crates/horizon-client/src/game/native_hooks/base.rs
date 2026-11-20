@@ -2929,6 +2929,17 @@ impl Game<'_> {
         self.fire_potion_splash(item, pos);
     }
 
+    /// Whether a mod cancels this landed potion's hit effects (`potion_splash_cancel`).
+    /// Experience bottles are never asked.
+    pub(in crate::game) fn native_potion_splash_cancel(&mut self, item: &str, pos: [f64; 3]) -> bool {
+        if item == "minecraft:experience_bottle" {
+            return false;
+        }
+        let mut cancel = false;
+        self.fire_potion_splash_cancel(item, pos, &mut cancel);
+        cancel
+    }
+
     /// A firework rocket completed its explosion effects.
     pub(in crate::game) fn native_firework_explode(
         &mut self,
