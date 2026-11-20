@@ -42,6 +42,12 @@ fn network_encodable(tag: &Tag) -> bool {
         .is_some()
 }
 
+/// Whether the whole encoded packet (id varint included) fits one frame with compression off,
+/// the strictest case: a longer one fails framing and the sender closes the connection.
+fn fits_frame(packet: &C) -> bool {
+    packet.encode().len() <= horizon_protocol::frame::MAX_FRAME
+}
+
 impl Game<'_> {
     /// The entity's data entries as `data` names them, ordered by index as the client reads
     /// them, or why there are none.
@@ -100,6 +106,9 @@ impl Game<'_> {
         let id = i32::try_from(entity.id()).map_err(|_| Error::StaleEntity)?;
         let values = self.entity_view_values(&data)?;
         let packet = C::SetEntityData(play::SetEntityData { id, values });
+        if !fits_frame(&packet) {
+            return Err(Error::TooLarge);
+        }
         if self.native_send(viewer.uuid(), packet) {
             Ok(())
         } else {
@@ -157,6 +166,32 @@ mod tests {
         assert!(!network_encodable(&Tag::String(
             "\0".repeat(35_000).as_str().into()
         )));
+    }
+
+    /// A shallow name of valid multibyte strings passes the NBT check yet its whole packet is over the
+    /// frame limit, so it is refused.
+    #[test]
+    fn a_name_whose_packet_exceeds_the_frame_is_too_large() {
+        // 31 strings of 21,845 euro signs (65,535 bytes each) and one of 65,495 bytes: 2,097,150
+        // bytes of network NBT, within the 2 MiB write limit and, at 2 heap bytes per char, the
+        // heap quota too, but with the packet headers over the frame cap.
+        let euros = |n| "\u{20ac}".repeat(n);
+        let mut parts: Vec<Tag> = (0..31)
+            .map(|_| Tag::String(euros(21_845).as_str().into()))
+            .collect();
+        parts.push(Tag::String(format!("{}aa", euros(21_831)).as_str().into()));
+        let name = Tag::List(parts);
+        assert!(network_encodable(&name));
+        let small = C::SetEntityData(play::SetEntityData {
+            id: 1,
+            values: vec![(2, 6, Value::OptText(Some(Tag::String("x".into()))))],
+        });
+        assert!(fits_frame(&small));
+        let big = C::SetEntityData(play::SetEntityData {
+            id: 1,
+            values: vec![(2, 6, Value::OptText(Some(name)))],
+        });
+        assert!(!fits_frame(&big));
     }
 
     /// One viewer is sent one packet with the entries in index order; a bad call sends nothing.
