@@ -2278,8 +2278,16 @@ impl Game<'_> {
     }
     /// A server player used a firework rocket to boost while gliding, after the rocket was launched
     /// and consumed. Server-side.
-    pub(in crate::game) fn native_player_elytra_boost(&mut self, player: u128, name: &str) {
-        self.fire_player_elytra_boost(player, name);
+    /// A server player is about to use a firework rocket to boost while
+    /// gliding, before the rocket is launched or consumed. Set `cancel` and
+    /// nothing is launched. Server-side.
+    pub(in crate::game) fn native_player_elytra_boost(
+        &mut self,
+        player: u128,
+        name: &str,
+        cancel: &mut bool,
+    ) {
+        self.fire_player_elytra_boost(player, name, cancel);
     }
     /// A server player put a plant into a flower pot, after the potted block state was stored and the
     /// item consumed. `plant` is the item id and `pos` the pot position. Server-side.
