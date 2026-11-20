@@ -209,6 +209,11 @@ pub enum HostEvent {
         conn: u32,
         flags: i32,
     },
+    /// A loaded guest's client answered a ping (`ServerboundPongPacket`) numbered `id`.
+    Pong {
+        conn: u32,
+        id: i32,
+    },
     /// A guest was kicked, with the reason rendered by the hub.
     Kicked {
         conn: u32,
@@ -4185,7 +4190,13 @@ impl Hub {
                         g.max_unacknowledged = 10;
                     });
                 }
-                S::Pong(p) => self.anticheat_pong(i, p.id),
+                S::Pong(p) => {
+                    self.anticheat_pong(i, p.id);
+                    // The event only tells the mods: nothing is queued with none loaded.
+                    if self.mods_loaded {
+                        events.push(HostEvent::Pong { conn, id: p.id });
+                    }
+                }
                 // ServerGamePacketListenerImpl.handlePingRequest: echo on this connection.
                 S::PingRequest(p) => self.send_to(conn, &C::PongResponse(p)),
                 // handleAttack is the game's too: a move queued behind an attack would move
@@ -5444,6 +5455,7 @@ mod tests {
     mod pending_move_bound_tests;
     mod pending_move_scope_tests;
     mod pending_move_tests;
+    mod pong_tests;
     mod skin_outer_layer_tests;
     mod sound_tests;
     use super::*;
