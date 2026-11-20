@@ -1842,9 +1842,10 @@ mod tests {
                 .find(|m| !m.removed && matches!(m.species(), Species::ZombifiedPiglin))
                 .expect("a zombified piglin stands in its place");
             assert_eq!(zombie.kind.id, "minecraft:zombified_piglin");
+            let zombie_id = zombie.id;
             // The stale handle and a zombified piglin itself (not a piglin) change nothing.
             assert!(!game.mob_zombify(mob));
-            let zombie_handle = game.mob(game.entity(zombie.id).unwrap()).unwrap();
+            let zombie_handle = game.mob(game.entity(zombie_id).unwrap()).unwrap();
             assert!(!game.mob_zombify(zombie_handle));
         });
     }
