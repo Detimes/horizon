@@ -1247,6 +1247,22 @@ pub trait LevelsBackendMut {
         count: i32,
     ) -> bool;
     /// Side: server.
+    /// `level_send_particles` with `ServerLevel.sendParticles`' `force` set: the same
+    /// particle, validation and answer, sent to the players within 512 blocks instead of 32
+    /// and drawn whatever their particle setting (vanilla's `overrideLimiter`). True means
+    /// queued, not drawn.
+    #[access(WorldOnly)]
+    fn level_send_particles_forced(
+        &mut self,
+        level: LevelRef,
+        options: &ParticleOptions,
+        state: Option<BlockState>,
+        at: [f64; 3],
+        spread: [f64; 3],
+        speed: f64,
+        count: i32,
+    ) -> bool;
+    /// Side: server.
     /// Plays level event `id` at `pos` with `data` for the players near it
     /// (`Level.levelEvent(null, id, pos, data)`): `1000`s are sounds, `2000`s
     /// particles, as vanilla's `LevelEvent` numbers them (`2001` breaks a
