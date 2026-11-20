@@ -98,6 +98,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+`player.show_title(host, title, subtitle, fade_in, stay, fade_out)` puts a title and a subtitle on one player's screen, as `/title` does. The calls go out in vanilla's order: the timings, then the subtitle, then the title. Pass `None` for a line to leave it out; the other line stays as the client has it. The timings are game ticks, and a negative one keeps the client's current value for it (`/title ... times` skips a negative timing the same way). The text is checked before anything is sent (`TextFormError` over 512 nodes deep), and the call returns `false` for a player who is not on.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`
