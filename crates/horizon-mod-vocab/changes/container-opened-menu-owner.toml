@@ -1,3 +1,0 @@
-ids = ["hook:container_opened", "type:ContainerOpenedEvent.menu_owner"]
-why = "container_opened gains menu_owner: the player's own name when the menu is their ender chest, None for every other menu. Ender chest transactions can be recorded as such without reading the block."
-migrate = "Rebuild listeners against hook version 2 and read menu_owner as an Option; a listener that ignores it needs no other change."

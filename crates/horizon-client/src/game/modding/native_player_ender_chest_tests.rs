@@ -177,10 +177,11 @@ fn a_write_while_the_local_ender_chest_is_open_survives_closing_it() {
     });
 }
 
-/// The menu an ender chest opens names its opener as `menu_owner`; a chest's menu names none.
+/// An ender chest opened by one guest is heard with that guest's UUID and position; a chest is
+/// not heard.
 #[test]
 #[ignore = "daily"]
-fn an_ender_chest_menu_names_its_owner_and_a_chest_does_not() {
+fn an_ender_chest_open_is_heard_and_a_chest_open_is_not() {
     use horizon_client::chunk::Chunk;
     use mod_api::BlockUpdateFlags;
     use std::sync::{Arc, Mutex};
@@ -199,36 +200,24 @@ fn an_ender_chest_menu_names_its_owner_and_a_chest_does_not() {
                 Ok(true)
             );
         }
-        let guest_name = game.lan.as_ref().unwrap().hub.guest(12).unwrap().name.clone();
-        let seen = Arc::new(Mutex::new(Vec::<Option<String>>::new()));
-        struct Owners(Arc<Mutex<Vec<Option<String>>>>);
+        let guest_uuid = game.lan.as_ref().unwrap().hub.guest(12).unwrap().uuid;
+        let seen = Arc::new(Mutex::new(Vec::<(u128, [i32; 3])>::new()));
+        struct Enders(Arc<Mutex<Vec<(u128, [i32; 3])>>>);
         #[mod_api::__subscriptions]
-        impl mod_api::Hooks for Owners {
-            fn container_opened(
-                &self,
-                _: &mut dyn mod_api::ServerHost,
-                event: &mut mod_api::ContainerOpenedEvent<'_>,
-            ) -> mod_api::Flow {
-                self.0
-                    .lock()
-                    .unwrap()
-                    .push(event.menu_owner.map(str::to_owned));
-                mod_api::Flow::Continue
+        impl mod_api::Hooks for Enders {
+            fn ender_chest_opened(&self, _: &mut dyn mod_api::ServerHost, player: u128, pos: [i32; 3]) {
+                self.0.lock().unwrap().push((player, pos));
             }
         }
-        let listener = Owners(seen.clone());
+        let listener = Enders(seen.clone());
         mod_platform::testing::with_mods(
-            vec![mod_api::ModEntry::new("owners", Box::new(listener))].into(),
+            vec![mod_api::ModEntry::new("enders", Box::new(listener))].into(),
             || {
                 game.open_block_menu(12, (ender[0], ender[1], ender[2]));
                 game.guest_close_all(12);
                 game.open_block_menu(12, (chest[0], chest[1], chest[2]));
             },
         );
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec![Some(guest_name), None],
-            "the ender chest names its opener, the chest names none"
-        );
+        assert_eq!(*seen.lock().unwrap(), vec![(guest_uuid, ender)]);
     });
 }

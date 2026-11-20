@@ -17,20 +17,22 @@ impl Game<'_> {
             return false;
         }
         let (uuid, name) = (guest.uuid, guest.name.clone());
-        // An ender chest shows the opener's own inventory (`open_block_menu_with_opener`).
-        let ender_chest = pos.is_some_and(|p| {
-            &*self.res.facts().get(self.world.block(p[0], p[1], p[2])).name == "minecraft:ender_chest"
-        });
-        let menu_owner = ender_chest.then_some(name.as_str());
         let mut cancel = false;
-        let mut hook = |game: &mut Self| {
-            game.native_container_opened(uuid, &name, kind, pos, menu_owner, &mut cancel)
-        };
+        let mut hook =
+            |game: &mut Self| game.native_container_opened(uuid, &name, kind, pos, &mut cancel);
         // The guest whose turn it is is in place already.
         if self.lan_acting == Some(conn) {
             hook(self);
         } else {
             self.as_guest(conn, hook);
+        }
+        if !cancel
+            && let Some(p) = pos.filter(|p| {
+                &*self.res.facts().get(self.world.block(p[0], p[1], p[2])).name
+                    == "minecraft:ender_chest"
+            })
+        {
+            self.announce_ender_chest_opened(uuid, p);
         }
         !cancel
     }

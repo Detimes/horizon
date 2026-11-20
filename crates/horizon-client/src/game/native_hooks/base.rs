@@ -1561,10 +1561,9 @@ impl Game<'_> {
         name: &str,
         kind: &str,
         pos: Option<[i32; 3]>,
-        menu_owner: Option<&str>,
         cancel: &mut bool,
     ) {
-        self.fire_container_opened(player, name, kind, pos, menu_owner, cancel);
+        self.fire_container_opened(player, name, kind, pos, cancel);
     }
     /// A creative-mode player sets a slot of their inventory from the
     /// creative screen (`ServerGamePacketListenerImpl.handleSetCreativeModeSlot`):
