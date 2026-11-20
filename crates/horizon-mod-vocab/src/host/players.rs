@@ -51,6 +51,18 @@ pub trait PlayersServerHost {
     #[access(WorldOnly)]
     fn profile_by_uuid(&self, uuid: u128) -> Option<GameProfile>;
     /// Side: server.
+    /// The statistics of the player with this UUID as their `players/stats/<uuid>.json` file
+    /// holds them, in the text `player_statistics` returns (`ServerStatsCounter.toJson`:
+    /// `{"stats":{"minecraft:mined":{"minecraft:stone":3},...},"DataVersion":n}`), so a mod
+    /// can read the counters of a player who is not online (a stats command for an offline
+    /// name, Paper's `OfflinePlayer#getStatistic`). A player who is online reads as of their last
+    /// save, not their live counters: ask `player.statistics(host)` for them. None for a player
+    /// with no stats file, a file that is not a `stats` object of whole numbers that fit an
+    /// `i32`, a file over 4 MiB, and on a client or in a remote world. Reads only: the file is
+    /// never written.
+    #[access(WorldOnly)]
+    fn offline_player_statistics(&self, uuid: u128) -> Option<String>;
+    /// Side: server.
     /// The profile of the player with this name, any case, as
     /// `profile_by_uuid` knows it: an online player's, else an unexpired
     /// user cache entry. Never asked of Mojang, and an unknown name is not

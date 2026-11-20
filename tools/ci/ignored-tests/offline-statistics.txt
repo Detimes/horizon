@@ -1,0 +1,2 @@
+# A game with a world root needs prepared resources.
+horizon-client game::modding::native_player_stats::tests::offline_statistics_are_read_from_the_stats_file lib daily resources
