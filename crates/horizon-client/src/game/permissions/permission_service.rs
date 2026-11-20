@@ -353,15 +353,15 @@ impl PermissionNodes for PermissionService {
     }
 }
 
-/// A Boolean node takes a level default, any other node a value of its own type.
+/// A Boolean node takes a level default or `Nobody`, any other node a value of its own type.
 fn check_default(
     value_type: PermissionValueType,
     default: &NodeDefault,
 ) -> Result<(), PermissionError> {
     let fits = match (value_type, default) {
-        (PermissionValueType::Boolean, NodeDefault::Level(_)) => true,
+        (PermissionValueType::Boolean, NodeDefault::Level(_) | NodeDefault::Nobody) => true,
         (PermissionValueType::Boolean, NodeDefault::Value(_)) => false,
-        (_, NodeDefault::Level(_)) => false,
+        (_, NodeDefault::Level(_) | NodeDefault::Nobody) => false,
         (expected, NodeDefault::Value(value)) => value.value_type() == expected,
     };
     if fits {
@@ -372,7 +372,7 @@ fn check_default(
 }
 
 /// The built-in handler: a Boolean node is granted when the player's operator level is at least
-/// its default level; any other node answers its default value. Nothing here reads the world.
+/// its default level, and a `Nobody` node is never granted; any other node answers its default value. Nothing here reads the world.
 struct DefaultHandler {
     defaults: BTreeMap<NodeKey, NodeDefault>,
     levels: Option<LevelSource>,
@@ -403,6 +403,7 @@ impl PermissionHandler for DefaultHandler {
                     .map_or(PermissionLevel::All, |levels| levels(online, uuid));
                 PermissionValue::Boolean(level >= *required)
             }
+            NodeDefault::Nobody => PermissionValue::Boolean(false),
             NodeDefault::Value(value) => value.clone(),
         })
     }

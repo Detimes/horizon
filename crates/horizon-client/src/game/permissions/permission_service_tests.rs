@@ -686,3 +686,34 @@ fn a_missing_configured_handler_refuses_node_usages_but_the_default_still_answer
     named.finish_gathering(Some(DEFAULT_HANDLER_ID));
     assert_eq!(named.node_policy(), NodePolicy::Levels);
 }
+
+#[test]
+fn a_nobody_node_is_false_for_everyone_including_administrators() {
+    let mut service = ready(vec![(boolean("a.exempt"), NodeDefault::Nobody)]);
+    // ALICE is online at level 3 (Admins), BOB is offline at level 1, CAROL is unknown at level 0.
+    assert_eq!(
+        service.query_bool(&boolean("a.exempt"), Some(ALICE), ALICE),
+        Ok(false)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("a.exempt"), None, BOB),
+        Ok(false)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("a.exempt"), None, CAROL),
+        Ok(false)
+    );
+}
+
+#[test]
+fn nobody_is_only_a_default_for_boolean_nodes() {
+    let mut service = PermissionService::new();
+    assert_eq!(
+        service.register_node(integer("a.count"), NodeDefault::Nobody),
+        Err(PermissionError::WrongType)
+    );
+    assert_eq!(
+        service.register_node(boolean("a.exempt"), NodeDefault::Nobody),
+        Ok(())
+    );
+}
