@@ -1,5 +1,6 @@
 //! `player_send_entity_data`: one viewer is sent different data for an entity than the others.
 use super::Game;
+use horizon_core::nbt::{Limits, Tag, write_network};
 use horizon_protocol::{
     entity_data::{Value, serializer},
     packets::play::{self, Clientbound as C},
@@ -30,6 +31,17 @@ fn pose_id(pose: Pose) -> i32 {
     }
 }
 
+/// Whether the packet writer carries `tag` and the client reads it back under vanilla's limits:
+/// a string over 65,535 modified UTF-8 bytes or a tag past the network limits is not written (an
+/// End tag goes out instead), and the written bytes must fit the 2 MiB `NbtAccounter` heap quota
+/// (`from_network_bytes(.., None)` accounts it). That quota is also far below the packet size cap.
+fn network_encodable(tag: &Tag) -> bool {
+    write_network(tag, Limits::network())
+        .ok()
+        .and_then(|bytes| Tag::from_network_bytes(&bytes, None).ok())
+        .is_some()
+}
+
 impl Game<'_> {
     /// The entity's data entries as `data` names them, ordered by index as the client reads
     /// them, or why there are none.
@@ -43,6 +55,9 @@ impl Game<'_> {
         }
         if let Some(name) = &data.custom_name {
             let tag = self.text_to_nbt(name).map_err(Error::Text)?;
+            if !network_encodable(&tag) {
+                return Err(Error::TooLarge);
+            }
             values.push((2, serializer::OPTIONAL_COMPONENT, Value::OptText(Some(tag))));
         } else if data.remove_custom_name {
             values.push((2, serializer::OPTIONAL_COMPONENT, Value::OptText(None)));
@@ -129,6 +144,21 @@ mod tests {
         }
     }
 
+    /// A name the network encoding cannot carry is refused; an ordinary one passes.
+    #[test]
+    fn a_name_over_the_string_limit_is_not_encodable() {
+        assert!(network_encodable(&Tag::String(
+            "a".repeat(65_535).as_str().into()
+        )));
+        assert!(!network_encodable(&Tag::String(
+            "a".repeat(70_000).as_str().into()
+        )));
+        // Modified UTF-8 writes NUL as two bytes, so this is 70,000 bytes in 35,000 chars.
+        assert!(!network_encodable(&Tag::String(
+            "\0".repeat(35_000).as_str().into()
+        )));
+    }
+
     /// One viewer is sent one packet with the entries in index order; a bad call sends nothing.
     #[test]
     #[ignore = "daily"]
@@ -193,6 +223,12 @@ mod tests {
             assert_eq!(
                 game.player_send_entity_data(viewer, other.entity(), both),
                 Err(Error::Conflict)
+            );
+            let mut long = EntityViewData::new();
+            long.custom_name = Some(Text::literal("a".repeat(70_000)));
+            assert_eq!(
+                game.player_send_entity_data(viewer, other.entity(), long),
+                Err(Error::TooLarge)
             );
             assert!(sent(&rx).is_empty(), "a refused call sends nothing");
         });

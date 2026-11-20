@@ -1366,6 +1366,9 @@ impl SidebarLine {
 
 /// What one viewer is sent in place of an entity's data (`player_send_entity_data`). Each field
 /// left `None` (and `remove_custom_name` left false) is not sent, so the viewer keeps what it has.
+/// Each field is replaced on its own and the server keeps no per-viewer override: a later change
+/// the server sends for one field (flags, say) shows its real value again while the other fields
+/// replaced here stay as sent.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 #[derive(horizon_mod_api_macros::Wire)]
@@ -1409,6 +1412,10 @@ pub enum EntityViewError {
     Conflict,
     /// The custom name is a text the boundary refuses (nested too deep, malformed...).
     Text(TextFormError),
+    /// The custom name would not encode within the network limits (a string over 65,535 bytes of
+    /// modified UTF-8, or more than the client's network NBT quota); the client would drop the
+    /// connection, so nothing is sent.
+    TooLarge,
 }
 impl crate::NoBackend for EntityViewError {
     fn no_backend() -> Self {

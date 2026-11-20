@@ -715,7 +715,11 @@ pub trait PlayersBackendMut {
     /// sends it again from `player_start_tracking`. The viewer need not track the entity now (its
     /// client ignores data for one it does not have). Refuses with `EntityViewError`: `Client`,
     /// `Stale` (the viewer handle), `NoConnection` (a fake viewer), `StaleEntity`, `Empty`
-    /// (nothing to send), `Conflict` (a name and its removal together) and `Text` (a name the text boundary refuses).
+    /// (nothing to send), `Conflict` (a name and its removal together), `Text` (a name the text boundary
+    /// refuses) and `TooLarge` (a name the network encoding cannot carry: over 65,535 bytes of modified
+    /// UTF-8 or past the network NBT quota; nothing is sent). Each field is replaced on its own: the
+    /// server keeps no per-viewer override, so a later change it sends for one field (the flags, say)
+    /// shows that field's real value again while the other replaced fields stay as sent.
     #[access(WorldOnly)]
     fn player_send_entity_data(
         &mut self,
