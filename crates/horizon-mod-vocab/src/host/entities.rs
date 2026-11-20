@@ -930,6 +930,12 @@ pub trait EntitiesBackendMut {
     #[access(WorldOnly)]
     fn entity_set_hanging_direction(&mut self, entity: EntityRef, direction: Direction) -> bool;
     /// Side: server.
+    /// The way a painting, item frame or glow item frame faces (`HangingEntity.getDirection`),
+    /// the value `entity_set_hanging_direction` sets. A painting answers only a horizontal
+    /// direction, as it keeps one. None for another kind or a stale handle.
+    #[access(WorldOnly)]
+    fn entity_hanging_direction(&self, entity: EntityRef) -> Option<Direction>;
+    /// Side: server.
     /// Turns the item in an item frame or glow item frame (`ItemFrame.setRotation`): `rotation`
     /// in eighths of a turn, wrapped to 0..=7 as vanilla's `rotation % 8`; the comparators reading
     /// the frame take its new signal. False for another kind or a stale handle.

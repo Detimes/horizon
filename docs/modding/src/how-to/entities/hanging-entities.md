@@ -10,4 +10,4 @@ new one. Both writes are server-only handle methods on `EntityRef`, taking `&mut
 - `set_item_frame_rotation(host, rotation)` is `ItemFrame.setRotation`: the item turns in eighths of a turn, and the
   value wraps modulo 8 as vanilla's does (8 is 0, 13 is 5). Comparators reading the frame update afterwards.
 
-Both return `false` for a stale handle or an entity of another kind. Players see the change through entity synchronization, including a painting or frame turned to south.
+`hanging_direction(host)` reads the facing back (`HangingEntity.getDirection`) as the `Direction` that `set_hanging_direction` takes, and returns `None` for a stale handle or an entity of another kind. Both writes return `false` for a stale handle or an entity of another kind. Players see the change through entity synchronization, including a painting or frame turned to south.
