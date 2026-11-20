@@ -50,6 +50,7 @@ mod joined;
 mod move_collision;
 mod moves;
 pub mod passage_cross;
+mod heard_packet;
 mod pending_move;
 mod raw_inbox;
 mod selector_sync;
@@ -57,6 +58,7 @@ mod spawn_info;
 use advancements::AdvancementOwners;
 use chat::yellow_names;
 pub use pending_move::{Accepted, Hearing, PendingMove};
+use heard_packet::HeardPacket;
 use raw_inbox::{DeferredPayload, PacketDrain, yield_raw};
 pub mod game_event {
     pub const NO_RESPAWN_BLOCK_AVAILABLE: u8 = 0;
@@ -184,6 +186,8 @@ pub enum HostEvent {
     ),
     /// A changed movement report is held for the game to rule on ([`Hub::resolve_move`]).
     PlayerMove(u32),
+    /// A player's packet is held for the game to rule on ([`Hub::rule_packet`]).
+    PacketHeard(u32),
     /// An accepted position started a jump, before later gameplay packets.
     Jump {
         conn: u32,
@@ -348,6 +352,11 @@ pub struct Hub {
     pending_kicks: Vec<HostEvent>,
     /// A native mod listens to `player_move`: a changed report waits for the game ([`pending_move`]).
     pub moves_listened: bool,
+    /// A native mod listens to `serverbound_packet`: each packet waits for the game ([`heard_packet`]).
+    pub packets_listened: bool,
+    /// The packet the game is ruling on, and the guest whose next packet it passed.
+    heard: Option<HeardPacket>,
+    heard_pass: Option<u32>,
     /// `[transfer]` on (a dedicated server's `--transfers`): the players a proxy
     /// said would arrive (`player-expect`). None while it is off.
     pub transfers: Option<super::arrivals::Transfers>,
@@ -852,6 +861,9 @@ impl Hub {
             deferred_payloads: Default::default(),
             pending_kicks: Vec::new(),
             moves_listened: false,
+            packets_listened: false,
+            heard: None,
+            heard_pass: None,
             transfers: None,
             native_tracking: Vec::new(),
             attachment_snapshots: Vec::new(),
@@ -4066,6 +4078,12 @@ impl Hub {
                     continue;
                 }
                 InboxItem::Packet(packet, credit) => {
+                    let heard_conn = self.guests[i].conn;
+                    let Some((packet, credit)) =
+                        self.hear_or_keep(heard_conn, packet, credit, &mut credits, events)
+                    else {
+                        return true;
+                    };
                     credits.extend(credit);
                     packet
                 }
@@ -5441,6 +5459,7 @@ mod tests {
     mod main_hand_tests;
     mod menu_sync_tests;
     mod ordered_inbox_tests;
+    mod heard_packet_tests;
     mod pending_move_bound_tests;
     mod pending_move_scope_tests;
     mod pending_move_tests;
