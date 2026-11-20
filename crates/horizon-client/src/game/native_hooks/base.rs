@@ -3158,6 +3158,17 @@ impl Game<'_> {
     ) {
         self.fire_player_arm_swing(player, name, hand);
     }
+    /// A guest's `UseItem` packet reached the server: a right click on air, with the held item's
+    /// id (`minecraft:air` for an empty hand). Server-side.
+    pub(in crate::game) fn native_player_air_right_click(
+        &mut self,
+        player: u128,
+        name: &str,
+        hand: &str,
+        item: &str,
+    ) {
+        self.fire_player_air_right_click(player, name, hand, item);
+    }
     /// A guest's accepted movement made the server jump them from the ground. Server-side.
     pub(in crate::game) fn native_player_jump(&mut self, player: u128, name: &str) {
         self.fire_player_jump(player, name);
