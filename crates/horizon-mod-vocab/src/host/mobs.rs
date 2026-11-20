@@ -481,6 +481,20 @@ pub trait MobsBackendMut {
     #[access(WorldOnly)]
     fn mob_jump(&mut self, mob: MobRef) -> bool;
     /// Side: server.
+    /// `Mob.doHurtTarget` against `target`: the mob's own melee blow, the
+    /// one a melee goal deals, with the held weapon's damage and
+    /// enchantments, the knockback and the species' extra effects (a
+    /// cave spider's poison, a wither skeleton's wither). It goes through
+    /// the mob combat path the goal's blow takes, so a shield or armour can
+    /// take it. It does not swing the arm, start the attack cooldown or
+    /// check reach: those belong to the goal that calls it. True means the
+    /// blow was dealt, not that it landed. False for a stale or unavailable
+    /// mob or target, a client, the dragon, a target the mob may not attack
+    /// (the same rule `set_target` applies), a mob attacking itself, and a
+    /// guest target (refused for now).
+    #[access(WorldOnly)]
+    fn mob_attack(&mut self, mob: MobRef, target: LivingRef) -> bool;
+    /// Side: server.
     /// `Mob.restrictTo(pos, radius)`: the home area the mob keeps to — its
     /// own stroll and wander goals pick their positions inside it, as a
     /// lead's and a guardian's home do. Radius `-1` clears the restriction
