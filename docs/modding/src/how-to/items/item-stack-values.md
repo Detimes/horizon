@@ -59,6 +59,14 @@ to component NBT by `host.text_to_nbt(&text)`; `None` removes the name and an em
 removes the lore. A refused text returns `TextFormError` and changes nothing. Vanilla draws a
 custom name in italics unless its style sets `italic: false`.
 
+Three item-meta setters write one component each, with no host call in the write itself.
+`ItemStack::set_glint_override(host, Some(on))` forces the glint on or off (`minecraft:enchantment_glint_override`);
+`None` returns the stack to the item's own rule. `ItemStack::set_tooltip_hidden(host, hidden)` sets
+`hide_tooltip` in `minecraft:tooltip_display` and keeps its other keys such as `hidden_components`; a display left
+with no key is removed. `ItemStack::set_leather_color(host, Some(rgb))` sets `rgb` in `minecraft:dyed_color` (only
+the low 24 bits are kept) and `None` returns the stack to the item's colour. Clearing any of them records a removal
+when the item's prototype supplies that component, so its default does not come back.
+
 ## Game boundaries
 
 A consume or death-protection override whose opaque native effect payload cannot be decoded
