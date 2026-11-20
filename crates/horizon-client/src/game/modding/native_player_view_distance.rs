@@ -59,7 +59,6 @@ mod tests {
                 .find(|g| g.uuid == 123)
                 .unwrap();
             assert_eq!(guest.view_distance, 10);
-        })
-        .unwrap();
+        });
     }
 }
