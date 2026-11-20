@@ -450,7 +450,7 @@ fn read_face(buffer: &wgpu::Buffer, size: u32, bgra: bool) -> Result<Vec<u8>, St
     {
         let data = buffer.get_mapped_range(..).map_err(|e| e.to_string())?;
         for y in 0..side {
-            for px in data[y * row..y * row + side * 4].chunks_exact(4) {
+            for px in data[y * row..y * row + side * 4].as_chunks::<4>().0 {
                 let (r, b) = if bgra { (px[2], px[0]) } else { (px[0], px[2]) };
                 out.extend_from_slice(&[r, px[1], b, 255]);
             }
