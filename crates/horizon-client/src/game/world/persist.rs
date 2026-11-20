@@ -1045,8 +1045,13 @@ impl Game<'_> {
         // The loaded dragon's own random (`Entity.random`): loading draws
         // nothing from the level's.
         let seed = random_source::unique_seed();
-        if self.dragon.is_none()
-            && let Some(mut d) = super::dragon::Dragon::from_nbt(&tag, seed)
+        // A saved UUID is held by one entity: the same dragon is not loaded twice.
+        let held = uuid.is_some_and(|uuid| {
+            self.dragon.iter().any(|d| {
+                self.known_resident_entity_uuid_at(self.dim.key(), d.id) == Some(uuid)
+            })
+        });
+        if !held && let Some(mut d) = super::dragon::Dragon::from_nbt(&tag, seed)
         {
             // EnderDragon's constructor takes its id and its
             // parts' from the entity counter.
@@ -1060,7 +1065,7 @@ impl Game<'_> {
             self.remember_tags(d.id, &tag);
             self.remember_uuid(d.id, uuid, &tag);
             d.join = horizon_client::join_seq::JoinSeq::next();
-            assert!(self.dragon.install(d).is_ok());
+            self.dragon.push(d);
         }
     }
 
@@ -1749,8 +1754,10 @@ impl Game<'_> {
         let mut roots: HashMap<(i32, i32), Vec<(u32, JoinSeq, Tag)>> = HashMap::new();
         // Every kind in `entity_lists!` saves itself (`Entity::save_nbt`).
         self.save_every_entity(keys, &mut roots);
-        if let Some(d) = self.dragon.as_ref()
-            && keys.contains(&chunk_of(d.position))
+        for d in self
+            .dragon
+            .iter()
+            .filter(|d| keys.contains(&chunk_of(d.position)))
         {
             let raw = anon_raw(&self.persist, "minecraft:ender_dragon", d.position);
             let uuid = saved_uuid(&self.persist, d.id);

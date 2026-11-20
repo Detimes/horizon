@@ -16,11 +16,14 @@ fn singleton_dragon_spawn_install_refusal_and_kill() {
         for part in id + 1..=id + 8 {
             assert!(game.dragon_part(part).is_some());
         }
-        assert!(
-            game.spawn_dragon_spawned([1.0, 80.0, 0.0], SpawnSite::Plain)
-                .is_none()
-        );
-        assert_eq!(game.next_entity, before + 9);
+        // A level holds any number of dragons: a second one joins behind the first.
+        let second = game
+            .spawn_dragon_spawned([1.0, 80.0, 0.0], SpawnSite::Plain)
+            .unwrap();
+        assert_eq!(second, before + 10);
+        assert_eq!(game.next_entity, before + 18);
+        assert_eq!(game.dragon.iter().map(|d| d.id).collect::<Vec<_>>(), [id, second]);
+        game.kill_dragon(second);
         let mut replacement = Dragon::new(Vec3::ZERO, 0.0, 0);
         replacement.id = 900;
         let refused = game.dragon.install(replacement).err().unwrap();

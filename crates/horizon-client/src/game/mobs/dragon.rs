@@ -1365,6 +1365,10 @@ impl Game<'_> {
             return;
         }
         self.load_fight();
+        // The fight's own dragon leads the set: the fight code below addresses the first one.
+        if let Some(index) = self.fight_dragon_index() {
+            self.dragon.swap_first(index);
+        }
         // updatePlayers, every 20 ticks.
         self.fight.player_scan += 1;
         if self.fight.player_scan >= 20 {
@@ -3435,8 +3439,8 @@ impl Game<'_> {
             return None;
         }
         Some(
-            self.dragon
-                .as_ref()
+            self.fight_dragon_index()
+                .and_then(|i| self.dragon.at(i))
                 .map_or(1.0, |d| (d.health / MAX_HEALTH).clamp(0.0, 1.0)),
         )
     }
@@ -4548,23 +4552,25 @@ impl Game<'_> {
         };
         self.next_entity += 9;
         let id = dragon.id;
-        assert!(self.dragon.install(dragon).is_ok());
+        // The new dragon leads the set, beside any the level already holds.
+        self.dragon.push(dragon);
+        self.dragon.swap_first(self.dragon.iter().count() - 1);
         self.fight.dragon_uuid = Some(self.uuid_for(id));
         self.fight.dirty = true;
     }
     /// `EnderDragonFight.findOrCreateDragon`: the End's dragon becomes the
     /// fight's, or a new one is made.
     fn find_or_create_dragon(&mut self) {
-        match self.dragon.as_ref().map(|d| (d.id, d.alive())) {
+        // `ServerLevel.getDragons` takes only living dragons, so vanilla makes
+        // a new one beside a dying one, and adopts the first living one.
+        match self.dragon.iter().position(|d| d.alive()) {
             None => self.create_new_dragon(),
-            Some((id, true)) => {
+            Some(index) => {
+                self.dragon.swap_first(index);
+                let id = self.dragon.as_ref().map_or(0, |d| d.id);
                 self.fight.dragon_uuid = Some(self.uuid_for(id));
                 self.fight.dirty = true;
             }
-            // `ServerLevel.getDragons` takes only living dragons, so vanilla
-            // makes a new one beside a dying one; with one dragon to a level,
-            // the new one comes once the dying one is gone.
-            Some((_, false)) => {}
         }
     }
     /// `EnderDragonFight.scanState`, for a world from before the fight was
@@ -4591,6 +4597,14 @@ impl Game<'_> {
     }
     /// The dragon is the End fight's own (`EnderDragon.dragonFight`, set
     /// only for the dragon whose UUID is the fight's `dragonUUID`).
+    /// Index of the fight's own dragon (the one whose UUID is the fight's
+    /// `dragonUUID`) among the level's dragons, if the level holds it.
+    pub(super) fn fight_dragon_index(&self) -> Option<usize> {
+        let uuid = self.fight.dragon_uuid?;
+        self.dragon.iter().position(|d| {
+            d.id != 0 && self.known_resident_entity_uuid_at(self.dim.key(), d.id) == Some(uuid)
+        })
+    }
     pub(super) fn is_fight_dragon(&mut self) -> bool {
         if !self.dimension_type().has_ender_dragon_fight {
             return false;
@@ -4728,9 +4742,6 @@ impl Game<'_> {
     /// so it can be spawned in any dimension. Horizon keeps one dragon per level, as `/summon`
     /// and loading do: with one already there, nothing spawns and the egg stays.
     pub(super) fn spawn_dragon_spawned(&mut self, at: [f64; 3], site: SpawnSite) -> Option<u32> {
-        if self.dragon.is_some() {
-            return None;
-        }
         let position = Vec3::new(at[0], at[1], at[2]);
         // SummonCommand loads absent Rotation as zero before finalization. Only
         // EntityType.create's egg placement draws a random snapTo yaw.
@@ -4764,10 +4775,12 @@ impl Game<'_> {
         dragon.id = self.next_entity + 1;
         self.next_entity += 9;
         let id = dragon.id;
-        // Finalization listeners can install another dragon after the initial
-        // refusal check. Keep the constructor's existing replacement order.
-        self.replace_resident_dragon(dragon);
+        // A level holds any number of dragons (`SummonCommand` makes as many as asked).
+        self.dragon.push(dragon);
+        let last = self.dragon.iter().count() - 1;
+        self.dragon.swap_first(last);
         self.place_dragon_parts();
+        self.dragon.swap_first(last);
         self.native_joins_flush(false, id).then_some(id)
     }
 
@@ -5170,16 +5183,16 @@ mod tests {
                 assert_eq!(joins.lock().unwrap().len(), 1, "a join is told only once");
                 let dispenser =
                     SpawnSite::Finalizing(horizon_client::mobs::spawn_rules::Reason::Dispenser);
-                assert!(game.spawn_dragon_spawned(at, dispenser).is_none());
-                assert_eq!(joins.lock().unwrap().len(), 1, "no second dragon joins");
+                assert_eq!(game.spawn_dragon_spawned(at, dispenser), Some(id + 9));
+                assert_eq!(joins.lock().unwrap().len(), 2, "a second dragon joins too");
 
-                game.dragon.discard();
+                game.dragon.clear();
                 cancel.store(true, Ordering::Relaxed);
                 // The dispenser calls the shared constructor directly.
                 assert!(game.spawn_dragon_spawned(at, dispenser).is_none());
                 assert!(game.dragon.is_none(), "a refused dragon never stays loaded");
                 game.native_joins_flush(false, 0);
-                assert_eq!(*joins.lock().unwrap(), vec![(id, false), (id + 9, false)]);
+                assert_eq!(*joins.lock().unwrap(), vec![(id, false), (id + 9, false), (id + 18, false)]);
             });
         });
     }
