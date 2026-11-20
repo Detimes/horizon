@@ -32,7 +32,7 @@ impl Game<'_> {
                     == "minecraft:ender_chest"
             })
         {
-            self.announce_ender_chest_opened(uuid, p);
+            self.native_ender_chest_opened(uuid, p);
         }
         !cancel
     }
