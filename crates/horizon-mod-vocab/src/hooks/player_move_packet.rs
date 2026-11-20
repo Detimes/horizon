@@ -12,6 +12,9 @@ pub trait Hooks {
     /// tick in a level (the tick after a join or a level change), a teleport's confirmation and a
     /// passage crossing. Heard with the player's state swapped in, before `player_move` hears the
     /// same packet. Not cancellable (`player_move` vetoes). With no listener nothing is queued.
+    /// Each guest is heard at most 8 packets per tick; the packets over that wait, in order, for
+    /// the next ticks (at most 256 wait, the oldest are dropped past that). Only the hook is
+    /// budgeted, the movement itself is processed as it arrives.
     /// Server-side.
     #[notes = r#"## Player move packet
 

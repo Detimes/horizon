@@ -374,3 +374,45 @@ fn the_first_tick_in_a_level_is_not_heard_as_a_packet() {
     hub.guests.update(0, |g| g.level_entered = 9);
     assert!(packets(&drain(&mut hub)).is_empty());
 }
+
+/// A status-only packet whose ground flag follows `n`: it passes the one-position-a-tick guard
+/// each time, so a client can send any number of them.
+fn status(n: usize) -> S {
+    S::MovePlayerStatus(play::MovePlayerStatus {
+        flags: u8::from(n % 3 == 0),
+    })
+}
+
+#[test]
+fn more_packets_than_the_budget_are_told_over_the_next_ticks_in_order() {
+    let total = MOVE_PACKET_BUDGET + 3;
+    let mut hub = standing(false, (0..total).map(status).collect());
+    hub.move_packets_listened = true;
+    let first = packets(&drain(&mut hub));
+    assert_eq!(
+        first.len(),
+        MOVE_PACKET_BUDGET,
+        "exactly the budget in one tick"
+    );
+    // The next tick has no new packet: the rest still comes, in order.
+    hub.ticks += 1;
+    let second = packets(&drain(&mut hub));
+    assert_eq!(second.len(), 3);
+    let grounds: Vec<bool> = first.iter().chain(&second).map(|p| p.3.0).collect();
+    let want: Vec<bool> = (0..total).map(|n| n % 3 == 0).collect();
+    assert_eq!(grounds, want);
+    hub.ticks += 1;
+    assert!(packets(&drain(&mut hub)).is_empty());
+}
+
+#[test]
+fn the_queue_of_packets_over_the_budget_is_bounded_and_drops_the_oldest() {
+    let total = MOVE_PACKET_BUDGET + MOVE_PACKET_QUEUE + 5;
+    let mut hub = standing(false, (0..total).map(status).collect());
+    hub.move_packets_listened = true;
+    assert_eq!(packets(&drain(&mut hub)).len(), MOVE_PACKET_BUDGET);
+    assert_eq!(hub.guests[0].move_packet_queue.len(), MOVE_PACKET_QUEUE);
+    // The 5 oldest of those over the budget were dropped: the queue starts at packet 13.
+    let want = (MOVE_PACKET_BUDGET + 5) % 3 == 0;
+    assert_eq!(hub.guests[0].move_packet_queue[0].on_ground, want);
+}

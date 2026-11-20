@@ -23,6 +23,19 @@ impl Hub {
     /// changed.
     pub fn drain_packets(&mut self, ctx: &mut TickCtx) -> Vec<HostEvent> {
         let mut events = Vec::new();
+        if self.packet_drain.is_none() {
+            // A new tick: the packets over last tick's budget go first.
+            for i in 0..self.guests.len() {
+                if self.guests[i].move_packet_queue.is_empty() {
+                    continue;
+                }
+                if self.move_packets_listened {
+                    self.tell_move_packets(i, &mut events);
+                } else {
+                    self.guests.update(i, |g| g.move_packet_queue.clear());
+                }
+            }
+        }
         let mut pass = self.packet_drain.take().unwrap_or_else(|| PacketDrain {
             conns: self
                 .guests
