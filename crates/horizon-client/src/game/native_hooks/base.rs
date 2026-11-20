@@ -2061,15 +2061,17 @@ impl Game<'_> {
     /// away, the owner dying), nor the host of a LAN world's rod. The
     /// player's state is swapped in, so `native_acting_player`, `native_tell`
     /// and the item helpers reach them. Once for each cast, bite and reel-in,
-    /// on a server.
+    /// on a server. `caught` is the entity id the bobber holds on a state-4 reel-in (a mob,
+    /// an armour stand, an item), and `None` otherwise.
     pub(in crate::game) fn native_player_fish(
         &mut self,
         player: u128,
         name: &str,
         state: i32,
+        caught: Option<u32>,
         cancel: &mut bool,
     ) {
-        self.fire_player_fish(player, name, state, cancel);
+        self.fire_player_fish(player, name, state, caught, cancel);
     }
     /// A sculk sensor or shrieker received a vibration for `event` at `pos`.
     /// Set `cancel` to suppress its response. Server-side.
