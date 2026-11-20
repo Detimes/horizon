@@ -436,6 +436,13 @@ pub trait LivingBackendMut {
     /// dragon or a stale handle.
     #[access(WorldOnly)]
     fn living_set_sprinting(&mut self, living: LivingRef, sprinting: bool) -> bool;
+    /// `TamableAnimal.setTame(tame, false)`: sets whether a tamable mob (a wolf,
+    /// cat, parrot or horse) is tame. The owner stays as it was, and the taming
+    /// side effects do not run: no advancement, no particles, no attribute
+    /// update. False for a kind that cannot be tamed, a player, an armor stand,
+    /// the dragon or a stale handle.
+    #[access(WorldOnly)]
+    fn living_set_tamed(&mut self, living: LivingRef, tamed: bool) -> bool;
     /// Side: server.
     /// Sets the entity's health (`LivingEntity.setHealth`; Paper's
     /// `Damageable#setHealth`), cut to its maximum health. No heal or damage
