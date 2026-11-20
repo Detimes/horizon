@@ -264,7 +264,19 @@ concurrency group of their own ([When it releases](#when-it-releases)).
 gh workflow run prebuilt-game.yml --ref main                         # full dry run
 gh workflow run nightly-build.yml --ref main -f dry_run=true         # SDK + game dry run
 gh workflow run prebuilt-game.yml --ref main -f dry_run=false         # maintainer publication, after review/CI
+gh workflow run prebuilt-game.yml --ref main -f off_main=true -f commit=<full sha>   # dry run of a dry-run/* commit
 ```
+
+Its `commit` gets the Nightly's base rule (its dry run off main, under
+[Trusted reviewers pick the Nightly's pull requests](#trusted-reviewers-pick-the-nightlys-pull-requests): `nightly.py
+base`, run from this workflow's own commit, checked out beside the judged one and never inside it): on main, or, in a
+dry run with `off_main` only, a commit a
+freshly fetched `dry-run/*` branch holds. A pull request's head, another branch's commit or a bare SHA is refused, a
+dry run's too, and so is `off_main` with a commit on main or in a real run; the run's name says `(off main)`. A
+branch run's own commit, off main, needs the same: a `dry-run/*` branch holding it and `off_main`. The
+dry run runs the commit's own build scripts in jobs whose GitHub Actions cache scope is main's when dispatched from
+main, which is why the commit must be one somebody with push rights chose. No job on the route saves a cache: no
+`actions/cache`, Rust cache, sticky disk or compiler cache (tests/test_nightly.py pins it).
 
 These are publication machinery, not evidence that a candidate has shipped. Activate a candidate only after
 code-owner review, green exact-head CI and the real platform/native canaries. A Nightly predating this route may
@@ -367,7 +379,8 @@ commits) since the commit the published Nightly was built on:
   the concurrency group `nightly-build`, which never cancels a running build. A dry run (`dry_run`, or any dispatch
   off main) gets a group of its own, `nightly-build-dry-<run id>`: it never holds up a real cut (the rerun of its
   `sdk-publish` jobs queues in the shared group) nor replaces it or another dry run as the waiting run, so a dry run
-  can start while a cut waits. The run's name says `(dry run)` or `(real)` and the `base` it was given. At most 12
+  can start while a cut waits. The run's name says `(dry run)` or `(real)` and the `base` it was given, and
+  `(off main)` for a dry run's base off main. At most 12
   builds a UTC day (the reviewers' `/nightly` builds count): past that the train waits for the next day, except for
   `release-now` and `force=true`.
 - A scheduled run takes main's newest commit where `checks` and `parity-main` passed (a later failed
@@ -681,7 +694,10 @@ No SDK compilation is needed to evaluate this design.
 
 `.github/workflows/launcher.yml` releases the launcher the same way. It starts on a push to main that changes
 `launcher/`, `crates/horizon-prepare/` or `crates/horizon-theme/` (what the launcher builds in), every hour at :47,
-and by hand; pushes to `launcher` and `launcher-*` branches only build.
+and by hand; pushes to `launcher` and `launcher-*` branches only build. Branch builds of the launcher (any run off
+main) are unsigned and run on GitHub-hosted runners; signing stays on main. The notes and the signature check
+run on every run with a token that only reads; a separate publish job, only for main's real release, creates the
+release.
 
 - `tools/release_train.py decide --kind launcher` counts the pull requests merged since the last published
   launcher release that changed those paths (not `launcher/links.json`, which the launcher reads from main, nor
@@ -857,6 +873,35 @@ gh workflow run "nightly build"                  # now; skips when the pick is t
 gh workflow run "nightly build" -f force=true    # build and publish anyway
 gh workflow run "nightly build" -f dry_run=true  # build and sign with a throwaway key, publish nothing
 ```
+
+A dry run can build a commit that is not on main yet, so a fix is tried before it merges. Push the commit to a
+branch under `dry-run/` (the one prefix reserved for this; pushing there is someone with push rights saying "this
+commit may be dry-run built"), dispatch from main with the full SHA, and delete the branch afterwards:
+
+```sh
+git push origin <sha>:refs/heads/dry-run/<name>
+gh workflow run "nightly build" --ref main -f dry_run=true -f off_main=true -f base=<full sha>
+git push origin --delete dry-run/<name>          # once the run is over
+```
+
+`pick` takes such a base only in a dry run with `off_main` set, and only when a `dry-run/*` branch, fetched fresh,
+holds it. Any other branch doesn't count (some hold outside code nobody reviewed: fork snapshots, Dependabot's
+bumps), nor does a pull request's `refs/pull/*` head: GitHub hands out a fork's commits by SHA here too, so having
+the commit proves nothing. `off_main` with a base on main stops too, so the run's name (`(off main)`) and summary
+never say it wrongly. Such a run gets no repository secrets (the signing keys reach `sign` jobs on a real run only),
+and nothing publishes. Every dry run's own `nightly/dry-run-<run id>-<attempt>` branch is deleted when it ends,
+failed or cancelled too (`dry-run-cleanup`, by that exact name).
+
+What it proves: the candidate's build, smoke test and SDK indexing. It still runs main's `nightly-build.yml`, the
+reusable workflows and `nightly.py pick`, so a fix to those can't be proven this way.
+
+Known limit, not solved: an off-main dry run runs the candidate's build scripts on the Mac mini's
+`ludovics-mac-mini-nightly` runner, the same persistent runner later real Nightlies use, and nothing isolates runner
+state outside the checkout. The control is who may push `dry-run/*`: the same people who can already dispatch the
+workflow from their own branch, which runs that branch's workflow on the same runner. So the option adds no new
+capability; it only removes the need to edit the workflow. As an untrusted build (`trusted: false`) it never uses the
+release runner and never saves the GitHub Actions Rust cache, but on the Mac it can read and write the machine's
+local compiler cache (sccache, `tools/ci/runner-env.sh`), which only trusted builds skip.
 
 ## Nightly audit
 
