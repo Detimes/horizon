@@ -946,6 +946,10 @@ impl Game<'_> {
             None => scaled,
         };
         let at = [destination.x, destination.y, destination.z];
+        // The tree change_level sends is decided again, not taken from the last one.
+        if let Some(conn) = self.lan.as_ref().map(|host| host.hub.guests[i].conn) {
+            self.native_refresh_node_paths(conn);
+        }
         let ctx = server_ctx!(self);
         // Through a portal: the client waits on its loading screen until
         // the exit is found (`arrive_server_trips`). The cooldown is the one
@@ -1526,6 +1530,8 @@ impl Game<'_> {
                 (yaw, pitch, origin, passenger_body)
             });
             let cooldown = host.play.get(&t.conn).map_or(0, |p| p.portal.cooldown);
+            // The tree change_level sends is decided again, not taken from the last one.
+            self.native_refresh_node_paths(t.conn);
             let ctx = server_ctx!(self);
             if let Some(host) = self.lan.as_mut() {
                 host.hub

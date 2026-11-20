@@ -196,11 +196,14 @@ impl PermissionHost for Game<'_> {
         )
     }
 
+    /// A guest still joining counts: its first command tree is decided while it is not placed yet,
+    /// and must see the same online state as the command it runs right after.
     fn online_level(&self, uuid: u128) -> Option<u8> {
         self.lan.as_ref().and_then(|host| {
             host.hub
-                .online_players()
-                .find(|guest| guest.uuid == uuid)
+                .guests
+                .iter()
+                .find(|guest| guest.uuid == uuid && guest.participates_online())
                 .map(|guest| guest.permission)
         })
     }

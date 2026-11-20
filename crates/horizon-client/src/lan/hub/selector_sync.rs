@@ -31,6 +31,8 @@ impl Hub {
         // The paths a permission node refuses this player: their end is not runnable and
         // a branch left with nothing under it goes too.
         hide_command_paths(&mut packet, &g.hidden_command_paths);
+        // A modified client reads every node in the array: only what the root still reaches is sent.
+        keep_reachable_nodes(&mut packet);
         if g.brand == "horizon" {
             g.send(&C::CustomPayload(
                 horizon_protocol::packets::configuration::CustomPayload {
@@ -79,6 +81,47 @@ fn hide_command_paths(packet: &mut play::Commands, paths: &[Vec<String>]) {
                 .retain(|&c| c as usize != child);
         }
     }
+}
+
+/// Drops every node the root no longer reaches through children or redirects, and renumbers the
+/// rest, so a node taken out of the tree is not in the packet at all.
+fn keep_reachable_nodes(packet: &mut play::Commands) {
+    let count = packet.nodes.len();
+    let mut reached = vec![false; count];
+    let mut stack = vec![packet.root as usize];
+    while let Some(index) = stack.pop() {
+        if index >= count || reached[index] {
+            continue;
+        }
+        reached[index] = true;
+        let node = &packet.nodes[index];
+        stack.extend(node.children.iter().map(|&child| child as usize));
+        stack.extend(node.redirect.map(|redirect| redirect as usize));
+    }
+    if reached.iter().all(|&kept| kept) {
+        return;
+    }
+    let mut renumbered = vec![None; count];
+    let mut next = 0;
+    for (index, kept) in reached.iter().enumerate() {
+        if *kept {
+            renumbered[index] = Some(next);
+            next += 1;
+        }
+    }
+    let new_index = |old: i32| renumbered.get(old as usize).copied().flatten();
+    packet.root = new_index(packet.root).unwrap_or(0);
+    let nodes = std::mem::take(&mut packet.nodes);
+    packet.nodes = nodes
+        .into_iter()
+        .zip(&reached)
+        .filter(|(_, kept)| **kept)
+        .map(|(mut node, _)| {
+            node.children = node.children.iter().filter_map(|&c| new_index(c)).collect();
+            node.redirect = node.redirect.and_then(new_index);
+            node
+        })
+        .collect();
 }
 
 #[cfg(test)]
@@ -152,6 +195,74 @@ mod hide_command_paths_tests {
         // `set` stays as the parent of `amount`, so the branch is kept but not runnable at `set`.
         assert_eq!(children_of(&packet, 1), vec![2]);
         assert_eq!(children_of(&packet, 2), vec![3]);
+    }
+
+    fn encoded(packet: &play::Commands) -> Vec<u8> {
+        use horizon_protocol::buf::{Codec, Writer};
+        let mut out = Writer::new();
+        <play::Commands as Codec<play::Commands>>::write(packet, &mut out);
+        out.data
+    }
+
+    #[test]
+    fn a_hidden_literal_is_not_in_the_encoded_packet() {
+        let mut packet = tree();
+        hide_command_paths(&mut packet, &[vec!["pay".to_owned()]]);
+        keep_reachable_nodes(&mut packet);
+        let bytes = encoded(&packet);
+        assert!(!bytes.windows(3).any(|w| w == b"pay"));
+        assert!(bytes.windows(4).any(|w| w == b"warp"));
+        assert_eq!(packet.nodes.len(), 4);
+        assert_eq!(packet.nodes[packet.root as usize].children, vec![1]);
+    }
+
+    #[test]
+    fn a_hidden_argument_branch_leaves_with_its_nodes_and_indices_are_renumbered() {
+        let mut packet = tree();
+        hide_command_paths(&mut packet, &[vec!["warp".to_owned()]]);
+        // `warp` stays (its `set` branch is still reachable) but is not runnable.
+        hide_command_paths(
+            &mut packet,
+            &[vec![
+                "warp".to_owned(),
+                "set".to_owned(),
+                "amount".to_owned(),
+            ]],
+        );
+        keep_reachable_nodes(&mut packet);
+        let names: Vec<&str> = packet.nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, vec!["", "warp", "set", "pay"]);
+        assert_eq!(packet.nodes[0].children, vec![1, 3]);
+        assert_eq!(packet.nodes[2].children, Vec::<i32>::new());
+        assert!(!encoded(&packet).windows(6).any(|w| w == b"amount"));
+    }
+
+    #[test]
+    fn a_redirect_target_stays_and_follows_its_new_index() {
+        // 0 root, 1 unreachable, 2 tp (redirects to 3), 3 teleport
+        let mut packet = play::Commands {
+            nodes: vec![
+                node("", false, vec![2, 3]),
+                node("gone", true, vec![]),
+                node("tp", true, vec![]),
+                node("teleport", true, vec![]),
+            ],
+            root: 0,
+        };
+        packet.nodes[2].redirect = Some(3);
+        keep_reachable_nodes(&mut packet);
+        let names: Vec<&str> = packet.nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, vec!["", "tp", "teleport"]);
+        assert_eq!(packet.nodes[0].children, vec![1, 2]);
+        assert_eq!(packet.nodes[1].redirect, Some(2));
+    }
+
+    #[test]
+    fn a_tree_with_nothing_hidden_is_left_as_it_is() {
+        let mut packet = tree();
+        let before = packet.clone();
+        keep_reachable_nodes(&mut packet);
+        assert_eq!(packet, before);
     }
 
     #[test]
