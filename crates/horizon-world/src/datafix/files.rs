@@ -699,13 +699,32 @@ pub fn adopt_dimension_saved_data(base: &Path) -> io::Result<Vec<&'static str>> 
     let mut copied = Vec::new();
     for file in SERVER_SAVED_DATA {
         let from = overworld.join(file);
-        if from.is_file() {
-            fs::create_dir_all(&root)?;
-            fs::copy(&from, root.join(file))?;
-            copied.push(file);
+        if !from.is_file() {
+            continue;
         }
+        if let Err(e) = adopt_one(&from, &root, file) {
+            // One operation: what this attempt put in the root goes again, so a later open
+            // finds no root file and adopts all four.
+            for done in &copied {
+                let _ = fs::remove_file(root.join(done));
+            }
+            return Err(e);
+        }
+        copied.push(file);
     }
     Ok(copied)
+}
+
+/// Copies one saved data file into the root through a temporary name, so a failed copy never
+/// leaves a partial file under the real one.
+fn adopt_one(from: &Path, root: &Path, file: &str) -> io::Result<()> {
+    fs::create_dir_all(root)?;
+    let partial = root.join(format!("{file}.adopting"));
+    let copied = fs::copy(from, &partial).and_then(|_| fs::rename(&partial, root.join(file)));
+    if copied.is_err() {
+        let _ = fs::remove_file(&partial);
+    }
+    copied
 }
 
 /// The world's generator settings as 26.3 reads them once the file fixes have run, without
@@ -1420,6 +1439,36 @@ mod paper_layout_tests {
             seed.get("data").and_then(|d| d.get("seed")),
             Some(&Tag::Long(-4172144997902289642))
         );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A copy that fails halfway takes back what that attempt wrote: the next open adopts all
+    /// four, instead of stopping at the one root file the failed attempt left.
+    #[test]
+    fn a_failed_adoption_is_taken_back_and_retried_whole() {
+        let base = world("retry");
+        for f in SERVER_SAVED_DATA {
+            write_saved_data(&base.join(OVERWORLD).join(f), settings(7), 4899).unwrap();
+        }
+        // The second file's temporary name is taken by a folder: its copy fails.
+        let blocked = base
+            .join("data/minecraft")
+            .join(format!("{}.adopting", SERVER_SAVED_DATA[1]));
+        fs::create_dir_all(blocked.join("x")).unwrap();
+        assert!(adopt_dimension_saved_data(&base).is_err());
+        for f in SERVER_SAVED_DATA {
+            assert!(!base.join("data/minecraft").join(f).exists(), "{f}");
+        }
+        fs::remove_dir_all(&blocked).unwrap();
+        let copied = adopt_dimension_saved_data(&base).unwrap();
+        assert_eq!(copied, SERVER_SAVED_DATA.to_vec());
+        for f in SERVER_SAVED_DATA {
+            assert_eq!(
+                fs::read(base.join("data/minecraft").join(f)).unwrap(),
+                fs::read(base.join(OVERWORLD).join(f)).unwrap(),
+                "{f}"
+            );
+        }
         let _ = fs::remove_dir_all(&base);
     }
 
