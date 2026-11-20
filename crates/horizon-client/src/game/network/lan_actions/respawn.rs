@@ -182,9 +182,6 @@ impl Game<'_> {
         if let Some(host) = self.lan.as_mut() {
             host.hub.respawn_with(i, spawn, rotation, &ctx, false);
         }
-        // The permission nodes are asked with the player in the respawn level, then its tree is
-        // sent; a handler may change the guest list, so the index is found again.
-        self.send_tree_with_fresh_nodes(conn);
         let Some(i) = self
             .lan
             .as_ref()
@@ -218,6 +215,17 @@ impl Game<'_> {
                     .set_game_mode(conn, to.id(), &self.world, Some(self.collision));
             }
         }
+        // The permission nodes are asked with the player in the respawn level and in its game
+        // mode (a hardcore spectator), then its tree is sent; a handler or a game mode listener
+        // may change the guest list, so the index is found again.
+        self.send_tree_with_fresh_nodes(conn);
+        let Some(i) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().position(|g| g.conn == conn))
+        else {
+            return;
+        };
         // PlayerList.respawn: `copyRespawnPosition` hands the new player the
         // old point through `setRespawnPosition`: none, or an Overworld forced
         // point (`spawn`). A point with a block is copied once the block is
