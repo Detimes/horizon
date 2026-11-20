@@ -1264,11 +1264,13 @@ impl Game<'_> {
         let mut taken = false;
         if !self.hopper_is_stacked(&view) {
             let stack = self.dropped[i].stack.clone();
+            let entity = self.dropped[i].id;
             let allowed = self.with_level(|_, level, _| {
                 level.allow_hopper_pickup_item(
                     BlockPos::new(pos.0, pos.1, pos.2),
                     &stack.item,
                     stack.count,
+                    entity,
                 )
             });
             match allowed
@@ -1876,12 +1878,14 @@ impl Game<'_> {
                 && hi.z > min[2];
             if inside {
                 let stack = self.dropped[i].stack.clone();
+                let entity = self.dropped[i].id;
                 let allowed = hopper_pos.is_none_or(|pos| {
                     self.with_level(|_, level, _| {
                         level.allow_hopper_pickup_item(
                             BlockPos::new(pos.0, pos.1, pos.2),
                             &stack.item,
                             stack.count,
+                            entity,
                         )
                     })
                 });

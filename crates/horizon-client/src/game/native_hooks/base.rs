@@ -23,9 +23,10 @@ impl GameLevel<'_> {
         pos: BlockPos,
         item: &str,
         count: u32,
+        entity: u32,
         cancel: &mut bool,
     ) {
-        self.fire_hopper_pickup_item(dimension, pos, item, count, cancel);
+        self.fire_hopper_pickup_item(dimension, pos, item, count, entity, cancel);
     }
     /// An authoritative server committed a changed state through `Level.setBlock`.
     /// The world contains `new`; block side effects and neighbour updates follow.

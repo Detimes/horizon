@@ -1,0 +1,3 @@
+ids = ["hook:hopper_pickup_item", "type:HopperPickupItemEvent.entity"]
+why = "hopper_pickup_item names the dropped item's entity ID, so a mod can tie a pickup to the drop it is about (a locked death drop, for one), as Paper's InventoryPickupItemEvent gives the Item entity."
+migrate = "Rebuild listeners against hook version 2 and read entity as a u32; it is the ID of the ItemEntity being picked up."
