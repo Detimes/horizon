@@ -864,6 +864,18 @@ pub trait LevelsBackendMut {
     /// refusals. `MobCategory::Misc` has no limit: false, with nothing set.
     #[access(WorldOnly)]
     fn level_set_spawn_limit(&mut self, level: LevelRef, category: MobCategory, limit: u32) -> bool;
+    /// Sets how many ticks pass between one category's natural spawn passes (Paper's
+    /// `World#setTicksPerSpawns`), from the next pass on: 1 is every tick, as monsters have it,
+    /// and vanilla gives creatures 400. Kept and refused as `set_spawn_limits`. False, with
+    /// nothing set, for `MobCategory::Misc` (it never spawns naturally), for 0, on a client
+    /// and for a stale handle or a level that isn't open.
+    #[access(WorldOnly)]
+    fn level_set_ticks_per_spawn(
+        &mut self,
+        level: LevelRef,
+        category: MobCategory,
+        ticks: u32,
+    ) -> bool;
     /// Side: server.
     /// Sets which categories the level's natural spawning may spawn
     /// ([`SpawnFlags`]), from the next spawn pass on. Kept and refused as
