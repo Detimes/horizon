@@ -2303,16 +2303,18 @@ impl Game<'_> {
     ) {
         self.fire_player_insert_lectern_book(player, name, pos, book);
     }
-    /// A server player took the book from a lectern, after the menu and block entity changed. `book`
-    /// is the removed item id. Server-side.
+    /// A server player is about to take the book from a lectern, before the menu and block entity
+    /// change. `book` is the item id of the book it takes. Set `cancel` to leave the book on the
+    /// lectern. Server-side.
     pub(in crate::game) fn native_player_take_lectern_book(
         &mut self,
         player: u128,
         name: &str,
         pos: [i32; 3],
         book: &str,
+        cancel: &mut bool,
     ) {
-        self.fire_player_take_lectern_book(player, name, pos, book);
+        self.fire_player_take_lectern_book(player, name, pos, book, cancel);
     }
     /// A server player changed the page of a lectern, after its page and redstone pulse changed.
     /// `page` is the zero-based new page. Server-side.
@@ -2412,16 +2414,17 @@ impl Game<'_> {
     ) {
         self.fire_player_name_entity(player, name, entity_id, entity_name);
     }
-    /// A server player opened a sign for editing, after the editor state was made. `front` selects the
-    /// front or back side. Server-side.
+    /// A server player is about to open a sign for editing, before the editor state is made. `front`
+    /// selects the front or back side. Set `cancel` to keep the editor closed. Server-side.
     pub(in crate::game) fn native_player_open_sign(
         &mut self,
         player: u128,
         name: &str,
         pos: [i32; 3],
         front: bool,
+        cancel: &mut bool,
     ) {
-        self.fire_player_open_sign(player, name, pos, front);
+        self.fire_player_open_sign(player, name, pos, front, cancel);
     }
     /// A server player picked up an arrow after it was removed and its pickup was applied. `item` is
     /// the arrow's pickup item id. Server-side.
@@ -3042,10 +3045,15 @@ impl Game<'_> {
         self.fire_block_damage_abort(player, name, pos);
     }
     /// A hopper at `pos` began an item transfer attempt. This runs after its
-    /// cooldown and enabled checks, before pushing or pulling any items.
-    /// Server-side, including the single-player server.
-    pub(in crate::game) fn native_prepare_hopper_transfer(&mut self, pos: [i32; 3]) {
-        self.fire_prepare_hopper_transfer(pos);
+    /// cooldown and enabled checks, before pushing or pulling any items. Set
+    /// `cancel` to skip this attempt: nothing is pushed or pulled. Server-side,
+    /// including the single-player server.
+    pub(in crate::game) fn native_prepare_hopper_transfer(
+        &mut self,
+        pos: [i32; 3],
+        cancel: &mut bool,
+    ) {
+        self.fire_prepare_hopper_transfer(pos, cancel);
     }
     /// A hopper is about to move one item between containers, a composter's
     /// bone meal included. Set `cancel` to leave it in its source slot. A chest
