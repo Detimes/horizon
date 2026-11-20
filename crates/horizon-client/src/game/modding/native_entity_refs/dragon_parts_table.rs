@@ -193,7 +193,7 @@ impl DragonSet {
         }
     }
     fn register(&self, join: horizon_client::join_seq::JoinSeq, id: u32) {
-        if self.registered.borrow().iter().any(|e| *e == (join, id)) {
+        if self.registered.borrow().contains(&(join, id)) {
             return;
         }
         self.unregister(join);
@@ -313,12 +313,7 @@ impl DragonSet {
         id: u32,
         join: horizon_client::join_seq::JoinSeq,
     ) {
-        if self
-            .registered
-            .borrow()
-            .iter()
-            .any(|e| *e == (join, id))
-        {
+        if self.registered.borrow().contains(&(join, id)) {
             self.unregister(join);
         }
         self.list.retire_extracted(id, join);
@@ -358,7 +353,9 @@ mod lifecycle_tests {
         assert!(set.get(0).is_none() && set.get(31).is_none());
         assert_eq!(
             set.part_ids(),
-            [33, 35, 25, 27, 37, 31, 32, 28, 34, 24, 38, 36, 26, 23, 22, 21]
+            [
+                33, 35, 25, 27, 37, 31, 32, 28, 34, 24, 38, 36, 26, 23, 22, 21
+            ]
         );
         let first = set.extract().unwrap();
         assert_eq!(set.as_ref().map(|d| d.id), Some(30));

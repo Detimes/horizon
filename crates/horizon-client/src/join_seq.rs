@@ -558,7 +558,11 @@ impl<T, const DIRECT: bool> JoinList<T, DIRECT> {
     ) {
         let mut binding = journal.bind(owner, identity);
         binding.children(children.0, children.1, children.2);
-        if self.1.as_ref().is_some_and(|current| current.same(&binding)) {
+        if self
+            .1
+            .as_ref()
+            .is_some_and(|current| current.same(&binding))
+        {
             return;
         }
         self.bind_to(binding);
