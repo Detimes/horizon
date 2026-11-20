@@ -59,6 +59,13 @@ to component NBT by `host.text_to_nbt(&text)`; `None` removes the name and an em
 removes the lore. A refused text returns `TextFormError` and changes nothing. Vanilla draws a
 custom name in italics unless its style sets `italic: false`.
 
+A stack that holds stacks, a shulker box or chest item (`minecraft:container`) or a bundle
+(`minecraft:bundle_contents`), is read one level down with `stack.contained_stacks(host)`: the entries in the order
+stored, container first, with an entry left out when its item is unknown to the host, its count is zero or it is
+malformed, and at most 256 entries read of each. `stack.nesting_depth(host)` counts how many containers deep the
+stack goes (0 for none, 1 for a box of plain items, 2 for a box with a bundle inside) and stops at 64, so an item
+built to be deep cannot make the walk long: a scan for hostile items asks it once per stack.
+
 ## Game boundaries
 
 A consume or death-protection override whose opaque native effect payload cannot be decoded
