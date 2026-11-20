@@ -739,6 +739,29 @@ impl Game<'_> {
         }
     }
 
+    /// `AbstractPiglin.finishConversion` on mob `mob`: a piglin turns into a zombified piglin in its place
+    /// through the game's own conversion (equipment and loot pickup kept, the nausea after, the pre hook asked).
+    /// See the host declaration for what it refuses.
+    pub(super) fn mob_zombify(&mut self, mob: MobRef) -> bool {
+        let Some(Target::Mob(id)) = self.native_entity_target(mob.entity()) else {
+            return false;
+        };
+        let Some(from) = self.mobs.iter().find(|m| m.id == id && !m.removed).cloned() else {
+            return false;
+        };
+        if !matches!(from.species(), Species::Piglin) {
+            return false;
+        }
+        self.convert_to(
+            &from,
+            "minecraft:zombified_piglin",
+            mobs::conversion::Params::KEEP_ALL,
+            false,
+            |_, _| {},
+        )
+        .is_some()
+    }
+
     /// `Mob.canPickUpLoot`, with the overrides of an allay (holding
     /// something) and a sulfur cube (with no block). None for anything but
     /// a mob.
@@ -1798,6 +1821,31 @@ mod tests {
                 12,
             ));
             assert!(!game.mob_shear(stale));
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn mob_zombify_turns_a_piglin_into_a_zombified_piglin_once() {
+        with_game(|game| {
+            let piglin = game.res.mob_types().get("minecraft:piglin").unwrap().clone();
+            game.mobs.push(Mob::new(12, piglin, Vec3::ZERO, 0.0));
+            let mob = game.mob(game.entity(12).unwrap()).unwrap();
+            assert!(game.mob_zombify(mob));
+            assert!(
+                game.mobs.iter().all(|m| m.id != 12 || m.removed),
+                "the piglin is gone"
+            );
+            let zombie = game
+                .mobs
+                .iter()
+                .find(|m| !m.removed && matches!(m.species(), Species::ZombifiedPiglin))
+                .expect("a zombified piglin stands in its place");
+            assert_eq!(zombie.kind.id, "minecraft:zombified_piglin");
+            // The stale handle and a zombified piglin itself (not a piglin) change nothing.
+            assert!(!game.mob_zombify(mob));
+            let zombie_handle = game.mob(game.entity(zombie.id).unwrap()).unwrap();
+            assert!(!game.mob_zombify(zombie_handle));
         });
     }
 
