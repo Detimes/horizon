@@ -1364,6 +1364,58 @@ impl SidebarLine {
     }
 }
 
+/// What one viewer is sent in place of an entity's data (`player_send_entity_data`). Each field
+/// left `None` (and `remove_custom_name` left false) is not sent, so the viewer keeps what it has.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub struct EntityViewData {
+    /// A custom name to show (`Entity.DATA_CUSTOM_NAME`).
+    pub custom_name: Option<Text>,
+    /// Shows no custom name at all; with `custom_name` set it refuses as `Conflict`.
+    pub remove_custom_name: bool,
+    /// Whether the name shows at any distance (`Entity.DATA_CUSTOM_NAME_VISIBLE`).
+    pub custom_name_visible: Option<bool>,
+    /// The shared flags byte (`Entity.DATA_SHARED_FLAGS_ID`): bit 0 on fire, 1 crouching,
+    /// 3 sprinting, 4 swimming, 5 invisible, 6 glowing, 7 gliding. The whole byte replaces the
+    /// one the viewer has, so a mod that changes one bit sends the others it wants kept.
+    pub flags: Option<u8>,
+    /// The pose the viewer draws (`Entity.DATA_POSE`).
+    pub pose: Option<Pose>,
+}
+impl EntityViewData {
+    /// Data that changes nothing yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// Why `player_send_entity_data` sent nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub enum EntityViewError {
+    /// The call was made on a client; this is the server's.
+    Client,
+    /// The viewer handle no longer identifies a player in the server's list.
+    Stale,
+    /// The viewer has no connection to send to (a fake player).
+    NoConnection,
+    /// The entity handle no longer names an entity in the world.
+    StaleEntity,
+    /// No field of the data is set.
+    Empty,
+    /// `custom_name` is set together with `remove_custom_name`.
+    Conflict,
+    /// The custom name is a text the boundary refuses (nested too deep, malformed...).
+    Text(TextFormError),
+}
+impl crate::NoBackend for EntityViewError {
+    fn no_backend() -> Self {
+        Self::Stale
+    }
+}
+
 /// A player's server-side abilities (`Abilities`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
