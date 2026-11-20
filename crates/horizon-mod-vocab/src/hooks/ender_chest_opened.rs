@@ -9,7 +9,7 @@ pub trait Hooks {
         side = "server",
         contract = "listen",
         neoforge = "none (NeoForge has no such event)",
-        target = "horizon_client::game::Game<'_>::native_ender_chest_opened"
+        target = "horizon_client::game::native_ender_chest_opened::Game<'_>::native_ender_chest_opened"
     )]
     fn ender_chest_opened();
 }
