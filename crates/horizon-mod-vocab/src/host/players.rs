@@ -997,6 +997,12 @@ pub trait PlayersBackendMut {
     /// value is outside 2 to 32 or the player is not on here.
     #[access(WorldOnly)]
     fn player_set_simulation_distance(&mut self, player: PlayerRef, chunks: i32) -> bool;
+    /// `Player.setViewDistance`: sets how many chunks that player is sent, from 2 to 32 and at most the
+    /// server's view distance (a larger value is clamped to it). Their client is told the radius at once
+    /// and the chunks follow it, until the server's view distance changes or they rejoin. False when the
+    /// value is outside 2 to 32, or the player's record is not in the player list at that moment.
+    #[access(WorldOnly)]
+    fn player_set_view_distance(&mut self, player: PlayerRef, chunks: i32) -> bool;
     /// Side: server.
     /// `FoodData.eat(nutrition, saturationModifier)`: adds `nutrition` to
     /// the food level (0 to 20) and `nutrition * modifier * 2` to the
