@@ -642,6 +642,19 @@ pub trait LevelsBackend {
     /// a stale handle or on a client. Loads nothing.
     #[access(WorldOnly)]
     fn level_loaded_chunks(&self, level: LevelRef) -> Option<Vec<ChunkRef>>;
+    /// Side: server.
+    /// The 4096 block states of a chunk section of an open server level, in vanilla's
+    /// `LevelChunkSection.states` order: index `(y << 8) | (z << 4) | x`, each 0 to 15 inside the
+    /// section. `section` is `[cx, sy, cz]` as `SectionPos` reads it: the chunk x and z, and the
+    /// section y (block y `sy * 16` to `sy * 16 + 15`). Loads nothing: None on a client, for a stale
+    /// level, for a section whose chunk is not loaded, and for one outside build height.
+    #[access(WorldOnly)]
+    fn level_section_blocks(&self, level: LevelRef, section: [i32; 3]) -> Option<Vec<BlockState>>;
+    /// Side: server.
+    /// Whether all 4096 blocks of that section are air (`LevelChunkSection.hasOnlyAir`). Same
+    /// section, refusals and order as `level_section_blocks`; None where that refuses.
+    #[access(WorldOnly)]
+    fn level_section_has_only_air(&self, level: LevelRef, section: [i32; 3]) -> Option<bool>;
     /// Side: both.
     /// World-space block collision boxes under an empty collision context, without entities or border. Refuses a stale or nonresident level and invalid or overlarge boxes.
     /// On a client, the level it shows or a viewed one (`host.level`), each through its own

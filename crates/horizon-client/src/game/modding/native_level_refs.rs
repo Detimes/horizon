@@ -384,6 +384,60 @@ impl Game<'_> {
     pub(super) fn chunk_loaded(&self, chunk: ChunkRef) -> bool {
         self.chunk(chunk.level(), chunk.pos()).is_some()
     }
+    /// The engine ids of a chunk section's 4096 blocks, in `(y << 8) | (z << 4) | x` order, or None
+    /// under the rules `level_section_blocks` states (server only, loaded chunk, inside build height).
+    fn native_section_ids(
+        &self,
+        level: LevelRef,
+        [cx, sy, cz]: [i32; 3],
+    ) -> Option<Vec<BlockStateId>> {
+        if !self.is_logical_server() {
+            return None;
+        }
+        let world = self.native_level_read_world(level)?;
+        let min_y = sy.checked_mul(16)?;
+        let max_y = min_y.checked_add(15)?;
+        if !world.shape.contains_y(min_y) || !world.shape.contains_y(max_y) {
+            return None;
+        }
+        let (x0, z0) = (cx.checked_mul(16)?, cz.checked_mul(16)?);
+        if !world.loaded(x0, z0) {
+            return None;
+        }
+        let mut ids = Vec::with_capacity(4096);
+        for y in min_y..=max_y {
+            for z in 0..16 {
+                for x in 0..16 {
+                    ids.push(world.block(x0 + x, y, z0 + z));
+                }
+            }
+        }
+        Some(ids)
+    }
+    /// `level_section_blocks`: the section's 4096 block states as API values, in vanilla's order.
+    /// None when a state has no API value (it cannot happen for a loaded block).
+    pub(super) fn level_section_blocks(
+        &self,
+        level: LevelRef,
+        section: [i32; 3],
+    ) -> Option<Vec<mod_api::BlockState>> {
+        use crate::game::api_values::TryIntoApi;
+        self.native_section_ids(level, section)?
+            .into_iter()
+            .map(|id| id.try_into_api().ok())
+            .collect()
+    }
+    /// `level_section_has_only_air`: every block of the section is `minecraft:air`. The scan reads
+    /// the section's ids once; vanilla answers from a flag the section keeps.
+    pub(super) fn level_section_has_only_air(
+        &self,
+        level: LevelRef,
+        section: [i32; 3],
+    ) -> Option<bool> {
+        let ids = self.native_section_ids(level, section)?;
+        let air = self.pack.assets.registry.default_state("minecraft:air")?;
+        Some(ids.iter().all(|&id| id == air))
+    }
     /// The status of a loaded chunk. Proto chunks are not exposed here.
     pub(super) fn chunk_status(&self, chunk: ChunkRef) -> Option<ChunkStatus> {
         self.chunk(chunk.level(), chunk.pos())
@@ -1027,6 +1081,44 @@ mod tests {
     use super::super::{Dim, native_entity_refs::tests::with_game};
     use horizon_core::position::BlockPos;
     use mod_api::{ChunkRef, LevelRef, LightLayer, WorldEpoch};
+
+    /// `level_section_blocks` and `level_section_has_only_air` on a chunk with one stone block at
+    /// (1, 64, 1): section 4 holds it at index 17 ((0 << 8) | (1 << 4) | 1), section 0 is all air,
+    /// and a section outside the built range or of an unloaded chunk refuses.
+    #[test]
+    #[ignore = "daily"]
+    fn section_reads_index_blocks_in_vanillas_order_and_refuse_unloaded_ones() {
+        use horizon_client::chunk::Chunk;
+        use std::sync::Arc;
+
+        with_game(|game| {
+            game.world
+                .chunks
+                .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+            let level = game.level(game.dim.id()).unwrap();
+            let stone = game.pack.assets.registry.default_state("minecraft:stone").unwrap();
+            game.world.set(1, 64, 1, stone).unwrap();
+            let air: mod_api::BlockState = game
+                .pack
+                .assets
+                .registry
+                .default_state("minecraft:air")
+                .unwrap()
+                .try_into_api()
+                .unwrap();
+            let stone_api: mod_api::BlockState = stone.try_into_api().unwrap();
+
+            assert_eq!(level.section_has_only_air(game, [0, 0, 0]), Some(true));
+            assert_eq!(level.section_has_only_air(game, [0, 4, 0]), Some(false));
+            let blocks = level.section_blocks(game, [0, 4, 0]).unwrap();
+            assert_eq!(blocks.len(), 4096);
+            assert_eq!(blocks[17], stone_api);
+            assert_eq!(blocks.iter().filter(|&&b| b != air).count(), 1);
+            assert_eq!(level.section_blocks(game, [0, 0, 0]).unwrap()[0], air);
+            assert_eq!(level.section_has_only_air(game, [5, 4, 5]), None, "chunk not loaded");
+            assert_eq!(level.section_blocks(game, [0, 5000, 0]), None, "past build height");
+        });
+    }
 
     #[test]
     #[ignore = "daily"]
