@@ -898,6 +898,14 @@ pub trait PlayersBackendMut {
         player: PlayerRef,
         location: Option<GlobalPos>,
     ) -> bool;
+
+    /// Side: server.
+    /// `Player.setSimulationDistance`: tells that player's client how far around them entities are
+    /// simulated, from 2 to 32 chunks (`ClientboundSetSimulationDistancePacket`). Only their client
+    /// changes: the server's simulation distance and the other players keep theirs. False when the
+    /// value is outside 2 to 32 or the player is not on here.
+    #[access(WorldOnly)]
+    fn player_set_simulation_distance(&mut self, player: PlayerRef, chunks: i32) -> bool;
     /// Side: server.
     /// `FoodData.eat(nutrition, saturationModifier)`: adds `nutrition` to
     /// the food level (0 to 20) and `nutrition * modifier * 2` to the
