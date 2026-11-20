@@ -127,6 +127,10 @@ are shown, top first, each with its text and an optional right-hand value. The s
 world's scoreboard, so `/scoreboard` and other players do not see it, and it is gone when the player leaves.
 It returns `Ok(false)` for a player who is not online; a text the boundary refuses changes nothing.
 
+The statistics of a player who is not online are read with `host.offline_player_statistics(uuid)`: the same
+JSON text `player.statistics(host)` returns, taken from the player's `stats/<uuid>.json` file as of the
+last save (use `player.statistics(host)` for someone online, whose live counters are newer). It is `None` for a player with no file, a file that is not a `stats` object of whole numbers that fit an `i32`, a file over 4 MiB, and on a client or in a remote world. It only reads: the file is never written.
+
 To change only the name in the Tab list, use `player.set_list_name(host, Some(text))`.
 Everyone sees the new name at once, colours included; `None` shows the nickname or real
 name again. The name is kept by UUID until a mod sets it again or the server stops, also
