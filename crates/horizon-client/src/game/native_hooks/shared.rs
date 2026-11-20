@@ -2488,7 +2488,8 @@ impl Game<'_> {
         let to = facts.get(state).name.clone();
         self.level_set(pos, state)?;
         if let Some(kind) = kind {
-            self.native_entity_change_block(mob, &kind, pos, &from, &to);
+            let dimension = self.dim.id();
+            self.native_entity_change_block(dimension, mob, &kind, pos, &from, &to);
         }
         Ok(())
     }

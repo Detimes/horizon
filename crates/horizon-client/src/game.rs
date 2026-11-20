@@ -4370,6 +4370,7 @@ impl Game<'_> {
             player,
             entity: None,
             kind: "minecraft:player",
+            dimension: self.dim.id(),
             pos: [position.x, position.y, position.z],
             from,
             to,

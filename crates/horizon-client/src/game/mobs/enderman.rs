@@ -213,7 +213,8 @@ impl Game<'_> {
         }
         self.process_level_events()?;
         if changed {
-            self.native_entity_change_block(mob, &kind, pos, &from, &to);
+            let dimension = self.dim.id();
+            self.native_entity_change_block(dimension, mob, &kind, pos, &from, &to);
         }
         Ok(())
     }

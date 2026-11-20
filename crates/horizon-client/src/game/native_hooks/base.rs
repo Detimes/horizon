@@ -2964,16 +2964,17 @@ impl Game<'_> {
         self.fire_entity_break_door(entity, kind, pos);
     }
 
-    /// A mob changed a block at `pos`, after the new state was applied.
+    /// A mob changed a block at `pos` of the level `dimension`, after the new state was applied.
     pub(in crate::game) fn native_entity_change_block(
         &mut self,
+        dimension: &str,
         entity: u32,
         kind: &str,
         pos: [i32; 3],
         from: &str,
         to: &str,
     ) {
-        self.fire_entity_change_block(entity, kind, pos, from, to);
+        self.fire_entity_change_block(dimension, entity, kind, pos, from, to);
     }
 
     /// A bee entered the hive at `pos` and was stored there.

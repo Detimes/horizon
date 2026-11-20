@@ -3161,6 +3161,7 @@ impl Game<'_> {
                                     player: None,
                                     entity: Some(mob),
                                     kind: &kind,
+                                    dimension: self.dim.id(),
                                     pos,
                                     from,
                                     to: state,
@@ -3174,7 +3175,10 @@ impl Game<'_> {
                                 && let Some(m) = self.mobs.iter().find(|m| m.id == mob)
                             {
                                 let kind = m.kind.id.clone();
-                                self.native_entity_change_block(mob, &kind, pos, &old_name, name);
+                                let dimension = self.dim.id();
+                                self.native_entity_change_block(
+                                    dimension, mob, &kind, pos, &old_name, name,
+                                );
                             }
                         }
                     }
