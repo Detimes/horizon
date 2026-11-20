@@ -46,6 +46,7 @@ mod glass_storage;
 mod glass_toast;
 mod glass_ui;
 mod glass_versions;
+mod glide;
 mod home;
 mod home_tabs;
 mod import_page;
@@ -275,6 +276,9 @@ struct Launcher {
     update_error: Option<String>,
     self_update: SelfUpdate,
     self_update_hidden: bool,
+    /// The restart for links.json's `min_launcher` was tried this start, or this launcher is
+    /// what one started: it isn't tried (again) before the next start.
+    min_restart_tried: bool,
     /// The Horizon version being installed as an update: whether it becomes the selected one is
     /// judged when it finishes.
     update_install: Option<String>,
@@ -283,6 +287,11 @@ struct Launcher {
     instance_install: Option<String>,
     /// One for an instance waiting for the install running now to end.
     install_next: Option<Release>,
+    /// The Stable build Home's Update is installing (`nightly::install_stable`).
+    stable_install: Option<Release>,
+    /// A Stable build whose download failed: not offered again until the release list is read
+    /// from the network (`Msg::ReleasesFromNetwork`).
+    stable_failed: Option<Release>,
     /// The install bar's previous and current fraction, so it moves rather than jumps.
     bar: (f32, f32),
     releases: Load<Vec<Release>>,
@@ -321,6 +330,9 @@ struct Launcher {
     /// Native mods (`native_mods`, on the Mods page): the build's step while it runs, why it
     /// failed, and the warning before a build while it is open, with the mods it names.
     native_step: Option<String>,
+    /// A build waiting for its base version's preparation, or for an install of it, kept as it
+    /// was started (#18659).
+    native_prepare_first: Option<native_mods::prepare_first::Waiting>,
     /// Where the build under way is, for the card's stages and bar.
     native_progress: Option<native_mods::Progress>,
     /// The first build's one-time download (the compiler), in bytes; `None` once it is there.
@@ -458,6 +470,9 @@ struct Launcher {
     starting_client: Option<String>,
     /// The instance that start is for, whatever is selected by the time it ends.
     starting_instance: Option<String>,
+    /// The Stop of the start under way while it may run its instance's pre-launch command
+    /// (Windows runs it before the game): kept until the start's result is handled.
+    pre_launch_stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// Play was pressed on a version not prepared yet: it starts once this preparation ends well.
     play_when_prepared: Option<(String, String)>,
     /// Join a friend: the code typed on the Play page, and the one the game
@@ -503,6 +518,8 @@ struct Launcher {
     perf: perf::Perf,
     install_started: Option<Instant>,
     prepare_started: Option<Instant>,
+    /// The version the preparation under way is for: its end checks that one is ready.
+    prepare_tag: Option<String>,
     /// The download under way as first seen (when, files done), for the time left.
     download_seen: Option<(Instant, usize)>,
     /// The tab open under Home's hero (`home_tabs.rs`).
@@ -605,8 +622,8 @@ actions!(horizon_launcher, [Quit, CloseWindow]);
 fn shut_down(cx: &mut App) {
     servers_page::stop_on_quit();
     telemetry::send_before_exit();
-    // A downloaded launcher update goes in only when the player presses Update: closing drops it.
-    horizon_launcher::update_handoff::forget();
+    // A downloaded launcher update goes in once this process has exited; the game keeps running.
+    horizon_launcher::update_handoff::on_close();
     cx.quit()
 }
 

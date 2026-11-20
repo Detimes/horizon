@@ -75,6 +75,19 @@ UUID: you can use a retained handle after disconnection until its world epoch
 closes. You cannot target arbitrary offline UUIDs. Retain the handle value, not a
 borrowed service.
 
+`player.set_sidebar(host, Some(Sidebar::new(title, vec![SidebarLine::new(text, Some(value))])))` shows a
+sidebar on that one player's client, in place of the one shown before; `None` takes it away. Up to 15 lines
+are shown, top first, each with its text and an optional right-hand value. The sidebar is not stored in the
+world's scoreboard, so `/scoreboard` and other players do not see it, and it is gone when the player leaves.
+It returns `Ok(false)` for a player who is not online; a text the boundary refuses changes nothing.
+
+To change only the name in the Tab list, use `player.set_list_name(host, Some(text))`.
+Everyone sees the new name at once, colours included; `None` shows the nickname or real
+name again. The name is kept by UUID until a mod sets it again or the server stops, also
+across a leave and rejoin. The `player_tab_list_name_format` hook still has the last word,
+and chat, name tags and commands keep the real name. The call returns `false` for a stale
+handle, an unavailable server list or a player who is not online.
+
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
 return what the calls above set. Latency is the Tab list ping in milliseconds
 (`Option<i32>`, `0` until the first keep-alive answer). `hidden` is the level
@@ -225,3 +238,12 @@ runs does not make that grant complete an advancement: what it imported is not r
 changing nothing, for input that is not a JSON object, for a grant date that is not a date this server can send
 (a number, other text, a year out of range), and for a player who cannot take it: a stale or unavailable handle, a
 dead or not connected player, a client, or a world with no server list.
+
+## Player statistics
+
+Statistics are read and replaced whole, not one at a time. `player.statistics(host)` returns all of a player's
+statistics as the JSON text of their `stats/<uuid>.json` save file, or `None` for a stale or unavailable player and on
+a client. `player.set_statistics(host, json)` replaces all of them with a JSON object of that form and returns `false`,
+changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
+goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
+`player_stat_award` is not heard.
