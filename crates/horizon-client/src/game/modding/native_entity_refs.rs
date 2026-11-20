@@ -592,6 +592,35 @@ impl Game<'_> {
         let name = &self.res.facts().get(state).name;
         Some(self.items().mining_speed(tool, name))
     }
+    /// Place the configured feature `feature` at `pos` as `/place feature` does (Paper's
+    /// `World#generateTree`). Refusals are checked in order and named by [`FeatureRefusal`]; an
+    /// unloaded, out-of-world or locked position places nothing and is `Ok(false)`.
+    pub(super) fn level_generate_tree(
+        &mut self,
+        level: LevelRef,
+        pos: [i32; 3],
+        feature: &str,
+    ) -> Result<bool, mod_api::FeatureRefusal> {
+        use mod_api::FeatureRefusal;
+        if !self.is_logical_server() {
+            return Err(FeatureRefusal::Client);
+        }
+        if !self.level_handle_current(level) {
+            return Err(FeatureRefusal::Stale);
+        }
+        if self.dim.key() != level.dimension() {
+            return Err(FeatureRefusal::NotInPlace);
+        }
+        if !self.native_level_write_allowed(level, pos) {
+            return Ok(false);
+        }
+        let at = horizon_core::position::BlockPos::new(pos[0], pos[1], pos[2]);
+        let placed = self
+            .with_level(|b, level, ticks| b.place_feature(level, ticks, feature, at))
+            .ok_or(FeatureRefusal::UnknownFeature)?;
+        let _ = self.process_level_events();
+        Ok(placed)
+    }
     /// Apply bone meal to the block at `pos` as a dispenser does (`BoneMealItem.growCrop`, then
     /// `growWaterPlant`): the mods' `bonemeal` hook first, level event 1505 when something grew.
     /// False for a refused write, a stale or parked handle, a client, and a block that did not
@@ -1591,6 +1620,44 @@ pub(super) mod tests {
             let level = game.level(game.dim.id()).unwrap();
             assert_eq!(level.best_neighbor_signal(game, [4, 64, 5]), Some(0));
             assert_eq!(level.signal(game, [5, 64, 5], West), Some(0));
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_level_generates_an_oak_tree_and_refuses_an_unknown_feature() {
+        use horizon_client::chunk::Chunk;
+        use mod_api::FeatureRefusal;
+        use std::sync::Arc;
+
+        with_game(|game| {
+            game.options.dedicated = Some(Vec::new());
+            game.world
+                .chunks
+                .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+            let registry = game.pack.assets.registry;
+            let grass = registry.default_state("minecraft:grass_block").unwrap();
+            game.world.set(0, 63, 0, grass).unwrap();
+            let level = game.level(game.dim.id()).unwrap();
+            assert_eq!(
+                game.level_generate_tree(level, [0, 64, 0], "minecraft:oak"),
+                Ok(true)
+            );
+            let trunk = game.world.block(0, 64, 0);
+            assert_eq!(
+                game.res.facts().get(trunk).name,
+                "minecraft:oak_log",
+                "the trunk starts at the given position"
+            );
+            assert_eq!(
+                game.level_generate_tree(level, [0, 64, 0], "minecraft:nope"),
+                Err(FeatureRefusal::UnknownFeature)
+            );
+            assert_eq!(
+                game.level_generate_tree(level, [100_000, 64, 0], "minecraft:oak"),
+                Ok(false),
+                "unloaded"
+            );
         });
     }
 

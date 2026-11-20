@@ -1,0 +1,3 @@
+ids = ["method:LevelRef::generate_tree", "type:FeatureRefusal"]
+why = "Adds server-level placement of a configured feature by id (vanilla trees, huge mushrooms: minecraft:oak, minecraft:birch, minecraft:huge_red_mushroom), the call Paper's World#generateTree and WorldEdit's //forest, //flora and /tree need. It runs the same placement as /place feature, with the level's random, and returns named refusals (FeatureRefusal) for a stale handle, a client, a level not in place and an unknown feature id."
+migrate = "Additive. Match FeatureRefusal when calling generate_tree; Ok(false) means the feature ran and placed nothing, or the position was not writable. The feature id is a configured feature of the level's registry, so data packs can add more."
