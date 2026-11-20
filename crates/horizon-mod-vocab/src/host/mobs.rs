@@ -502,6 +502,14 @@ pub trait MobsBackendMut {
     #[access(WorldOnly)]
     fn mob_set_left_handed(&mut self, mob: MobRef, left_handed: bool) -> bool;
     /// Side: server.
+    /// `Shearable.shear` with shears, as a dispenser's shears shear a mob, without the block's
+    /// events: the mob's sounds, drops and sheared state (sheep wool, a bogged's mushrooms, a snow
+    /// golem's pumpkin, a mooshroom that becomes a cow, a copper golem's antenna). False for a stale
+    /// handle, a client, the dragon, or a mob that cannot be sheared now (a baby sheep, one already
+    /// sheared, another kind).
+    #[access(WorldOnly)]
+    fn mob_shear(&mut self, mob: MobRef) -> bool;
+    /// Side: server.
     /// `Mob.setCanPickUpLoot`: whether the mob picks up the items it sees
     /// (saved with it as `CanPickUpLoot`; clients are not told, as in
     /// vanilla). An allay and a sulfur cube decide for themselves. False

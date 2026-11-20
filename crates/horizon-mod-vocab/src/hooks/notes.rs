@@ -1060,6 +1060,7 @@ steers a mob through the engine's own controls, each a momentary wish the mob's 
   `LeftHanded`) and `can_pick_up_loot` / `set_can_pick_up_loot` (`Mob.setCanPickUpLoot`, saved as `CanPickUpLoot`;
   an allay and a sulfur cube decide for themselves) moved here from the flat `living_*` helpers of #938's first round:
   vanilla keeps both on `Mob`, so `MobRef` is their home. The flat helpers are gone, with no aliases.
+- `mob.shear(host)` (`Shearable.shear` with shears, as a dispenser's shears do, without its block events): sheds a sheep's wool (once, not a baby), a bogged's mushrooms, a snow golem's pumpkin, a copper golem's antenna, and turns a mooshroom into a cow. Returns false for a stale handle, a client, the dragon, or a mob that cannot be sheared now.
 - All of these answer `None`/`false` for a stale handle, a client, the dragon (no `Mob` state), and a mob whose copy is
   held out of the level.
 

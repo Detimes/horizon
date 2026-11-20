@@ -1,5 +1,6 @@
 //! Mob handles for native server mods.
 use super::{Game, commands::Target};
+use horizon_client::items::ItemStack;
 use horizon_client::mobs::{self, Mob, Species, Who, ai::brain_target};
 use mod_api::{EntityRef, LivingRef, MobRef};
 
@@ -723,6 +724,19 @@ impl Game<'_> {
             .find(|m| m.id == id && !m.removed)
             .map(|m| m.extra.left_handed = left_handed)
             .is_some()
+    }
+
+    /// `Shearable.shear` with shears on mob `mob`, the dispenser's shearing without its block's events.
+    /// See the host declaration for what it refuses.
+    pub(super) fn mob_shear(&mut self, mob: MobRef) -> bool {
+        let Some(Target::Mob(id)) = self.native_entity_target(mob.entity()) else {
+            return false;
+        };
+        let shears = ItemStack::new("minecraft:shears", 1);
+        match self.mobs.iter().position(|m| m.id == id && !m.removed) {
+            Some(i) => self.shear_mob(i, &shears),
+            None => false,
+        }
     }
 
     /// `Mob.canPickUpLoot`, with the overrides of an allay (holding
@@ -1757,6 +1771,33 @@ mod tests {
                 game.mob_is_within_restriction(mob, [46_340, 0, 0]),
                 Some(false)
             );
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn mob_shear_sheds_a_sheeps_wool_once_and_refuses_a_baby() {
+        with_game(|game| {
+            let sheep = game.res.mob_types().get("minecraft:sheep").unwrap().clone();
+            game.mobs.push(Mob::new(12, sheep.clone(), Vec3::ZERO, 0.0));
+            game.mobs.push(Mob::new(13, sheep, Vec3::ZERO, 0.0));
+            let mob = game.mob(game.entity(12).unwrap()).unwrap();
+            let baby = game.mob(game.entity(13).unwrap()).unwrap();
+            assert!(game.mob_set_baby(baby, true));
+            assert!(!game.mob_shear(baby), "a baby sheep has no wool to shed");
+            let before = game.dropped.len();
+            assert!(game.mob_shear(mob));
+            let wool = game.dropped.len() - before;
+            assert!((1..=3).contains(&wool), "{wool} wool items");
+            assert!(game.mobs[0].extra.sheared);
+            assert!(!game.mob_shear(mob), "a sheared sheep gives nothing again");
+            assert_eq!(game.dropped.len() - before, wool);
+            // A stale handle changes no other entity.
+            let stale = MobRef::new(EntityRef::new(
+                WorldEpoch::new(game.entity(12).unwrap().epoch().get() + 1),
+                12,
+            ));
+            assert!(!game.mob_shear(stale));
         });
     }
 
