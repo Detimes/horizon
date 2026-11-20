@@ -920,6 +920,14 @@ pub trait EntitiesBackendMut {
     #[access(WorldOnly)]
     fn entity_set_glowing(&mut self, entity: EntityRef, glowing: bool) -> bool;
     /// Side: server.
+    /// Explodes an entity now, as its own explosion would: a primed TNT explodes where it
+    /// stands, with its power (`PrimedTnt.explode`), and a creeper is lit and explodes at once
+    /// (`Creeper.explodeCreeper`; Paper's `Creeper#explode`). The entity is gone after its
+    /// explosion. False for a stale handle, a kind that does not explode, or when the explosion
+    /// itself fails.
+    #[access(WorldOnly)]
+    fn entity_detonate(&mut self, entity: EntityRef) -> bool;
+    /// Side: server.
     /// Turns a painting, item frame or glow item frame in place to face `direction`
     /// (`HangingEntity.setDirection`, `ItemFrame.setDirection`): its facing, the yaw and pitch
     /// that follow from it and its bounds, nothing else. Like vanilla it doesn't check that the

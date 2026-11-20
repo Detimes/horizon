@@ -57,6 +57,8 @@ return `None`.
 
 Game profiles (server only): `host.profile_by_uuid(uuid)` and `host.profile_by_name(name)` (any case) return the `GameProfile` the server knows: an online player's, with its properties, else the name from the user cache (`usercache.json`, on a dedicated server), without properties. Neither asks Mojang, and `None` means neither the server nor its cache knows the player. To change a skin, `player.set_profile_property(host, "textures", value, signature)` sets the `textures` property (Mojang's base64 value and its signature). Other players see it once `player.refresh(host)` sends the player to them again; the player's own client keeps its current skin until they change level or join again. A property set this way is published and returned by the two lookups; `player.profile(host)` keeps returning the properties the player logged in with.
 
+`entity.detonate(host)` (`entity_detonate`) explodes an entity now: a primed TNT explodes where it stands with its power, as `PrimedTnt.explode` does, and a creeper is lit and explodes at once, as `Creeper.explodeCreeper` does. The entity is gone after its explosion. It returns `false`, changing nothing, for a stale handle, a kind that does not explode, or when the explosion itself fails.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
