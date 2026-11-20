@@ -244,3 +244,10 @@ a client. `player.set_statistics(host, json)` replaces all of them with a JSON o
 changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
 goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
 `player_stat_award` is not heard.
+
+## Item entities of a level
+
+`level_item_entities(level)` lists every dropped item entity of a level with its complete stack, as
+`(entity, stack)` pairs in the level's entity order. It returns `None` for a stale handle, a level not in
+place and on a client. An item held out while it ticks is left out. Use `level_entities_in` with a box when only
+the items near one place are needed.
