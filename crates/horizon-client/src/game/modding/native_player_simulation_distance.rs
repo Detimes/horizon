@@ -48,7 +48,6 @@ mod tests {
                 game.guest_packets.as_slice(),
                 [C::SetSimulationDistance(d)] if d.distance == 6
             ));
-        })
-        .unwrap();
+        });
     }
 }
