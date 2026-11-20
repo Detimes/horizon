@@ -952,6 +952,16 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_set_selected_slot(&mut self, player: PlayerRef, slot: usize) -> bool;
     /// Side: server.
+    /// `Player#dropItem(boolean)` (`Player.drop(true)`, the drop key): throws the player's
+    /// selected stack from their eyes along their view, the whole stack when `whole_stack` is
+    /// true and one item otherwise. It takes the same path as the drop key: a held item's
+    /// `on_dropped_by_player` part and listeners may keep the stack, and the removal is not
+    /// predicted by any client, so the next inventory sync shows it. Returns `true` when a
+    /// stack was thrown. `false` for an empty hand, a spectator, a stack kept by a part or a
+    /// listener, and a refused handle: a stale or dead player, or a client.
+    #[access(WorldOnly)]
+    fn player_drop_selected(&mut self, player: PlayerRef, whole_stack: bool) -> bool;
+    /// Side: server.
     /// `Player.drop(stack, false, thrown_by_player)`: `stack` is thrown from the player's eyes
     /// along their view as an item entity, with the main hand swinging and `item_toss` asked
     /// first. Nothing is taken from an inventory: the stack is the caller's, taken out through
