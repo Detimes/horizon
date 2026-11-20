@@ -98,6 +98,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+The read `player.protocol_version(host)` returns the protocol number the player's client stated in its handshake (`Option<i32>`). A client of the same release reads this game's own number; a client let in by `horizon-accept-older-clients` reads its own, older one, so a mod can tell what an older client can see. Behind a proxy it is the number the proxy forwards. `None` means a stale or unavailable player, a fake one, or a connection that sent no handshake.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`

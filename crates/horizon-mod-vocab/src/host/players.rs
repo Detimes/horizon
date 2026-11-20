@@ -472,6 +472,15 @@ pub trait PlayersBackend {
     #[access(WorldOnly)]
     fn player_client_brand(&self, player: PlayerRef) -> Option<String>;
     /// Side: server.
+    /// The protocol version the player's client stated in its handshake
+    /// (`ClientIntentionPacket.protocolVersion`, ViaVersion's `getPlayerVersion`): the current
+    /// game's own number for a client of the same release, an older release's number for a
+    /// client the server lets join (`horizon-accept-older-clients`). Behind a proxy, the number
+    /// the proxy forwards. None for a stale or unavailable player, a fake player, and a
+    /// connection that sent no handshake.
+    #[access(WorldOnly)]
+    fn player_protocol_version(&self, player: PlayerRef) -> Option<i32>;
+    /// Side: server.
     /// The plugin channels the player's client announced in `minecraft:register`, less those
     /// it withdrew in `minecraft:unregister`, during configuration and play, in announcement
     /// order (Bukkit's `Player.getListeningPluginChannels`). Malformed entries are skipped and
