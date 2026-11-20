@@ -43,6 +43,28 @@ fn no_pack_hdr_gain(layered: bool, pack: bool, world: bool) -> bool {
     layered && !pack && world
 }
 
+/// Whether the player's TAA may run this frame: not at the title, not under a `shaders/` pack
+/// (`shaders_pack`), and under a native one only where the renderer resolves its world
+/// (`Capabilities::engine_resolve`: no post chain, a frame of gamma light).
+fn taa_allowed(title: bool, shaders_pack: bool, executor: Option<external::Capabilities>) -> bool {
+    !title && !shaders_pack && executor.is_none_or(|c| c.engine_resolve)
+}
+
+/// What TAA's history is drawn under this frame: a native pack's world frame (`pack`) is lit
+/// for the display its `Frame` describes; any other frame keys as without a pack.
+fn taa_light_key(
+    pack: bool,
+    display: output::DisplayValues,
+    gain: bool,
+    settings: [f32; 4],
+) -> world_post::LightKey {
+    if pack {
+        world_post::LightKey::Pack(display)
+    } else {
+        world_post::LightKey::engine(gain, settings)
+    }
+}
+
 pub(in crate::gfx) fn terrain_shader() -> String {
     wgsl_prefix::HDR_LIGHT.to_owned() + include_str!("terrain.wgsl")
 }
@@ -316,6 +338,20 @@ fn translucent_batchable(info: &wgpu::AdapterInfo, multi_draw: bool) -> bool {
     multi_draw && info.backend != wgpu::Backend::Gl
 }
 
+/// Whether the per-section translucent draws read their vertices from the arena page
+/// (`vs_section`), as the solid ones do: on OpenGL without indirect multi-draws, where the
+/// device has flat page groups. There each section is a draw of its own with its
+/// `first_instance`, which wgpu emulates by binding the origins again at an offset, and AMD's
+/// last driver for the Radeon HD 5000 series (15.200) drew water and glass with the vertex
+/// buffer's attributes other than the position read from the wrong place, in every section
+/// but the nearest, instance 0 (#18478; the driver's defect itself is not confirmed). The
+/// solid draws, which read the page, were right. Translucent Batching is never offered there
+/// (`translucent_batchable`), so the quads are in the section arena, whose pages the groups
+/// bind.
+fn translucent_pulled(info: &wgpu::AdapterInfo, multi_draw: bool, flat_page_groups: bool) -> bool {
+    info.backend == wgpu::Backend::Gl && !multi_draw && flat_page_groups
+}
+
 /// The vertices flat draws bind for a call's page key: a page of the section arena, or of
 /// the translucent arena up to its last range in use (`flat::TRANSLUCENT_KEYS`).
 fn flat_vertices<'a>(
@@ -380,8 +416,10 @@ impl<'a> SectionLists<'a> {
                 let translucent = self.translucent_arena.is_some() && index_page.is_some();
                 pass.set_bind_group(looks::GROUP, looks.page(page, translucent), &[]);
             }
+            // The page's group, for draws whose quads are in the section arena: the solid
+            // ones, and the translucent ones without an arena of their own.
             if pulled
-                && index_page.is_none()
+                && (index_page.is_none() || self.translucent_arena.is_none())
                 && let Some(group) = self.flat.and_then(|f| f.page_group(page))
             {
                 pass.set_bind_group(1, group, &[]);
@@ -474,6 +512,7 @@ mod displace;
 mod frame_policy;
 pub mod lightning;
 mod linear_blend;
+pub mod ray_lights;
 #[cfg(test)]
 use frame_policy::frame_format;
 use frame_policy::{frame_configuration, hand_depth_store, horizon_tone_curve, overlay_format};
@@ -1335,6 +1374,9 @@ pub struct Renderer {
     msaa: msaa::Msaa,
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
+    /// Watched only while HDR is On or Auto, including Auto in SDR; before `surface` and
+    /// `window`, so it's dropped first: its reader thread holds the surface.
+    display: Option<DisplayWatch>,
     /// The window's swapchain; `None` when rendering offscreen (`--offscreen`). Shared
     /// with frame generation's present thread while it runs.
     surface: Option<Arc<wgpu::Surface<'static>>>,
@@ -1364,9 +1406,6 @@ pub struct Renderer {
     pub last_wait: std::time::Duration,
     /// CPU time of the last `render`, waits excluded.
     pub last_encode: std::time::Duration,
-    /// Watched only while HDR is On or Auto, including Auto in SDR;
-    /// before `window`, so it's dropped first.
-    display: Option<DisplayWatch>,
     /// What this renderer's display last reported (`DisplayWatch`), its own: another
     /// renderer's watch never changes it.
     reading: output::DisplayReading,
@@ -1713,7 +1752,7 @@ pub struct Renderer {
     /// Changes whenever `block_entities` does (unique across renderers).
     block_entity_revision: u64,
     /// The light sources of each section and their revision, for `block_light`.
-    light_blocks: FxHashMap<SectionKey, Vec<([i32; 3], u32)>>,
+    light_blocks: block_light::SectionLights,
     light_revision: u64,
     /// VisGraph face connectivity per meshed section (cave culling).
     occlusion: occlusion::Occlusion,
@@ -4229,6 +4268,28 @@ impl Renderer {
             .features()
             .contains(wgpu::Features::INDIRECT_FIRST_INSTANCE)
             && indirect_execution;
+        let translucent = match &flat {
+            Some(f) if translucent_pulled(&adapter.get_info(), multi_draw, true) => {
+                let layout = kept.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Horizon terrain layout (pulled)"),
+                    bind_group_layouts: &[Some(&bindings), Some(&f.draw_layout)],
+                    ..Default::default()
+                });
+                pipeline_in(
+                    &layout,
+                    "Terrain translucent (pulled)",
+                    "vs_section",
+                    "fs_translucent",
+                    &[None, terrain_buffers[1].clone()],
+                    tri,
+                    Some(wgpu::Face::Back),
+                    true,
+                    true,
+                    Some(alpha_blend),
+                )
+            }
+            _ => translucent,
+        };
         let batchable = translucent_batchable(&adapter.get_info(), multi_draw);
         crate::graphics::offer_translucent_batching(batchable);
         let translucent_batching = batchable && translucent_batching;
@@ -4775,6 +4836,7 @@ impl Renderer {
     #[horizon_mod_api_macros::replaceable]
     pub fn release_surface(&mut self) {
         self.frame_gen.stop();
+        self.stop_display_reader();
         self.queue.wait();
         *self
             .spare_surface
@@ -4797,6 +4859,7 @@ impl Renderer {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         self.frame_gen.stop_to_configure();
+        self.stop_display_reader();
         self.surface = None;
         let surface = match spare {
             Some(surface) => surface,
@@ -5446,6 +5509,11 @@ impl Renderer {
     ) {
         self.draw_sections_from(pass, indirect, base, first, count, self.flat.is_some());
     }
+    /// Whether `translucent` reads the arena page itself (`translucent_pulled`): its draws
+    /// then bind each page's group, as `draw_solid_sections` does.
+    fn translucent_pulled(&self) -> bool {
+        translucent_pulled(&self.info, self.multi_draw, self.flat.is_some())
+    }
     fn draw_sections_from(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
@@ -5771,6 +5839,8 @@ impl Renderer {
         self.newest_upload = None;
         self.newest_lod_fade = None;
         self.block_entity_revision = next_block_entity_revision();
+        self.light_blocks.clear();
+        self.light_revision += 1;
         self.sections.clear();
         self.ray_clear();
         self.lods.clear();
@@ -6095,7 +6165,12 @@ impl Renderer {
     ) -> std::result::Result<(), String> {
         let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-        surface.configure(device, config);
+        {
+            let _queries = output_apply::SURFACE_QUERY
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            surface.configure(device, config);
+        }
         let memory = pollster::block_on(memory.pop());
         if let Some(e) = memory.or(pollster::block_on(validation.pop())) {
             return Err(e.to_string());
@@ -6126,6 +6201,7 @@ impl Renderer {
         {
             log::warn!("Horizon renderer: the window surface did not configure ({e})");
             self.frame_gen.refused = true;
+            self.surface_refused();
         }
     }
     /// HDR calibration's test picture (`crate::hdr_calibration`) while it runs, else None.
@@ -6673,7 +6749,8 @@ impl Renderer {
             Vec<(String, f64)>,
             Vec<(u32, u32)>,
             Vec<(u32, u32)>,
-            block_light::LightTable,
+            // The `[[lights]]` colours, and the light sources rays read (`NativePack::new`).
+            (block_light::LightTable, ray_lights::Sources),
         )>,
     ) -> std::result::Result<Vec<String>, String> {
         self.world_held = false;
@@ -7473,10 +7550,12 @@ impl Renderer {
         let pose = frame.bob * frame.spin;
         let view_proj = views.primary().view_proj(pose);
         laps.lap("r_acquire");
-        // TAA runs where the world post pass does, not under a shader pack's own.
-        let taa = !frame.title
-            && self.pack_post.as_ref().is_none_or(|p| p.1.is_none())
-            && self.executor.is_none();
+        // TAA runs where the world post pass does, and where it resolves a native pack's world.
+        let taa = taa_allowed(
+            frame.title,
+            self.pack_post.as_ref().is_some_and(|p| p.1.is_some()),
+            self.executor,
+        );
         let hdr_lighting = self.shader_pack_kind().is_none();
         if let Some(hdr) = &mut self.hdr {
             hdr.lighting = hdr_lighting && hdr.look;
@@ -7490,7 +7569,12 @@ impl Renderer {
             .hdr
             .as_ref()
             .map_or([0.0; 4], |h| h.draw_params(!frame.title));
-        self.world_post.baked_light(hdr_gain, hdr_settings);
+        self.world_post.baked_light(taa_light_key(
+            !frame.title && self.executor.is_some(),
+            output.display(),
+            hdr_gain,
+            hdr_settings,
+        ));
         let jitter = self.world_post.jitter(
             [self.config.width, self.config.height],
             taa,
@@ -7692,8 +7776,10 @@ impl Renderer {
             && self.pack_post.as_ref().is_none_or(|p| p.1.is_none())
             && pack_msaa
             && !self.msaa.failed_at(
-                self.world_post
-                    .pack_render_size([self.config.width, self.config.height]),
+                self.world_post.pack_render_size(
+                    [self.config.width, self.config.height],
+                    self.executor.is_some_and(|c| c.engine_upscale),
+                ),
                 pack_surface,
             );
         // Frustum culling and camera-relative origins.
@@ -9367,12 +9453,15 @@ impl Renderer {
                     .size()
                     .filter(|_| scaled.is_some())
                     .unwrap_or([self.config.width, self.config.height]),
+                projection: views.primary().projection,
                 output: &output,
                 lights: &self.light_blocks,
                 light_revision: self.light_revision,
+                min_y: self.layout.min_y(),
                 sky_visible,
                 scene: self.ray_scene.as_ref(),
                 lightmap: &self.lightmap_pixels,
+                jitter: self.world_post.jitter_clip(),
             });
         }
         // One of Horizon's own packs: its shadow passes, from the shadow camera's lists.
@@ -9474,8 +9563,16 @@ impl Renderer {
                 // (only entity.wgsl reads the glint strength there, and no entity draws here).
                 let mut fog_ends = globals.fog_ends;
                 fog_ends[3] = plane;
+                // Water samples the mirror at its jittered screen position: the mirror takes the
+                // world's jitter, while TAA runs.
+                let mirrored = view::mirror_view_projection(view_proj, plane);
+                let mirrored = if taa && self.world_post.taa {
+                    jitter * mirrored
+                } else {
+                    mirrored
+                };
                 let mirror_globals = Globals {
-                    view_proj: view::mirror_view_projection(view_proj, plane).to_cols_array_2d(),
+                    view_proj: mirrored.to_cols_array_2d(),
                     inverse_view,
                     fog_ends,
                     hdr_light: [0.0, 0.0, globals.hdr_light[2], 0.0],
@@ -10584,12 +10681,14 @@ impl Renderer {
                     pass.set_pipeline(translucent_pipeline);
                     pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
                     pass.set_vertex_buffer(1, self.instances.slice(..));
-                    self.draw_sections(
+                    self.draw_sections_from(
                         &mut pass,
                         &self.indirect,
                         0,
                         solid_draws,
                         translucent_draws,
+                        // A shader pack's own translucent pipeline takes the vertex buffer.
+                        material.is_none() && self.translucent_pulled(),
                     );
                     pass.split(self.own_timing.as_mut(), "after translucent");
                 }
@@ -10868,24 +10967,35 @@ impl Renderer {
                 encoder: &mut encoder,
                 world: (color, depth),
                 size: self.world_post.size().unwrap_or([1, 1]),
+                display: self.world_post.resolved_size().unwrap_or([1, 1]),
                 window: [target_texture.width(), target_texture.height()],
                 scene: self.ray_scene.as_ref().map(|s| (s, frame.camera)),
             });
             // The engine's resolve of the pack's world goes here, between its chain and its
-            // output (#16126): the player's FXAA, at the world's size, where no chain draws
-            // the picture. TAA, its upscaling and sharpening stay off under every pack.
-            let resolved = (self.executor.is_some_and(|c| c.engine_fxaa)
-                && self.world_post.antialias)
-                .then(|| self.world_post.resolved(&self.device))
+            // output (#16126), where no chain draws the picture: the player's TAA, whose
+            // history the output reads straight, or FXAA onto a target of the world's size.
+            // Where TAA upscales (`Capabilities::engine_upscale`), it sharpens the history
+            // at the history's size, in the frame's encoding, before the decode and the
+            // `[tonemap]`; elsewhere its upscaling is held (`hold_upscale`).
+            let engine_resolve = self.executor.is_some_and(|c| c.engine_resolve);
+            let taa_resolved = engine_resolve
+                .then(|| {
+                    (self.world_post).resolve_taa(
+                        &self.device,
+                        &self.queue,
+                        &mut encoder,
+                        self.own_timing.as_mut(),
+                    )
+                })
                 .flatten();
-            if let Some(resolved) = &resolved {
-                self.world_post.finish(
-                    &self.queue,
-                    &mut encoder,
-                    resolved,
-                    self.own_timing.as_mut(),
-                );
-            }
+            let resolved = taa_resolved.or_else(|| {
+                let fxaa = (engine_resolve && self.world_post.antialias)
+                    .then(|| self.world_post.resolved(&self.device))
+                    .flatten()?;
+                self.world_post
+                    .finish(&self.queue, &mut encoder, &fxaa, self.own_timing.as_mut());
+                Some(fxaa)
+            });
             native.run_output(external::WorldOutput {
                 device: &self.device,
                 encoder: &mut encoder,
@@ -11990,6 +12100,23 @@ mod tests {
         assert!(!batchable(&gl, true));
     }
 
+    /// #18478: translucent sections read the arena page only on OpenGL without indirect
+    /// multi-draws (a Radeon HD 5500's last driver), with the page groups they bind; every
+    /// other device keeps its vertex buffer draws.
+    #[test]
+    fn translucent_sections_read_the_page_on_opengl_without_indirect_multi_draws() {
+        let vulkan = adapter(wgpu::DeviceType::DiscreteGpu);
+        let mut gl = adapter(wgpu::DeviceType::DiscreteGpu);
+        gl.backend = wgpu::Backend::Gl;
+        let pulled = super::translucent_pulled;
+        assert!(pulled(&gl, false, true));
+        assert!(!pulled(&gl, true, true));
+        assert!(!pulled(&gl, false, false));
+        assert!(!pulled(&vulkan, false, true));
+        // Their quads are in the section arena there: Translucent Batching is not offered.
+        assert!(!super::translucent_batchable(&gl, false));
+    }
+
     /// GPU culling is offered where the device draws counts the GPU wrote and runs compute
     /// shaders with storage buffers enough, where Translucent Batching is (indirect
     /// multi-draws that aren't OpenGL's) and vanilla frames are never drawn flat, and never
@@ -12494,10 +12621,11 @@ mod tests {
         use wgpu::Backends;
         let (v, d, g) = (Backends::VULKAN, Backends::DX12, Backends::GL);
         let search = |api, os, arch| device_search(api, os, arch, false);
-        // #5185: DirectX 12 chosen on an Intel HD 2500 (WARP only): OpenGL's GPU before WARP.
+        // #18291: DirectX 12, which the launcher picks after Vulkan or OpenGL crashed in the
+        // driver, never goes back to either: its GPU, then WARP.
         assert_eq!(
             search(GraphicsApi::Dx12, "windows", "x86_64"),
-            [(vec![d], false), (vec![g], false), (vec![d], true)]
+            [(vec![d], false), (vec![d], true)]
         );
         assert_eq!(
             search(GraphicsApi::Vulkan, "windows", "x86_64"),
@@ -13444,6 +13572,8 @@ struct DisplayWatch {
     /// Without Wayland's event, when to read wgpu's values again: the OS sends no event for
     /// a moved window or a changed SDR brightness slider.
     polled: Option<std::time::Instant>,
+    /// The thread that makes those reads for a window surface (`output_apply::DisplayReader`).
+    reader: Option<output_apply::DisplayReader>,
 }
 
 impl DisplayReading {
@@ -13496,6 +13626,7 @@ impl DisplayWatch {
             let watch = Self {
                 wayland: Some(wayland),
                 polled: None,
+                reader: None,
             };
             return (watch, wayland_reading(now));
         }
@@ -13506,6 +13637,7 @@ impl DisplayWatch {
             #[cfg(target_os = "linux")]
             wayland: None,
             polled: Some(std::time::Instant::now() + DISPLAY_POLL),
+            reader: None,
         };
         (watch, now)
     }

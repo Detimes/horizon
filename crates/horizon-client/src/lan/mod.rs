@@ -34,11 +34,13 @@ pub mod forwarding;
 pub mod guest;
 pub mod guest_list;
 pub mod handoff;
+pub mod handshake_gate;
 pub mod hub;
 pub mod import;
 mod io_pool;
 pub mod menu;
 pub mod menu_extra_rev;
+pub mod packet_counts;
 #[cfg(test)]
 mod payload_bounds_tests;
 pub mod player_shown;
@@ -493,6 +495,8 @@ pub struct Shared {
     status_hook: AtomicBool,
     /// The status requests waiting for the mods, oldest first.
     status_asks: Mutex<std::collections::VecDeque<StatusAsk>>,
+    /// The mods' say over a login connection's handshake (`player_handshake`).
+    pub handshake: handshake_gate::Gate,
 }
 
 /// What a status answer says: [`Shared::status_parts`] fills it as vanilla's
@@ -898,6 +902,7 @@ impl Lan {
             shutting_down: AtomicBool::new(false),
             status_hook: AtomicBool::new(false),
             status_asks: Mutex::new(std::collections::VecDeque::new()),
+            handshake: handshake_gate::Gate::default(),
             random: Mutex::new(horizon_java_properties::now_millis() as u64 | 1),
             config,
         });
