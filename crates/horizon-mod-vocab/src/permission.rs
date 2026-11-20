@@ -6,6 +6,8 @@ use crate::{PermissionLevel, PlayerRef, ServerHost, Text};
 
 /// The longest accepted node name, in bytes.
 pub const MAX_NODE_NAME_LEN: usize = 256;
+/// The most child nodes one `add_with_children` declaration grants.
+pub const MAX_CHILDREN: usize = 256;
 /// The most contexts one query accepts.
 pub const MAX_CONTEXTS: usize = 32;
 /// The longest accepted context key, in bytes.
@@ -152,6 +154,19 @@ pub enum NodeDefault {
 pub trait PermissionNodes {
     /// Declare `node` with `default`. Side: server.
     fn add(&mut self, node: PermissionNode, default: NodeDefault) -> Result<(), PermissionError>;
+
+    /// Declare the Boolean `node` with `default`, and the Boolean `children` it grants: a player who
+    /// holds `node` holds each child too, whatever the child's own default says (Bukkit's
+    /// `plugin.yml` `children`). A child answers `true` when its own answer is `true` or one of
+    /// its parents answers `true`; a parent's error is the child's error. At most `MAX_CHILDREN`
+    /// children, none the node itself, none listed twice; a child need not be declared yet, and
+    /// an undeclared child answers `Unregistered` as before. A refusal keeps nothing. Side: server.
+    fn add_with_children(
+        &mut self,
+        node: PermissionNode,
+        default: NodeDefault,
+        children: &[PermissionNode],
+    ) -> Result<(), PermissionError>;
 }
 
 /// Refuses a node name that is empty, longer than [`MAX_NODE_NAME_LEN`], or not made of

@@ -686,3 +686,133 @@ fn a_missing_configured_handler_refuses_node_usages_but_the_default_still_answer
     named.finish_gathering(Some(DEFAULT_HANDLER_ID));
     assert_eq!(named.node_policy(), NodePolicy::Levels);
 }
+
+#[test]
+fn a_parent_that_holds_grants_its_children() {
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_node_with_children(
+            boolean("a.parent"),
+            NodeDefault::Level(PermissionLevel::All),
+            &[boolean("a.child")],
+        )
+        .unwrap();
+    service
+        .register_node(boolean("a.child"), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    service
+        .register_node(boolean("a.other"), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    service.finish_gathering(None);
+
+    // The parent is granted to everyone by its default, so the child is too.
+    assert_eq!(service.query_bool(&boolean("a.child"), None, CAROL), Ok(true));
+    // A child that is not listed keeps its own answer: Carol is not an administrator.
+    assert_eq!(service.query_bool(&boolean("a.other"), None, CAROL), Ok(false));
+    // An administrator holds the child on its own answer.
+    assert_eq!(service.query_bool(&boolean("a.child"), Some(ALICE), ALICE), Ok(true));
+}
+
+#[test]
+fn a_parent_that_does_not_hold_grants_nothing() {
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_node_with_children(
+            boolean("a.parent"),
+            NodeDefault::Level(PermissionLevel::Admins),
+            &[boolean("a.child")],
+        )
+        .unwrap();
+    service
+        .register_node(boolean("a.child"), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    service.finish_gathering(None);
+
+    // Bob is a moderator: below the parent's level, so the child stays off for him.
+    assert_eq!(service.query_bool(&boolean("a.child"), None, BOB), Ok(false));
+    assert_eq!(service.query_bool(&boolean("a.child"), Some(ALICE), ALICE), Ok(true));
+}
+
+#[test]
+fn a_cycle_of_grants_is_refused_not_granted() {
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_node_with_children(
+            boolean("a.x"),
+            NodeDefault::Level(PermissionLevel::Admins),
+            &[boolean("a.y")],
+        )
+        .unwrap();
+    service
+        .register_node_with_children(
+            boolean("a.y"),
+            NodeDefault::Level(PermissionLevel::Admins),
+            &[boolean("a.x")],
+        )
+        .unwrap();
+    service.finish_gathering(None);
+
+    assert_eq!(
+        service.query_bool(&boolean("a.x"), None, CAROL),
+        Err(PermissionError::Recursive)
+    );
+    assert_eq!(service.query_bool(&boolean("a.x"), Some(ALICE), ALICE), Ok(true));
+}
+
+#[test]
+fn children_refusals_keep_nothing() {
+    let mut service = PermissionService::new();
+    assert_eq!(
+        service.register_node_with_children(
+            integer("a.count"),
+            NodeDefault::Value(PermissionValue::Integer(1)),
+            &[],
+        ),
+        Err(PermissionError::WrongType)
+    );
+    assert_eq!(
+        service.register_node_with_children(
+            boolean("a.parent"),
+            NodeDefault::Level(PermissionLevel::All),
+            &[integer("a.count")],
+        ),
+        Err(PermissionError::WrongType)
+    );
+    assert_eq!(
+        service.register_node_with_children(
+            boolean("a.parent"),
+            NodeDefault::Level(PermissionLevel::All),
+            &[boolean("a.parent")],
+        ),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        service.register_node_with_children(
+            boolean("a.parent"),
+            NodeDefault::Level(PermissionLevel::All),
+            &[boolean("a.child"), boolean("a.child")],
+        ),
+        Err(PermissionError::InvalidInput)
+    );
+    service
+        .register_node(boolean("a.parent"), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    // The parent is already declared: the refused duplicate does not keep its grant.
+    assert_eq!(
+        service.register_node_with_children(
+            boolean("a.parent"),
+            NodeDefault::Level(PermissionLevel::All),
+            &[boolean("a.child")],
+        ),
+        Err(PermissionError::DuplicateNode)
+    );
+    service
+        .register_node(boolean("a.child"), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    service.finish_gathering(None);
+    // The refused declaration would have granted the child to everyone; it did not.
+    assert_eq!(service.query_bool(&boolean("a.child"), None, CAROL), Ok(false));
+}
