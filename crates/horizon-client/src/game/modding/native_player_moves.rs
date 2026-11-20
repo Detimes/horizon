@@ -8,6 +8,12 @@ impl Game<'_> {
         hub.mods_loaded = !mod_api::__private::mods().is_empty();
         hub.pong_listened = mod_api::__private::listened(mod_api::HookId::PlayerPong);
         hub.moves_listened = mod_api::__private::listened(mod_api::HookId::PlayerMove);
+        hub.lan
+            .shared
+            .handshake
+            .set_listened(mod_api::__private::enabled_listened(
+                mod_api::HookId::PlayerHandshake,
+            ));
     }
 
     /// The hub holds guest `conn`'s movement report: the mods hear it with the player's state
