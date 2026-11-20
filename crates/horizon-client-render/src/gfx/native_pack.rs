@@ -536,15 +536,19 @@ impl NativePack {
             queue,
             frame,
             size,
+            projection,
             output,
             lights,
             light_revision,
             sky_visible,
             scene,
             lightmap,
+            jitter,
         } = start;
         let scene = scene.and_then(|s| s.traced(frame.camera));
         self.frame.full_lightmap = super::native_post::full_lightmap(lightmap);
+        self.frame.jitter = jitter;
+        self.frame.lens = projection;
         self.write(queue, frame, size, output.display(), scene.as_ref());
         self.frame
             .block_light
@@ -610,6 +614,7 @@ impl NativePack {
             encoder,
             world: (color, depth),
             size,
+            display,
             window,
             scene,
         } = post;
@@ -619,6 +624,7 @@ impl NativePack {
             encoder,
             (color, depth, &self.frame.surface_view),
             size,
+            display,
             window,
             self.timing.as_mut(),
             scene.as_ref(),
@@ -640,6 +646,7 @@ impl NativePack {
     /// What the pack does in the renderer's place, fixed while it runs: the renderer keeps it
     /// from the pack's install on (`replace_executor`).
     pub fn capabilities(&self) -> Capabilities {
+        let engine_resolve = !self.post.chain() && !self.frame.linear;
         Capabilities {
             shadow: self.shadow.is_some(),
             reflection: self.frame.reflects,
@@ -657,7 +664,8 @@ impl NativePack {
             ray_entities: self.traces_entities(),
             ray_looks: self.traces_looks(),
             looks: self.looks,
-            engine_fxaa: !self.post.chain() && !self.frame.linear,
+            engine_resolve,
+            engine_upscale: engine_resolve && self.post.upscalable(),
         }
     }
 
@@ -798,9 +806,11 @@ file = \"material.wgsl\"
             built.expect("the pack builds").0.capabilities()
         };
         let material = "[material]\nfile = \"material.wgsl\"\n";
-        // Without post passes, a pack whose frame holds gamma light keeps the player's FXAA.
+        // Without post passes, a pack whose frame holds gamma light keeps the player's FXAA,
+        // and TAA's upscaling under Horizon's tonemap.
         let plain = Capabilities {
-            engine_fxaa: true,
+            engine_resolve: true,
+            engine_upscale: true,
             ..Capabilities::default()
         };
         assert_eq!(does(""), plain);
