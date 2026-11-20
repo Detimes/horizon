@@ -3107,6 +3107,12 @@ impl Game<'_> {
                         .find(|m| m.id == mob)
                         .map(super::native_hooks::mob_kind)
                         .unwrap_or_default();
+                    // EntityBreakDoorEvent: heard before the door goes; a cancel keeps it.
+                    let mut cancel = false;
+                    self.native_entity_break_door(mob, &kind, pos, &mut cancel);
+                    if cancel {
+                        continue;
+                    }
                     let air = self.world.air;
                     let at = BlockPos::new(pos[0], pos[1], pos[2]);
                     self.with_level(|b, level, ticks| b.set_block(level, ticks, at, air, 3));
@@ -3114,7 +3120,6 @@ impl Game<'_> {
                     self.level_event_at(1021, pos, 0);
                     let left = self.world.block(pos[0], pos[1], pos[2]);
                     self.level_event_at(2001, pos, left.0 as i32);
-                    self.native_entity_break_door(mob, &kind, pos);
                 }
                 MobEvent::DestroyProgress { mob, pos, progress } => {
                     self.server_destroy_block_progress(mob as i32, pos, progress);

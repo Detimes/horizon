@@ -2954,14 +2954,16 @@ impl Game<'_> {
         self.fire_creeper_power(entity, lightning);
     }
 
-    /// A mob broke the door at `pos`.
+    /// A mob is about to break the door at `pos`, before the door is removed.
+    /// Set `cancel` and the door stays. Server-side.
     pub(in crate::game) fn native_entity_break_door(
         &mut self,
         entity: u32,
         kind: &str,
         pos: [i32; 3],
+        cancel: &mut bool,
     ) {
-        self.fire_entity_break_door(entity, kind, pos);
+        self.fire_entity_break_door(entity, kind, pos, cancel);
     }
 
     /// A mob changed a block at `pos`, after the new state was applied.
