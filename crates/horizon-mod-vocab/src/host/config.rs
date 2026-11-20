@@ -11,6 +11,13 @@ pub trait ConfigHost {
     /// Exact Minecraft version supported by this process.
     #[access(Metadata)]
     fn game_version(&self) -> &'static str;
+    /// The ids of every mod loaded at startup (`horizon-mod.toml` ids, native, wasm and content
+    /// packages), in dispatch order. Fabric's `FabricLoader.getAllMods` and NeoForge's `ModList`,
+    /// as Paper's `PluginManager.getPlugins` lists plugins; a mod is "enabled" in the sense of
+    /// Paper's `isPluginEnabled` when its id is in this list. Fixed for the process; a mod the
+    /// player turned off in Options > Mods (`on`) stays in the list.
+    #[access(Metadata)]
+    fn loaded_mod_ids(&self) -> Vec<String>;
     /// The engine's `DataVersion` written into level data and chunks.
     /// Constant on both sides, including before a world is open; this describes this
     /// game build, not the version of a remote server or an older save.

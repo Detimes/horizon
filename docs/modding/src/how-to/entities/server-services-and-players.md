@@ -244,3 +244,9 @@ a client. `player.set_statistics(host, json)` replaces all of them with a JSON o
 changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
 goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
 `player_stat_award` is not heard.
+
+## Loaded mods
+
+`ConfigHost::loaded_mod_ids()` (metadata, both sides) returns the ids of every mod loaded at startup, in dispatch
+order: the list Paper's `PluginManager#getPlugins` gives for plugins. A mod is loaded when its id is in the list;
+the list does not change while the process runs, and a mod the player switched off in Options > Mods still appears.
