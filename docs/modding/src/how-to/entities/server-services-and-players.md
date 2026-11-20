@@ -98,6 +98,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+`host.text_from_legacy` reads Bukkit's hex colour strings as well as the sixteen colour codes. `ChatColor.of("#ff00aa")` writes `§x§f§f§0§0§a§a`; the call turns that into the colour `#ff00aa` and, as any colour code does, clears the decorations before it. A `§x` that is not followed by six `§`-and-digit pairs is dropped like an unknown code, and the font's own reading of `§` codes (names, signs, item text) is unchanged: only this call reads the form. `&#ff00aa` is not read; convert it to the `§x` form first, as `&` codes are replaced with `§` first.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`
