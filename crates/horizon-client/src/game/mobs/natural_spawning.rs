@@ -108,7 +108,7 @@ impl SpawnTicks {
             mod_api::MobCategory::UndergroundWaterCreature => &mut self.underground_water_creature,
             mod_api::MobCategory::WaterCreature => &mut self.water_creature,
             mod_api::MobCategory::WaterAmbient => &mut self.water_ambient,
-            mod_api::MobCategory::Misc => return false,
+            _ => return false,
         };
         *slot = ticks;
         true
