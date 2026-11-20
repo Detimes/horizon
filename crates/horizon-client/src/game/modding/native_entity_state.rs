@@ -478,6 +478,17 @@ impl Game<'_> {
             true
         })
     }
+    /// Sets or clears a mob's persistence (`Mob.persistenceRequired`), as Paper's
+    /// `Entity#setPersistent` does. False for a player, a guest, the dragon or a stale handle.
+    pub(super) fn entity_set_persistent(&mut self, entity: EntityRef, persistent: bool) -> bool {
+        let Some(Target::Mob(id)) = self.native_entity_target(entity) else {
+            return false;
+        };
+        self.mobs.iter_mut().find(|m| m.id == id).is_some_and(|m| {
+            m.persistent = persistent;
+            true
+        })
+    }
     /// Sets the mob's no-gravity flag (`Entity.setNoGravity`). Returns false for players and guests.
     pub(super) fn entity_set_no_gravity(&mut self, entity: EntityRef, no_gravity: bool) -> bool {
         let Some(Target::Mob(id)) = self.native_entity_target(entity) else {
@@ -622,6 +633,10 @@ mod tests {
             assert!(game.mobs[0].glowing);
             assert!(entity.set_no_gravity(game, true));
             assert!(game.mobs[0].no_gravity);
+            assert!(game.entity_set_persistent(entity, true));
+            assert!(game.mobs[0].persistent);
+            assert!(game.entity_set_persistent(entity, false));
+            assert!(!game.mobs[0].persistent);
             assert!(game.mobs[0].needs_sync);
         });
     }

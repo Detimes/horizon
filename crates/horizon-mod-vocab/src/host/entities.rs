@@ -920,6 +920,13 @@ pub trait EntitiesBackendMut {
     #[access(WorldOnly)]
     fn entity_set_glowing(&mut self, entity: EntityRef, glowing: bool) -> bool;
     /// Side: server.
+    /// Sets whether a mob keeps its place when nothing else holds it (`Mob.persistenceRequired`,
+    /// saved as `PersistenceRequired`): a persistent mob does not despawn on its own. False
+    /// clears the flag, so the mob can despawn again; vanilla's own `setPersistenceRequired`
+    /// only sets it. False for a player, a guest, the dragon, another kind or a stale handle.
+    #[access(WorldOnly)]
+    fn entity_set_persistent(&mut self, entity: EntityRef, persistent: bool) -> bool;
+    /// Side: server.
     /// Turns a painting, item frame or glow item frame in place to face `direction`
     /// (`HangingEntity.setDirection`, `ItemFrame.setDirection`): its facing, the yaw and pitch
     /// that follow from it and its bounds, nothing else. Like vanilla it doesn't check that the
