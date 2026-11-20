@@ -25,6 +25,73 @@ impl Game<'_> {
         }
     }
 
+    /// The mods' `container_click` for a click in the guest's inventory menu (window 0) or open
+    /// block container menu: true when a mod canceled it. The click then changes nothing and the
+    /// whole menu with the cursor goes back to the client (`sendAllDataToRemote`). A native mod's
+    /// menu, a drag (click type 5), a spectator's or a dead player's click and every window the hub
+    /// does not run are not asked.
+    pub(super) fn lan_container_click_vetoed(
+        &mut self,
+        conn: u32,
+        p: &play::ContainerClick,
+    ) -> bool {
+        // ClickType.QUICK_CRAFT: a drag is told at no step.
+        if p.input == 5 || !mod_api::__private::listened(mod_api::HookId::ContainerClick) {
+            return false;
+        }
+        let Some(host) = self.lan.as_ref() else {
+            return false;
+        };
+        let Some(g) = host.hub.guest(conn) else {
+            return false;
+        };
+        if g.spectator() || g.dead {
+            return false;
+        }
+        let slot = i32::from(p.slot);
+        let at = usize::try_from(slot).ok();
+        let clicked = if p.container == 0 {
+            at.and_then(|s| g.menu_sent.get(s).cloned().flatten())
+        } else {
+            match g
+                .menu
+                .as_ref()
+                .filter(|m| m.window == p.container && m.slots != horizon_client::lan::menu::Slots::Native)
+            {
+                Some(m) => at.and_then(|s| m.sent.get(s).cloned().flatten()),
+                None => return false,
+            }
+        };
+        let (uuid, carried) = (g.uuid, g.carried.clone());
+        let mut canceled = false;
+        self.as_guest(conn, |game| {
+            game.native_container_click(
+                uuid,
+                p.container,
+                slot,
+                i32::from(p.button),
+                p.input,
+                carried.as_ref(),
+                clicked.as_ref(),
+                &mut canceled,
+            );
+        });
+        if !canceled {
+            return false;
+        }
+        let Some(host) = self.lan.as_mut() else {
+            return true;
+        };
+        if p.container == 0 {
+            if let Some(gi) = host.hub.guests.iter().position(|g| g.conn == conn) {
+                host.hub.send_inventory(gi);
+            }
+        } else {
+            host.hub.resend_menu(conn, p.container, &self.world);
+        }
+        true
+    }
+
     /// `ServerGamePacketListenerImpl.handleContainerClick` for the guest `conn`: the hub's
     /// click, run with the host lifted out of the game. Returns the stacks the click threw out.
     pub(super) fn lan_hub_click(&mut self, conn: u32, p: &play::ContainerClick) -> Vec<ItemStack> {
