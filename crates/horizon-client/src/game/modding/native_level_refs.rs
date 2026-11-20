@@ -891,6 +891,20 @@ impl Game<'_> {
             .and_then(|map| map.paint(colors))
             .unwrap_or(false)
     }
+    /// `MapItemSavedData.setLocked` for a mod's call (`set_locked`). False on a client, for a
+    /// stale handle and a map nothing made; true otherwise, the flag set as given.
+    pub(super) fn level_set_map_locked(&mut self, level: LevelRef, id: i32, locked: bool) -> bool {
+        if !self.native_world_data_allowed(level) {
+            return false;
+        }
+        match self.map(id) {
+            Some(map) => {
+                map.set_locked(locked);
+                true
+            }
+            None => false,
+        }
+    }
     /// Queue the level to be saved at the start of the next server tick. False for a stale
     /// handle and on a client.
     pub(super) fn level_request_save(&mut self, level: LevelRef) -> bool {
@@ -1361,6 +1375,15 @@ mod tests {
             assert_eq!(stale.map_data(game, id), None);
             assert!(!stale.set_map_data(game, id, &colors));
             assert_eq!(level.map_data(game, i32::MAX), None, "a map nothing made");
+
+            // The locked flag changes alone: the pixels stay; refusals change nothing.
+            assert!(level.set_map_locked(game, id, true));
+            assert!(level.set_map_locked(game, id, true), "already locked is still true");
+            let locked = level.map_data(game, id).unwrap();
+            assert_eq!((locked.locked, locked.colors[5 + 2 * 128]), (true, 34));
+            assert!(!stale.set_map_locked(game, id, false));
+            assert!(!level.set_map_locked(game, i32::MAX, false), "a map nothing made");
+            assert!(level.map_data(game, id).unwrap().locked);
 
             // Ticks run only in the level in place, at a loaded position inside its height.
             let height = level.height(game).unwrap();

@@ -1010,6 +1010,14 @@ pub trait LevelsBackendMut {
     #[access(WorldOnly)]
     fn level_set_map_data(&mut self, level: LevelRef, id: i32, colors: &[u8]) -> bool;
     /// Side: server.
+    /// `MapItemSavedData.setLocked` (Paper's `MapView#setLocked`): map `id`'s locked flag becomes
+    /// `locked`, a locked map no longer reveals the world when it is drawn. The pixels stay, the
+    /// map saves with the next save, and the players' copies get the flag with their next update
+    /// of the map, as vanilla. True also when the flag already had the value. False for a stale
+    /// handle, a client and a map id nothing made.
+    #[access(WorldOnly)]
+    fn level_set_map_locked(&mut self, level: LevelRef, id: i32, locked: bool) -> bool;
+    /// Side: server.
     /// Run the block at `pos`'s scheduled tick now (`ServerLevel.tickBlock`): the path a due
     /// tick from the queue takes, the block's part first, else `BlockState.tick`, with the same
     /// random draws and level events. The queue is not read or changed; `schedule_block_tick`
