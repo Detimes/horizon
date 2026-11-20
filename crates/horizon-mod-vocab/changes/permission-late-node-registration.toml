@@ -1,0 +1,3 @@
+ids = ["method:prelude::PlayersServerHost::permission_declare_node"]
+why = "Adds PlayersServerHost::permission_declare_node (typed permission nodes, #17831): a mod declares a node after the server started, for nodes it can only name later (one per world, region, item or numbered step). Same rules as the gather collector, at most 4096 late nodes, named refusals NotInitialized, DuplicateNode, InvalidInput, WrongType and Recursive."
+migrate = "Additive. None."

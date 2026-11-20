@@ -2,8 +2,8 @@
 //! contexts, online and offline UUIDs, initialization, handler selection and failures.
 
 use super::permission_service::{
-    DEFAULT_HANDLER_ID, HandlerFactory, LevelSource, ModAnswers, NodePolicy, PermissionHandler,
-    PermissionService,
+    DEFAULT_HANDLER_ID, HandlerFactory, LevelSource, MAX_LATE_NODES, ModAnswers, NodePolicy,
+    PermissionHandler, PermissionService,
 };
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
@@ -272,6 +272,140 @@ fn queries_and_late_declarations_are_refused_before_initialization() {
         ),
         Err(PermissionError::InvalidInput)
     );
+}
+
+#[test]
+fn a_node_declared_late_answers_its_default_like_a_node_declared_at_start() {
+    let mut service = ready(vec![(
+        boolean("a.flag"),
+        NodeDefault::Level(PermissionLevel::All),
+    )]);
+    assert_eq!(
+        service.query_bool(&boolean("worlds.visit.nether"), None, BOB),
+        Err(PermissionError::Unregistered)
+    );
+    service
+        .declare_late(
+            boolean("worlds.visit.nether"),
+            NodeDefault::Level(PermissionLevel::Moderators),
+        )
+        .unwrap();
+    // BOB is a moderator in the operator list, CAROL is level 0, ALICE is an administrator.
+    assert_eq!(
+        service.query_bool(&boolean("worlds.visit.nether"), None, BOB),
+        Ok(true)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("worlds.visit.nether"), None, CAROL),
+        Ok(false)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("worlds.visit.nether"), Some(ALICE), ALICE),
+        Ok(true)
+    );
+    // A late node of another type is its own node, with its own value.
+    service
+        .declare_late(
+            integer("worlds.visit.limit"),
+            NodeDefault::Value(PermissionValue::Integer(3)),
+        )
+        .unwrap();
+    assert_eq!(
+        service.query(&integer("worlds.visit.limit"), None, CAROL, &[]),
+        Ok(PermissionValue::Integer(3))
+    );
+}
+
+#[test]
+fn a_late_declaration_is_refused_for_each_rule_and_keeps_nothing() {
+    let mut early = PermissionService::new();
+    assert_eq!(
+        early.declare_late(boolean("a.late"), NodeDefault::Level(PermissionLevel::All)),
+        Err(PermissionError::NotInitialized)
+    );
+    let mut service = ready(vec![(
+        boolean("a.flag"),
+        NodeDefault::Level(PermissionLevel::All),
+    )]);
+    assert_eq!(
+        service.declare_late(boolean("a.flag"), NodeDefault::Level(PermissionLevel::Admins)),
+        Err(PermissionError::DuplicateNode)
+    );
+    assert_eq!(
+        service.declare_late(boolean("a..late"), NodeDefault::Level(PermissionLevel::All)),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        service.declare_late(
+            boolean("a.late"),
+            NodeDefault::Value(PermissionValue::Integer(1))
+        ),
+        Err(PermissionError::WrongType)
+    );
+    // The refused declarations kept nothing, and the first node's default stands.
+    assert_eq!(
+        service.query_bool(&boolean("a.late"), None, CAROL),
+        Err(PermissionError::Unregistered)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("a.flag"), None, CAROL),
+        Ok(true)
+    );
+    // The same late node twice is a duplicate.
+    service
+        .declare_late(boolean("a.late"), NodeDefault::Level(PermissionLevel::All))
+        .unwrap();
+    assert_eq!(
+        service.declare_late(boolean("a.late"), NodeDefault::Level(PermissionLevel::All)),
+        Err(PermissionError::DuplicateNode)
+    );
+}
+
+#[test]
+fn late_nodes_stop_at_the_limit() {
+    let mut service = ready(Vec::new());
+    for n in 0..MAX_LATE_NODES {
+        service
+            .declare_late(
+                boolean(&format!("late.n{n}")),
+                NodeDefault::Level(PermissionLevel::All),
+            )
+            .unwrap();
+    }
+    assert_eq!(MAX_LATE_NODES, 4096);
+    assert_eq!(
+        service.declare_late(
+            boolean("late.one_too_many"),
+            NodeDefault::Level(PermissionLevel::All)
+        ),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        service.query_bool(&boolean("late.n4095"), None, CAROL),
+        Ok(true)
+    );
+}
+
+#[test]
+fn a_late_node_reaches_a_custom_handler_like_any_node() {
+    let calls = Arc::new(AtomicU32::new(0));
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_handler_factory(
+            "fixed",
+            fixed(Ok(PermissionValue::Boolean(false)), calls.clone()),
+        )
+        .unwrap();
+    service.finish_gathering(Some("fixed"));
+    service
+        .declare_late(boolean("a.late"), NodeDefault::Level(PermissionLevel::All))
+        .unwrap();
+    assert_eq!(
+        service.query_bool(&boolean("a.late"), None, CAROL),
+        Ok(false)
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]

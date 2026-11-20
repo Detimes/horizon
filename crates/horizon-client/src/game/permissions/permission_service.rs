@@ -19,6 +19,10 @@ pub(crate) const DEFAULT_HANDLER_ID: &str = "default";
 /// The longest accepted handler id, in bytes.
 const MAX_HANDLER_ID_LEN: usize = 128;
 
+/// The most nodes a server accepts after gathering (`declare_late`), so a mod that declares a node
+/// per world, per player or per item can not grow the service without bound.
+pub(crate) const MAX_LATE_NODES: usize = 4096;
+
 /// The operator level of a player, asked by UUID. `online` is the UUID when the player is on this
 /// server. The game supplies it when the server starts; it reads an online player's live level.
 pub(crate) type LevelSource = Arc<dyn Fn(Option<u128>, u128) -> PermissionLevel + Send + Sync>;
@@ -61,6 +65,11 @@ pub(crate) trait PermissionHandler: Send {
     /// The handler's id, as the server configuration names it.
     fn id(&self) -> &str;
 
+    /// Told that `node` was declared after gathering, with its `default`, so a handler that keeps
+    /// its own table of the declared nodes can add it. The built-in handler adds its default; a
+    /// handler a mod provides is asked about every node anyway and ignores it. Side: server.
+    fn node_declared(&mut self, _node: &PermissionNode, _default: &NodeDefault) {}
+
     /// Answers `node` for `uuid` (and `online` when the player is on this server). Returns the
     /// node's declared type or an explicit error. A handler a mod provides asks `answers`.
     /// Side: server.
@@ -97,6 +106,8 @@ pub(crate) struct PermissionService {
     levels: Option<LevelSource>,
     handler: Option<Box<dyn PermissionHandler>>,
     custom_handler: bool,
+    /// How many nodes `declare_late` added since gathering ended.
+    late_nodes: usize,
     /// A duplicate node or handler failed the setup: the service stays uninitialized.
     setup_failed: bool,
     /// `permission-handler` named a handler no mod gathered: a custom handler was configured,
@@ -119,6 +130,7 @@ impl PermissionService {
             levels: None,
             handler: None,
             custom_handler: false,
+            late_nodes: 0,
             setup_failed: false,
             handler_missing: false,
         }
@@ -166,6 +178,39 @@ impl PermissionService {
             return Err(PermissionError::DuplicateNode);
         }
         self.nodes.insert(key, (node, default));
+        Ok(())
+    }
+
+    /// Declares `node` with `default` after gathering has finished, as `register_node` does before
+    /// it, so the node can be asked from now on. Refused with `NotInitialized` before gathering
+    /// has finished (declare it in `permission_gather_nodes` then), with `InvalidInput` for a bad
+    /// name or past [`MAX_LATE_NODES`] late nodes, with `WrongType` for a default of the wrong
+    /// shape and with `DuplicateNode` for a node already declared, early or late; a refusal keeps
+    /// nothing. A node declared late is not part of the set the handler was built from: the
+    /// built-in handler is told (`node_declared`), a mod's handler is asked about it like any
+    /// node. Side: server.
+    pub(crate) fn declare_late(
+        &mut self,
+        node: PermissionNode,
+        default: NodeDefault,
+    ) -> Result<(), PermissionError> {
+        if !self.is_initialized() {
+            return Err(PermissionError::NotInitialized);
+        }
+        check_node_name(&node.name)?;
+        if self.late_nodes >= MAX_LATE_NODES {
+            return Err(PermissionError::InvalidInput);
+        }
+        check_default(node.value_type, &default)?;
+        let key = (node.name.clone(), node.value_type);
+        if self.nodes.contains_key(&key) {
+            return Err(PermissionError::DuplicateNode);
+        }
+        if let Some(handler) = self.handler.as_mut() {
+            handler.node_declared(&node, &default);
+        }
+        self.nodes.insert(key, (node, default));
+        self.late_nodes += 1;
         Ok(())
     }
 
@@ -381,6 +426,11 @@ struct DefaultHandler {
 impl PermissionHandler for DefaultHandler {
     fn id(&self) -> &str {
         DEFAULT_HANDLER_ID
+    }
+
+    fn node_declared(&mut self, node: &PermissionNode, default: &NodeDefault) {
+        self.defaults
+            .insert((node.name.clone(), node.value_type), default.clone());
     }
 
     fn query(

@@ -3,7 +3,7 @@
 
 use super::handler::gather_handlers;
 use super::native_permissions::{
-    PermissionHost, QueryState, gathered_nodes, run_query, run_query_bool,
+    PermissionHost, QueryState, gathered_nodes, run_declare, run_query, run_query_bool,
 };
 use super::permission_service::{ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
@@ -32,6 +32,9 @@ struct FakeHost {
     reenter: bool,
     /// What that inner query answered.
     inner: Option<Result<PermissionValue, PermissionError>>,
+    /// Whether the mod handler declares a late node from inside its answer, and what that said.
+    declare_inside: bool,
+    declared: Option<Result<(), PermissionError>>,
     /// What the mod `garden` answers.
     reply: Result<PermissionValue, PermissionError>,
 }
@@ -51,6 +54,14 @@ impl ModAnswers for FakeHost {
         if self.reenter {
             self.reenter = false;
             self.inner = Some(run_query(self, node, uuid, &[]));
+        }
+        if self.declare_inside {
+            self.declare_inside = false;
+            self.declared = Some(run_declare(
+                self,
+                &boolean("a.inside"),
+                &NodeDefault::Level(PermissionLevel::All),
+            ));
         }
         Some(ModAnswer {
             mod_id: "garden".to_owned(),
@@ -92,6 +103,8 @@ fn host(configured: &str) -> FakeHost {
         asked: Vec::new(),
         reenter: false,
         inner: None,
+        declare_inside: false,
+        declared: None,
         reply: Ok(PermissionValue::Boolean(true)),
     }
 }
@@ -271,4 +284,38 @@ fn distinct_nodes_gather_into_an_uninitialized_service() {
     .unwrap();
     // Not published until `finish_gathering`: it answers nothing yet.
     assert!(!service.is_initialized());
+}
+
+#[test]
+fn a_node_declared_late_is_answered_and_a_declaration_from_inside_a_handler_is_recursive() {
+    let mut host = host("");
+    assert_eq!(
+        run_declare(
+            &mut host,
+            &boolean("a.late"),
+            &NodeDefault::Level(PermissionLevel::Admins)
+        ),
+        Ok(())
+    );
+    // BOB is level 3 in the operator list, CAROL is not listed.
+    assert_eq!(
+        run_query_bool(&mut host, &boolean("a.late"), BOB),
+        Ok(true)
+    );
+    assert_eq!(
+        run_query_bool(&mut host, &boolean("a.late"), CAROL),
+        Ok(false)
+    );
+    // From inside a handler's answer the service is out of the host: the declaration is refused.
+    let mut host = host("garden.policy");
+    host.declare_inside = true;
+    assert_eq!(
+        run_query_bool(&mut host, &boolean("a.flag"), CAROL),
+        Ok(true)
+    );
+    assert_eq!(host.declared, Some(Err(PermissionError::Recursive)));
+    assert_eq!(
+        run_query_bool(&mut host, &boolean("a.inside"), CAROL),
+        Err(PermissionError::Unregistered)
+    );
 }

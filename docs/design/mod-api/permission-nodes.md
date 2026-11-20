@@ -25,7 +25,7 @@ On every logical server start, after levels load and before server-starting:
 3. Gather typed nodes. Duplicate typed nodes or invalid mod input fail registration without panicking.
 4. Create the selected handler from the complete validated node set and publish the service atomically.
 
-Queries are unavailable before initialization. No late registration is allowed. Closing a server discards its service; reopening gathers afresh. Joins and resource reloads do not recollect. Dispatch uses the shared native/wasm per-mod dependency order, not a bundle packaging model. Native and wasm share this contract and the same failure boundaries.
+Queries are unavailable before initialization. The gathering hook closes with the start; a node a mod can only name later is declared with the explicit host method `permission_declare_node`, which has the collector's rules and a limit of 4096 late nodes. Closing a server discards its service; reopening gathers afresh. Joins and resource reloads do not recollect. Dispatch uses the shared native/wasm per-mod dependency order, not a bundle packaging model. Native and wasm share this contract and the same failure boundaries.
 
 ## Handler contract and failures
 
