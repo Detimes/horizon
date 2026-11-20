@@ -1384,4 +1384,11 @@ pub trait PlayersBackendMut {
     /// that is not finite.
     #[access(WorldOnly)]
     fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
+    /// Side: server.
+    /// Sets whether a server player or guest is sneaking (`Player#setSneaking`): the shift-key
+    /// state the crouching pose and hitbox follow, as a guest's own sneak key sets it. A fake
+    /// player takes it too, which is how a bot is shown crouched. False for a stale handle, a
+    /// client, or a player the server does not hold in place.
+    #[access(WorldOnly)]
+    fn player_set_sneaking(&mut self, player: PlayerRef, sneaking: bool) -> bool;
 }

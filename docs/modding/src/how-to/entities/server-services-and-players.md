@@ -101,6 +101,8 @@ UTF-16 units, values of 32767 and signatures of 1024. A list past a limit is
 refused and the login's own properties are sent. `player_login` follows later and
 can still refuse the player.
 
+`player.set_sneaking(host, sneaking)` (`player_set_sneaking`) sets the shift-key state a server player or a guest crouches by, so the crouching pose and hitbox follow, as Paper's `Player#setSneaking` does. A fake player takes it too, which shows a bot crouched. It returns `false` for a stale handle, a client, or a player the server does not hold in place.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
