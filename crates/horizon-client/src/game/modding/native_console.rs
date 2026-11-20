@@ -33,9 +33,10 @@ impl Game<'_> {
     ) -> Result<(), ConsoleLogRefusal> {
         let text = console_log_text(mod_id, line)?;
         match level {
-            ConsoleLevel::Info => log::info!("{text}"),
             ConsoleLevel::Warn => log::warn!("{text}"),
             ConsoleLevel::Error => log::error!("{text}"),
+            // `Info`, and any level a later API adds: the line is never lost.
+            _ => log::info!("{text}"),
         }
         Ok(())
     }
