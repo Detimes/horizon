@@ -10,9 +10,10 @@ added, removed (accepted and failing) and changed, and fails on:
 - a removed point unless tools/mod_points_removed.txt lists it (`name | #PR | reason`) and it is not a `Game` method or
   a published loop, and no fixture (tools/ci/fn-replace-check, the wasm host's), doc or mod manifest names it;
 - a changed point (name kept, target or hash different) unless the same file lists it;
-- an added point, unless --allow-added;
+- an added point or catalog hook, unless --allow-added;
 - a difference in loops.json, and a difference in the other generated files that no accepted point change explains (the
-  generated API differs whenever a point does);
+  generated API differs whenever a point does). An additive catalog hook can explain its generated catalog and notes
+  and its own guest dispatch;
 - a removed internals.json entry (one becoming `shape_only` too), and with --allow-added only that: added and changed
   entries are listed and pass (`cargo horizon-mod update` reports signature-hash changes for declared internals).
 Moving code out of `game/` removes its points: list them in the file. A method of `Game` keeps its name, module path and
@@ -43,6 +44,7 @@ run builds the generator's crates and their dependencies twice.
 """
 
 import argparse
+from bisect import bisect_left
 import difflib
 import hashlib
 import json
@@ -69,6 +71,15 @@ SCRATCH_FILES = {"points-timing.txt"}
 # addition or a change with --allow-added; see internals_diff).
 INTERNALS = "internals.json"
 STRICT_FILES = {"loops.json", INTERNALS}
+HOOK_CATALOG = "catalog.json"
+GUEST_WIRE = "wire_guest_generated.rs"
+HOOK_FILES = {HOOK_CATALOG, "hook-notes.md", GUEST_WIRE}
+# The guest's `hook` function and its arms, one per export a mod is called through, in the generator's method order.
+GUEST_DISPATCH = "pub fn hook(id: u32,"
+GUEST_ARM = re.compile(r"^\d+ => \{.*?(?=^\d+ => \{|^_ =>)", re.MULTILINE | re.DOTALL)
+GUEST_HOOK_ARM = re.compile(r"\d+ => \{ let receiver = super::hooks\(\); ")
+GUEST_HOOK_CALL = re.compile(r"\blet answer = receiver\.([a-zA-Z0-9_]+)\(")
+WIRE_RECORD = re.compile(r"\b__wire_record_(\d+)\b")
 # Where a mod, a fixture or a doc may name a point.
 REFERENCE_PATHS = ("tools/ci/fn-replace-check", "crates/horizon-mod-wasm/tests/fixture", "docs", "*horizon-mod.toml")
 
@@ -133,6 +144,101 @@ def diff_files(base_dir, head_dir, base_root=None, head_root=None):
             diffs.append((name, list(difflib.unified_diff(
                 old.splitlines(), new.splitlines(), f"base/{name}", f"head/{name}", lineterm="", n=1))))
     return sorted(head_files - base_files), sorted(base_files - head_files), diffs
+
+
+def added_catalog_hooks(base_dir, head_dir):
+    base = json.loads((base_dir / HOOK_CATALOG).read_text(encoding="utf-8"))
+    head = json.loads((head_dir / HOOK_CATALOG).read_text(encoding="utf-8"))
+    try:
+        before = {hook["name"] for hook in base["hooks"]}
+        after = {hook["name"] for hook in head["hooks"]}
+    except (TypeError, KeyError):
+        return set()
+    if len(before) != len(base["hooks"]) or len(after) != len(head["hooks"]) or not all(
+        isinstance(name, str) for name in before | after
+    ):
+        return set()
+    retained = [hook for hook in head["hooks"] if hook["name"] in before]
+    return after - before if {**head, "hooks": retained} == base else set()
+
+
+def guest_wire_without_hooks(guest, hooks, base):
+    """The head's guest wire with the added hooks' names and dispatch arms removed and the generator's private record
+    numbers they consumed closed, or None where no such removal turns it into `base`.
+
+    A record number is the generator's index of a named type in the order it first meets them, method by method, and
+    the dispatch arms follow that order. A new hook's types take the numbers between the arms around its own: those its
+    arm references and, for an owned event (which has no record constructor), numbers no arm references. Each number the
+    head has more than the base below a retained reference must lie between the records of the arms before and after an
+    added one's; the retained text then has to match the base exactly.
+
+    Owned types are invisible here: an owned event or answer has no record constructor, and an answer's type is not
+    even written in its arm. So an owned type an existing hook gains or loses inside an added hook's window is absorbed
+    with the added hook's numbers, and the surface report (tools/ci/surface_report.py) is what fails it: a hook that
+    gains an output or changes its signature is breaking there. An added hook that is the first to use an owned type a
+    later hook already used moves that type's number, so the later numbers shift by less than the ones just after it.
+    That fails here: a number missing after the window looks the same as a later hook losing an owned type."""
+    for name in hooks:
+        guest, count = re.subn(rf'crate::HookId::\w+ => "{re.escape(name)}",', "", guest)
+        if count != 1:
+            return None
+    arms = list(GUEST_ARM.finditer(guest, max(guest.find(GUEST_DISPATCH), 0)))
+    references = [set(map(int, WIRE_RECORD.findall(arm[0]))) for arm in arms]
+
+    def added(arm):
+        call = GUEST_HOOK_CALL.search(arm[0])
+        return GUEST_HOOK_ARM.match(arm[0]) is not None and call is not None and call[1] in hooks
+
+    removed = [index for index, arm in enumerate(arms) if added(arm)]
+    windows = []
+    for index in removed:
+        low = max((n for j in range(index) if j not in removed for n in references[j]), default=-1)
+        high = min((n for j in range(index + 1, len(arms)) if j not in removed for n in references[j] if n > low),
+                   default=float("inf"))
+        windows.append((low, high))
+    for index in reversed(removed):
+        guest = guest[:arms[index].start()] + guest[arms[index].end():]
+
+    head_parts, base_parts = WIRE_RECORD.split(guest), WIRE_RECORD.split(base)
+    if len(head_parts) != len(base_parts) or head_parts[::2] != base_parts[::2]:
+        return None
+    pairs = {}
+    for head_number, base_number in zip(map(int, head_parts[1::2]), map(int, base_parts[1::2])):
+        if pairs.setdefault(head_number, base_number) != base_number:
+            return None
+    used = sorted(pairs)
+    gaps = set().union(*(references[index] for index in removed)) - set(used)
+    # Each retained number still above its base number absorbs the unreferenced numbers just below it. Which owned
+    # types those were is not in this file: one an existing hook started to use there passes here, and only the
+    # surface report sees it. A number the head lacks (a surplus below zero) fails, never absorbed.
+    for previous, number in zip([-1] + used, used):
+        surplus = number - sum(gap < number for gap in gaps) - pairs[number]
+        free = [n for n in range(number - 1, previous, -1) if n not in gaps][:max(surplus, 0)]
+        if surplus < 0 or len(free) < surplus:
+            return None
+        gaps.update(free)
+    if not all(any(low < gap < high for low, high in windows) for gap in gaps):
+        return None
+    gaps = sorted(gaps)
+
+    def renumber(match):
+        number = int(match[1])
+        return f"__wire_record_{number - bisect_left(gaps, number)}"
+
+    return WIRE_RECORD.sub(renumber, guest)
+
+
+def explained_hook_additions(base_dir, head_dir, diffs, base_root, head_root):
+    changed = {name for name, _ in diffs}
+    if HOOK_CATALOG not in changed or changed - HOOK_FILES:
+        return set()
+    hooks = added_catalog_hooks(base_dir, head_dir)
+    if hooks and GUEST_WIRE in changed:
+        base = read_text(base_dir / GUEST_WIRE, [base_root] if base_root else [])
+        head = read_text(head_dir / GUEST_WIRE, [head_root] if head_root else [])
+        if guest_wire_without_hooks(head, hooks, base) != base:
+            return set()
+    return hooks
 
 
 def internal_entries(text):
@@ -385,6 +491,13 @@ def compare(base_dir, head_dir, allow_added=False, base_root=None, head_root=Non
     removed_ok, removed_bad, changed_ok, changed_bad = classify(
         removed, changed, base_points, accepted, loop_targets(base_dir / "loops.json"), files() if removed else {})
     explained = bool((added and allow_added) or removed_ok or changed_ok)
+    # Function replacement points and named hooks are produced from different inputs. A new
+    # named hook may change its generated files while leaving every replacement point intact.
+    if allow_added and not explained and not files_added and not files_removed:
+        hook_additions = explained_hook_additions(base_dir, head_dir, diffs, base_root, head_root)
+        if hook_additions:
+            print("Catalog hooks added (accepted): " + ", ".join(sorted(hook_additions)))
+            explained = True
     status = verdict(added, removed_bad, changed_bad, files_added, files_removed, diffs, explained, allow_added,
                      internals)
     lines = summary(added, removed_ok, removed_bad, changed, changed_ok, files_added, files_removed, diffs,
@@ -645,7 +758,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", help="the git ref to compare with (default: the merge base of HEAD and origin/main)")
     parser.add_argument("--allow-added", action="store_true",
-                        help="accept added points, and added or changed internals")
+                        help="accept added points and catalog hooks, and added or changed internals")
     parser.add_argument("--target-dir", type=Path,
                         help="Cargo build folder of the working tree; the base builds in mod-points-base inside it (default: "
                              "$CARGO_TARGET_DIR, else the repository's target)")
