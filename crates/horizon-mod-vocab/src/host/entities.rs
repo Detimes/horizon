@@ -592,6 +592,13 @@ pub trait EntitiesBackendMut {
     #[access(WorldOnly)]
     fn entity_reset_fall_distance(&mut self, entity: EntityRef) -> bool;
     /// Side: server.
+    /// Sets the blocks the entity has fallen (`Entity.fallDistance`), as Paper's
+    /// `Entity#setFallDistance` does: the next landing hurts by what it reads. Server players,
+    /// guests and mobs. False for another kind, a client, a stale handle or a value that is
+    /// not finite. `entity_reset_fall_distance` sets it to zero.
+    #[access(WorldOnly)]
+    fn entity_set_fall_distance(&mut self, entity: EntityRef, distance: f64) -> bool;
+    /// Side: server.
     /// The entity's UUID (`Entity.getUUID`), the one it is saved with; an
     /// entity that has none yet gets it now, as a new vanilla entity does.
     /// On a client, the one the server added it with (a player's is its
