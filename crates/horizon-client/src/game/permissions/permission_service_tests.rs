@@ -5,6 +5,7 @@ use super::permission_service::{
     DEFAULT_HANDLER_ID, HandlerFactory, LevelSource, ModAnswers, NodePolicy, PermissionHandler,
     PermissionService,
 };
+use mod_api::MAX_PREFIX_MATCHES;
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
     PermissionNodes, PermissionValue, PermissionValueType, Text,
@@ -271,6 +272,85 @@ fn queries_and_late_declarations_are_refused_before_initialization() {
             )
         ),
         Err(PermissionError::InvalidInput)
+    );
+}
+
+#[test]
+fn a_prefix_lists_the_boolean_nodes_under_whole_segments_wildcards_included() {
+    let all = || NodeDefault::Level(PermissionLevel::All);
+    let service = ready(vec![
+        (boolean("jobs.boost.miner"), all()),
+        (boolean("jobs.boost.farmer"), all()),
+        (boolean("jobs.boost.*"), all()),
+        (boolean("jobs.boosted"), all()),
+        (boolean("jobs.boostx.miner"), all()),
+        (boolean("jobs.join"), all()),
+        (integer("jobs.boost.limit"), NodeDefault::Value(PermissionValue::Integer(2))),
+    ]);
+    let names = |prefix: &str| -> Vec<String> {
+        service
+            .boolean_nodes_with_prefix(prefix)
+            .unwrap()
+            .into_iter()
+            .map(|node| node.name)
+            .collect()
+    };
+    // Sorted by name; the integer node, the sibling `jobs.boosted` and `jobs.boostx.` are not under it.
+    assert_eq!(
+        names("jobs.boost."),
+        ["jobs.boost.*", "jobs.boost.farmer", "jobs.boost.miner"]
+    );
+    assert_eq!(names("jobs.").len(), 6);
+    assert_eq!(names("none."), Vec::<String>::new());
+}
+
+#[test]
+fn a_prefix_is_refused_when_malformed_when_too_wide_and_before_gathering() {
+    assert_eq!(
+        PermissionService::new().boolean_nodes_with_prefix("a."),
+        Err(PermissionError::NotInitialized)
+    );
+    let service = ready(vec![(
+        boolean("a.flag"),
+        NodeDefault::Level(PermissionLevel::All),
+    )]);
+    for bad in ["", "a", "a..", ".", "a.*."] {
+        assert_eq!(
+            service.boolean_nodes_with_prefix(bad),
+            Err(PermissionError::InvalidInput),
+            "{bad:?}"
+        );
+    }
+    let mut wide = PermissionService::new();
+    for n in 0..=MAX_PREFIX_MATCHES {
+        wide.register_node(
+            boolean(&format!("wide.n{n:04}")),
+            NodeDefault::Level(PermissionLevel::All),
+        )
+        .unwrap();
+    }
+    wide.finish_gathering(None);
+    assert_eq!(MAX_PREFIX_MATCHES, 1024);
+    assert_eq!(
+        wide.boolean_nodes_with_prefix("wide."),
+        Err(PermissionError::InvalidInput)
+    );
+}
+
+#[test]
+fn a_wildcard_node_is_declared_queried_and_not_expanded() {
+    let mut service = ready(vec![(
+        boolean("citizens.npc.*"),
+        NodeDefault::Level(PermissionLevel::Admins),
+    )]);
+    assert_eq!(
+        service.query_bool(&boolean("citizens.npc.*"), Some(ALICE), ALICE),
+        Ok(true)
+    );
+    // The wildcard grants nothing under it: a node it would cover is not declared by it.
+    assert_eq!(
+        service.query_bool(&boolean("citizens.npc.create"), Some(ALICE), ALICE),
+        Err(PermissionError::Unregistered)
     );
 }
 

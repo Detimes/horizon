@@ -39,6 +39,11 @@ impl QueryState {
         Ok(())
     }
 
+    /// Whether a query is being answered, so the service is out of the host for its handler.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
+
     /// Ends the query `enter` started; a query asked again while it was answered fails it too.
     fn leave<T>(&mut self, result: Result<T, PermissionError>) -> Result<T, PermissionError> {
         self.active = false;
@@ -106,6 +111,36 @@ pub(crate) fn run_query<H: PermissionHost>(
     let (service, state) = host.permission_parts();
     *service = taken;
     state.leave(result)
+}
+
+/// The names of the declared Boolean nodes under `prefix` that the handler answers `true` for
+/// `uuid`, in name order, stopping after `limit` of them. Every matching node is a query of its
+/// own; the first failure is the result, never a partial list. Refused with `Recursive` while a
+/// query is being answered. Side: server.
+pub(crate) fn run_nodes_with_prefix<H: PermissionHost>(
+    host: &mut H,
+    prefix: &str,
+    uuid: u128,
+    contexts: &[PermissionContext],
+    limit: usize,
+) -> Result<Vec<String>, PermissionError> {
+    let (service, state) = host.permission_parts();
+    if state.is_active() {
+        return Err(PermissionError::Recursive);
+    }
+    let nodes = service.boolean_nodes_with_prefix(prefix)?;
+    let mut granted = Vec::new();
+    for node in nodes {
+        if granted.len() >= limit {
+            break;
+        }
+        match run_query(host, &node, uuid, contexts)? {
+            PermissionValue::Boolean(true) => granted.push(node.name),
+            PermissionValue::Boolean(false) => {}
+            _ => return Err(PermissionError::WrongType),
+        }
+    }
+    Ok(granted)
 }
 
 /// `run_query` for a Boolean node. Refused with `WrongType` for any other node, before any handler
@@ -267,6 +302,26 @@ impl Game<'_> {
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError> {
         run_query(self, node, uuid, contexts)
+    }
+
+    /// The Boolean nodes under `prefix` granted to `uuid`. Side: server.
+    pub(super) fn permission_nodes_with_prefix(
+        &mut self,
+        prefix: &str,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<Vec<String>, PermissionError> {
+        run_nodes_with_prefix(self, prefix, uuid, contexts, usize::MAX)
+    }
+
+    /// Whether any Boolean node under `prefix` is granted to `uuid`. Side: server.
+    pub(super) fn permission_query_prefix(
+        &mut self,
+        prefix: &str,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<bool, PermissionError> {
+        run_nodes_with_prefix(self, prefix, uuid, contexts, 1).map(|granted| !granted.is_empty())
     }
 
     /// `permission_query` for a Boolean node. Side: server.

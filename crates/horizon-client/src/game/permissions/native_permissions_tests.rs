@@ -3,7 +3,7 @@
 
 use super::handler::gather_handlers;
 use super::native_permissions::{
-    PermissionHost, QueryState, gathered_nodes, run_query, run_query_bool,
+    PermissionHost, QueryState, gathered_nodes, run_nodes_with_prefix, run_query, run_query_bool,
 };
 use super::permission_service::{ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
@@ -271,4 +271,42 @@ fn distinct_nodes_gather_into_an_uninitialized_service() {
     .unwrap();
     // Not published until `finish_gathering`: it answers nothing yet.
     assert!(!service.is_initialized());
+}
+
+#[test]
+fn a_prefix_query_lists_the_nodes_the_player_holds_in_name_order() {
+    let mut host = host("");
+    // BOB is level 3 in the operator list: both nodes. CAROL is not listed: `a.flag` only.
+    assert_eq!(
+        run_nodes_with_prefix(&mut host, "a.", BOB, &[], usize::MAX),
+        Ok(vec!["a.flag".to_owned(), "a.staff".to_owned()])
+    );
+    assert_eq!(
+        run_nodes_with_prefix(&mut host, "a.", CAROL, &[], usize::MAX),
+        Ok(vec!["a.flag".to_owned()])
+    );
+    // A limit of one stops at the first granted node.
+    assert_eq!(
+        run_nodes_with_prefix(&mut host, "a.", BOB, &[], 1),
+        Ok(vec!["a.flag".to_owned()])
+    );
+    assert_eq!(
+        run_nodes_with_prefix(&mut host, "a", BOB, &[], usize::MAX),
+        Err(PermissionError::InvalidInput)
+    );
+}
+
+#[test]
+fn a_prefix_query_asks_the_mod_handler_per_node_and_a_failure_fails_the_whole_query() {
+    let mut host = host("garden.policy");
+    assert_eq!(
+        run_nodes_with_prefix(&mut host, "a.", CAROL, &[], usize::MAX),
+        Ok(vec!["a.flag".to_owned(), "a.staff".to_owned()])
+    );
+    assert_eq!(host.asked.len(), 2);
+    host.reply = Err(PermissionError::HandlerFailed);
+    assert_eq!(
+        run_nodes_with_prefix(&mut host, "a.", CAROL, &[], usize::MAX),
+        Err(PermissionError::HandlerFailed)
+    );
 }

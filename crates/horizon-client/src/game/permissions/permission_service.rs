@@ -3,8 +3,9 @@
 //! explicit refusal, and no refusal falls back to a grant.
 
 use mod_api::{
-    NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
-    PermissionNodes, PermissionValue, PermissionValueType, check_contexts, check_node_name,
+    MAX_PREFIX_MATCHES, NodeDefault, PermissionContext, PermissionError, PermissionLevel,
+    PermissionNode, PermissionNodes, PermissionValue, PermissionValueType, check_contexts,
+    check_node_name, check_node_prefix,
 };
 use std::{
     collections::BTreeMap,
@@ -228,6 +229,34 @@ impl PermissionService {
         };
         self.custom_handler = selected_custom;
         self.handler = Some(handler);
+    }
+
+    /// The declared Boolean nodes under `prefix` (whole segments, ending in a dot), sorted by
+    /// name; a wildcard node `a.*` is under `a.`. Refused with `NotInitialized` before gathering,
+    /// `InvalidInput` for a prefix that breaks the rule or matches more than
+    /// [`MAX_PREFIX_MATCHES`] nodes. Side: server.
+    pub(crate) fn boolean_nodes_with_prefix(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<PermissionNode>, PermissionError> {
+        if !self.is_initialized() {
+            return Err(PermissionError::NotInitialized);
+        }
+        check_node_prefix(prefix)?;
+        let start = (prefix.to_owned(), PermissionValueType::Boolean);
+        let mut found = Vec::new();
+        for ((name, value_type), (node, _)) in self.nodes.range(start..) {
+            if !name.starts_with(prefix) {
+                break;
+            }
+            if *value_type == PermissionValueType::Boolean {
+                if found.len() >= MAX_PREFIX_MATCHES {
+                    return Err(PermissionError::InvalidInput);
+                }
+                found.push(node.clone());
+            }
+        }
+        Ok(found)
     }
 
     /// Who decides the command usages that ask a node: the built-in handler's levels, a mod's
