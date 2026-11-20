@@ -48,6 +48,7 @@ impl PermissionHandler for Fixed {
     fn query(
         &mut self,
         _node: &PermissionNode,
+        _default: &NodeDefault,
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
@@ -399,6 +400,7 @@ fn a_panicking_handler_is_a_handler_failure_and_the_service_stays_usable() {
         fn query(
             &mut self,
             _node: &PermissionNode,
+            _default: &NodeDefault,
             _online: Option<u128>,
             _uuid: u128,
             _contexts: &[PermissionContext],

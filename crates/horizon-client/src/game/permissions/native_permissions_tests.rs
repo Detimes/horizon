@@ -42,6 +42,7 @@ impl ModAnswers for FakeHost {
         handler: &str,
         _provider: &str,
         node: &PermissionNode,
+        _default: &NodeDefault,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],

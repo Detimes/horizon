@@ -57,6 +57,7 @@ fn only_the_providing_mod_is_asked_and_the_others_never_see_the_query() {
         .into(),
     );
     let node = generated::mod_api::PermissionNode;
+    let default = generated::mod_api::NodeDefault;
     let mut answer = None;
     dispatch_permission_handler_query(
         &mut TestHost,
@@ -64,6 +65,7 @@ fn only_the_providing_mod_is_asked_and_the_others_never_see_the_query() {
             handler: "garden.policy",
             provider: "garden",
             node: &node,
+            default: &default,
             online: Some(7),
             uuid: 7,
             contexts: &[],
@@ -88,6 +90,7 @@ fn only_the_providing_mod_is_asked_and_the_others_never_see_the_query() {
             handler: "garden.policy",
             provider: "absent",
             node: &node,
+            default: &default,
             online: None,
             uuid: 7,
             contexts: &[],

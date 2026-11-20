@@ -51,7 +51,8 @@ string and component errors must not be read as a Boolean denial.
 (an unknown node, never an implicit registration), `DuplicateNode`, `DuplicateHandler`, `WrongType`,
 `UnknownPlayer`, `HandlerFailed`, `Recursive` (a handler that queries inside its own query fails both queries)
 and `InvalidInput`. In `permission_handler_query`, `online` is the player's UUID when the player is on this
-server and `None` for an offline UUID; ask `host.player(uuid)` for the handle. A failed query changes nothing and grants nothing.
+server and `None` for an offline UUID; ask `host.player(uuid)` for the handle. `default` is the `NodeDefault` the node was declared with, so a handler with no rule of its own for a node
+can answer from it: a `Level` against the player's operator level, a `Value` as it is. A failed query changes nothing and grants nothing.
 
 Queries take no cache and write nothing. A node decision does not fire `permissions_changed`, and that hook
 does not report node decisions. There are no wildcards, no hierarchy and no namespace ownership: a node name
