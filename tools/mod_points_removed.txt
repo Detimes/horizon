@@ -7,4 +7,3 @@
 # `#[horizon_mod_api_macros::replaceable]` on it in the lower crate (an issue is enough); that keeps its point.
 #
 # One line per point: name | #PR | short reason. Lines starting with # are comments.
-game_dragon_dragon_set_native_phase | #18760 | test setup only now: the game sets a dragon's phase through Game::change_dragon_phase_to, which asks the mods (dragon_change_phase)

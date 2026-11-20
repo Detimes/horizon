@@ -1054,8 +1054,8 @@ impl Dragon {
     }
     /// `EnderDragonPhaseManager.setPhase`: nothing when it is the phase it
     /// holds (a strafing dragon too), else the new phase begins fresh. No mod is asked:
-    /// the game goes through `Game::change_dragon_phase_to`; this is the tests' setup.
-    #[cfg(test)]
+    /// the game goes through `Game::change_dragon_phase_to`; the tests set up with this.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn set_native_phase(&mut self, phase: DragonPhase) {
         if phase != self.native_phase() {
             self.set_phase(Phase::from_id(phase.id()));
