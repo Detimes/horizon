@@ -3097,15 +3097,16 @@ impl Game<'_> {
         self.fire_explosion_prime(center, radius);
     }
     /// A dropped item entity reached its 6000-tick lifetime and is about to be
-    /// removed (Bukkit's `ItemDespawnEvent`).
+    /// removed (Bukkit's `ItemDespawnEvent`). Set `cancel` to keep it.
     pub(in crate::game) fn native_item_despawn(
         &mut self,
         entity: u32,
         item: &str,
         count: i32,
         pos: [f64; 3],
+        cancel: &mut bool,
     ) {
-        self.fire_item_despawn(entity, item, count, pos);
+        self.fire_item_despawn(entity, item, count, pos, cancel);
     }
     /// A mob is about to drop `count` of `item` at `pos` (Bukkit's
     /// `EntityDropItemEvent`).
