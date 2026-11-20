@@ -90,6 +90,12 @@ across a leave and rejoin. The `player_tab_list_name_format` hook still has the 
 and chat, name tags and commands keep the real name. The call returns `false` for a stale
 handle, an unavailable server list or a player who is not online.
 
+To show an entity to one player only, spawn it with `player.spawn_viewer_entity(host, kind, pos)`.
+Its `AddEntity` goes to that client alone; the level does not hold it, and the other players do not
+see it. Move it with `player.move_viewer_entity(host, id, pos)` and remove it with
+`player.remove_viewer_entity(host, id)`. It has the type's default metadata only, and it is gone
+when the viewer leaves, so a mod that wants it kept re-spawns it on the next join.
+
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
 return what the calls above set. Latency is the Tab list ping in milliseconds
 (`Option<i32>`, `0` until the first keep-alive answer). `hidden` is the level
