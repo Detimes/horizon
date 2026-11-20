@@ -161,6 +161,15 @@ pub trait PlayersBackend {
     #[access(WorldOnly)]
     fn player_address(&self, player: PlayerRef) -> Option<String>;
     /// Side: server.
+    /// The host and port the player's client typed to connect (the handshake's address: the
+    /// name a server with several, or a host a mod announces a pack URL under, was reached by),
+    /// where `player_address` gives the IP they connect from. A transfer's is the one the
+    /// transferring server gave. The host is cut at its first NUL, where a proxy appends its own
+    /// data. None for a stale or unavailable player, a player with no connection of their own
+    /// (a fake player, the single-player owner) and a client that typed nothing.
+    #[access(WorldOnly)]
+    fn player_connect_address(&self, player: PlayerRef) -> Option<ConnectAddress>;
+    /// Side: server.
     /// The stable name of a connected or acting player. None for a stale or
     /// unavailable player; displaced online players retain their identity.
     #[access(WorldOnly)]
@@ -465,6 +474,14 @@ pub trait PlayersBackend {
     #[access(WorldOnly)]
     fn player_sees(&self, viewer: PlayerRef, target: PlayerRef)
     -> Result<bool, PlayerWorldRefusal>;
+    /// Side: server.
+    /// All of the player's statistics as `ServerStatsCounter.toJson` writes their
+    /// `stats/<uuid>.json`: `{"stats":{"minecraft:mined":{"minecraft:stone":3},...},
+    /// "DataVersion":n}`, types and keys namespaced, empty types left out. None for a stale
+    /// or unavailable player and on a client.
+    #[access(WorldOnly)]
+    fn player_statistics(&self, player: PlayerRef) -> Option<String>;
+    /// Side: server.
     /// The player's latency in milliseconds, as the Tab list shows it
     /// (`ServerCommonPacketListenerImpl.latency`): keep-alive round trips averaged as vanilla
     /// does (`(old * 3 + new) / 4`), 0 until the first answer. 0 for a fake player and an
@@ -474,8 +491,7 @@ pub trait PlayersBackend {
     /// Side: server.
     /// The permission level `player_hide` hides the player from (players below it don't see
     /// them), None when they are not hidden. Kept by UUID, so it reads the same for a player
-    /// who rejoined hidden. The outer None is a stale world epoch, a client, or a world
-    /// nobody else can join.
+    /// who rejoined hidden. The outer None is a stale world epoch or a client.
     #[access(WorldOnly)]
     fn player_hidden(&self, player: PlayerRef) -> Option<Option<u8>>;
     /// Side: server.
@@ -483,6 +499,16 @@ pub trait PlayersBackend {
     /// have none. The outer None is a stale or offline player, or no server list.
     #[access(WorldOnly)]
     fn player_nickname(&self, player: PlayerRef) -> Option<Option<String>>;
+    /// Side: both.
+    /// `Player.hasCorrectToolForDrops(state)`: true when `state` needs no tool, else whether
+    /// the stack in the player's selected hotbar slot is a correct tool for it
+    /// (`BlockStates::is_correct_tool_for_drops`). Vanilla's own rule: mods'
+    /// `can_harvest_block` and `player_harvest_check` are not asked, so a listener of them
+    /// may call it. On a client, for the local player only. None for an unknown state, a
+    /// stale or unavailable player.
+    #[access(WorldOnly)]
+    fn player_has_correct_tool_for_drops(&self, player: PlayerRef, state: BlockState)
+    -> Option<bool>;
 }
 /// The handles' client reads of the `players` area, implemented by the game and reached through [`Backend`].
 // hidden: a handle's backend, reached through `Backend`; mods call the handle, never this trait
@@ -622,6 +648,33 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_set_nickname(&mut self, player: PlayerRef, nickname: Option<&str>) -> bool;
     /// Side: server.
+    /// Shows `sidebar` on that player's screen in place of the one shown before, or takes it
+    /// away (None): an objective only their client holds, displayed in the sidebar slot, its
+    /// lines as scores with fixed or blank number formats (`ClientboundSetObjectivePacket`,
+    /// `SetDisplayObjective`, `SetScore`). The server's scoreboard, `/scoreboard` and the other
+    /// players don't see it; it covers a sidebar objective the world shows, for this player,
+    /// and is gone when they leave. False when they aren't on.
+    #[access(WorldOnly)]
+    fn player_set_sidebar(
+        &mut self,
+        player: PlayerRef,
+        sidebar: Option<Sidebar>,
+    ) -> Result<bool, TextFormError>;
+    /// Side: server.
+    /// Shows `name` for that player in everyone's Tab list (Paper's `Player.playerListName`,
+    /// NeoForge's `ServerPlayer.refreshTabListName`), colours and all; None shows the name the
+    /// game would (their nickname or real name). The `player_tab_list_name_format` hook still
+    /// has the last word. Only the Tab list: chat, name tags and commands keep the real name.
+    /// Kept by UUID until a mod sets it again or the server stops (also if they leave and come
+    /// back). False when the server list is unavailable, the handle is stale or the player
+    /// isn't online.
+    #[access(WorldOnly)]
+    fn player_set_list_name(
+        &mut self,
+        player: PlayerRef,
+        name: Option<Text>,
+    ) -> Result<bool, TextFormError>;
+    /// Side: server.
     /// Hides that player (a vanish) from the players below permission
     /// `level`, or shows them again (None): from the next tick those players
     /// lose them from the Tab list and the world (their client stops
@@ -630,7 +683,7 @@ pub trait PlayersBackendMut {
     /// a player made an operator meanwhile sees them again. Kept by UUID, even
     /// after this handle disconnects (the player rejoins hidden), until a mod sets it again
     /// or the server stops. Works inside a player's hook too; false for a stale
-    /// world epoch, on a client and in a world nobody else can join.
+    /// world epoch and on a client.
     #[access(WorldOnly)]
     fn player_hide(&mut self, player: PlayerRef, level: Option<u8>) -> bool;
     /// Side: server.
@@ -1154,4 +1207,25 @@ pub trait PlayersBackendMut {
         player: PlayerRef,
         data: Compound,
     ) -> Result<(), PlayerDataRefusal>;
+    /// Side: server.
+    /// Replaces all of the player's statistics with `json` (the text `player_statistics`
+    /// gives, or another server's `stats/<uuid>.json`), as `StatsCounter.setValue` for each
+    /// (Paper's `Player.setStatistic`): a statistic `json` lacks goes back to 0, scoreboard
+    /// objectives on a statistic's criterion follow, and the client gets the changed values
+    /// the next time it asks (its statistics screen). `player_stat_award` is not heard.
+    /// False, with nothing changed, for text that is not a JSON object, a stale, unavailable
+    /// or dead player and on a client.
+    #[access(WorldOnly)]
+    fn player_set_statistics(&mut self, player: PlayerRef, json: &str) -> bool;
+    /// Side: server.
+    /// Sets a server player's velocity in blocks a tick and tells their
+    /// client (`Entity.setDeltaMovement` with `hurtMarked`, which sends
+    /// `ClientboundSetEntityMotionPacket` about the player themselves; Paper's
+    /// `Player.setVelocity`). The client owns a player's motion, so it moves
+    /// by the new value from its next tick. `entity_push` adds to the
+    /// velocity instead; `entity_set_velocity` refuses players. False for a
+    /// stale or unavailable player, a displaced outer player, and a value
+    /// that is not finite.
+    #[access(WorldOnly)]
+    fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
 }

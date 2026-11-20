@@ -131,6 +131,9 @@ pub(super) struct Mods {
     /// the next build attempt, whatever the player chose.
     pub(super) unbuilt: Option<(String, Vec<String>)>,
     native_files: std::cell::RefCell<Option<(String, Vec<native_status::Installed>)>>,
+    /// Whether any tracked file asks for a native build, by the same key as `native_files`:
+    /// telling an old-format `.hmod` apart reads the archive, never on each draw.
+    tracked_native: std::cell::RefCell<Option<(String, bool)>>,
     /// Java mods' checks, by source and project.
     pub(super) checks: HashMap<(SourceId, String), Checking>,
     /// Horizon registry projects' trust and capabilities, by id ([`horizon::trust_and_capabilities`]).
@@ -226,6 +229,7 @@ impl Mods {
             route_open: None,
             unbuilt: None,
             native_files: Default::default(),
+            tracked_native: Default::default(),
             updates: HashMap::new(),
             confirm_remove: None,
             picked: None,
@@ -628,7 +632,7 @@ impl Launcher {
             .collect();
         let tx = self.mods.tx.clone();
         std::thread::spawn(move || {
-            let lines = auto_update(&list, enabled);
+            let lines = auto_update(&list, enabled, &|_| {});
             if !lines.is_empty() {
                 let _ = tx.send(Event::AutoUpdated(lines));
             }
@@ -746,9 +750,15 @@ impl Launcher {
         }
         let tx = self.mods.tx.clone();
         let java = self.mods.java.clone();
+        let home = self.mods.home();
         std::thread::spawn(move || {
             let mut found = HashMap::new();
             for e in entries {
+                // A Horizon row whose file is missing offers Remove, not an update. (A Java
+                // instance's jar turned off is renamed: its recorded file isn't there.)
+                if java.is_none() && installed::file_missing(&home, &e) {
+                    continue;
+                }
                 let Some(source) = browser::source(e.source) else {
                     continue;
                 };
@@ -764,24 +774,30 @@ impl Launcher {
         });
     }
 
-    /// Updates every installed pack a newer version was found for, one after the other on a
-    /// thread, each checked as an install is. One failing doesn't stop the others.
-    pub(super) fn mods_update_all(&mut self) {
-        if self.mods.busy.is_some() || self.mods.updates.is_empty() {
-            return;
-        }
-        let mut todo: Vec<(SourceId, String, String)> = self
-            .mods
-            .installed
-            .iter()
+    /// What Update all updates and what its button counts: each installed pack a newer version
+    /// was found for, but not a Horizon mod whose file is gone now (its row offers Remove).
+    pub(super) fn mods_updatable(&self) -> Vec<(SourceId, String, String)> {
+        let home = self.mods.home();
+        let mut todo: Vec<(SourceId, String, String)> = (self.mods.installed.iter())
             .filter(|e| {
                 self.mods
                     .updates
                     .contains_key(&(e.source, e.project.clone()))
             })
+            .filter(|e| self.mods.java.is_some() || !installed::file_missing(&home, e))
             .map(|e| (e.source, e.project.clone(), e.title.clone()))
             .collect();
         todo.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+        todo
+    }
+
+    /// Updates every installed pack a newer version was found for, one after the other on a
+    /// thread, each checked as an install is. One failing doesn't stop the others.
+    pub(super) fn mods_update_all(&mut self) {
+        let todo = self.mods_updatable();
+        if self.mods.busy.is_some() || todo.is_empty() {
+            return;
+        }
         self.mods.message = None;
         self.mods.busy = Some(("all".into(), "Updating…".into(), 0.));
         self.mods.updates.clear();
@@ -1407,6 +1423,32 @@ impl Launcher {
         memo.as_ref().unwrap().1.clone()
     }
 
+    /// Whether a tracked file in `entries` asks for a native build
+    /// ([`native_status::tracked_asks_for_build`]), kept until the native folder changes.
+    fn tracked_asks_for_build(&self, entries: &[&installed::Entry]) -> bool {
+        let home = self.mods.home();
+        let key = format!(
+            "{}{}",
+            native_status::fingerprint(&home, None),
+            entries
+                .iter()
+                .map(|e| e.file.as_str())
+                .collect::<Vec<_>>()
+                .join(
+                    "
+"
+                )
+        );
+        let mut memo = self.mods.tracked_native.borrow_mut();
+        if memo.as_ref().is_none_or(|(k, _)| *k != key) {
+            let asks = entries
+                .iter()
+                .any(|e| native_status::tracked_asks_for_build(&home, &e.file));
+            *memo = Some((key, asks));
+        }
+        memo.as_ref().unwrap().1
+    }
+
     fn mods_installed_list(&mut self, cx: &mut Context<Self>) -> Option<Div> {
         let t = self.theme;
         let kind = self.mods.kind;
@@ -1443,10 +1485,7 @@ impl Launcher {
         }
         let busy = self.mods.busy.is_some();
         let native = native_status::asks_for_build(&native_entries)
-            || self.mods.java.is_none()
-                && entries
-                    .iter()
-                    .any(|e| native_status::is_native_file(&e.file));
+            || self.mods.java.is_none() && self.tracked_asks_for_build(&entries);
         let left_out = if native {
             self.native_left_out()
         } else {
@@ -1641,13 +1680,11 @@ impl Launcher {
             )
         };
         // Every kind's updates at once, whichever tab is open.
-        let update_all = (!self.mods.updates.is_empty()).then(|| {
+        let updatable = self.mods_updatable().len();
+        let update_all = (updatable > 0).then(|| {
             let b = button(
                 "mods-update-all",
-                trf(
-                    "Update all ({count})",
-                    &[("count", &self.mods.updates.len().to_string())],
-                ),
+                trf("Update all ({count})", &[("count", &updatable.to_string())]),
                 Kind::Secondary,
                 &t,
             );
@@ -1871,7 +1908,12 @@ pub(super) struct AutoTarget {
 
 /// Updates the registry projects of `targets`: Horizon's own instances only, never a modpack's
 /// profile, whose pack pins its mods. Returns what happened for the page's notice.
-pub(super) fn auto_update(targets: &[AutoTarget], enabled: bool) -> Vec<String> {
+/// `progress` hears the project each update is downloading.
+pub(super) fn auto_update(
+    targets: &[AutoTarget],
+    enabled: bool,
+    progress: &dyn Fn(&str),
+) -> Vec<String> {
     let mut lines = Vec::new();
     for t in targets {
         let i = &t.instance;
@@ -1882,7 +1924,8 @@ pub(super) fn auto_update(targets: &[AutoTarget], enabled: bool) -> Vec<String> 
         let ctx = horizon::auto::Context {
             in_pack: horizon::auto::in_pack(&i.home),
         };
-        if let Some(report) = horizon::auto::run(&i.home, &ctx, enabled, &|_, _| {}) {
+        if let Some(report) = horizon::auto::run(&i.home, &ctx, enabled, &|line, _| progress(line))
+        {
             lines.extend(report.lines());
         }
     }
