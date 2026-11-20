@@ -308,7 +308,11 @@ fn a_report_equal_to_the_baseline_fires_nothing_though_the_accepted_look_differs
     let conn = hub.guests[0].conn;
     assert_eq!(moves(&drain(&mut hub)), [conn]);
     assert!(hub.pending_move_report(conn).is_some());
-    assert_eq!(look(&hub), [90.0, 0.0], "still the accepted look until the held report is ruled");
+    assert_eq!(
+        look(&hub),
+        [90.0, 0.0],
+        "still the accepted look until the held report is ruled"
+    );
 }
 
 #[test]
