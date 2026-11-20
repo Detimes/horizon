@@ -946,18 +946,16 @@ impl Game<'_> {
             None => scaled,
         };
         let at = [destination.x, destination.y, destination.z];
-        // The tree change_level sends is decided again, not taken from the last one.
-        if let Some(conn) = self.lan.as_ref().map(|host| host.hub.guests[i].conn) {
-            self.native_refresh_node_paths(conn);
-        }
         let ctx = server_ctx!(self);
         // Through a portal: the client waits on its loading screen until
         // the exit is found (`arrive_server_trips`). The cooldown is the one
         // Entity.handlePortal set before the teleport.
         if let Some(host) = self.lan.as_mut() {
             host.hub
-                .change_level(i, at, yaw, None, true, PLAYER_DELAY, &ctx);
+                .change_level_with(i, at, yaw, None, true, PLAYER_DELAY, &ctx, false);
         }
+        // The permission nodes are asked with the player in the new level, then its tree is sent.
+        self.send_tree_with_fresh_nodes(i);
         if credits_respawn && let Some(host) = self.lan.as_mut() {
             host.hub.guests.update(i, |g| {
                 g.load_timeout = horizon_client::lan::guest::CLIENT_LOADED_TIMEOUT;
@@ -1530,12 +1528,10 @@ impl Game<'_> {
                 (yaw, pitch, origin, passenger_body)
             });
             let cooldown = host.play.get(&t.conn).map_or(0, |p| p.portal.cooldown);
-            // The tree change_level sends is decided again, not taken from the last one.
-            self.native_refresh_node_paths(t.conn);
             let ctx = server_ctx!(self);
             if let Some(host) = self.lan.as_mut() {
                 host.hub
-                    .change_level(i, t.at, yaw, Some(pitch), false, cooldown, &ctx);
+                    .change_level_with(i, t.at, yaw, Some(pitch), false, cooldown, &ctx, false);
                 host.hub.guests.update(i, |g| {
                     g.vehicle = t.vehicle;
                     if let Some(mut body) = passenger_body {
@@ -1544,6 +1540,8 @@ impl Game<'_> {
                     }
                 });
             }
+            // The permission nodes are asked with the player in the new level, then its tree is sent.
+            self.send_tree_with_fresh_nodes(i);
             self.bind_player_attachments(t.conn, false);
             self.as_guest(t.conn, |g| {
                 g.trigger_dimension(source, t.dim, origin);

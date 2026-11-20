@@ -1543,8 +1543,10 @@ impl Hub {
             super::recipes::send_content(g);
             super::recipes::advertise_viewer_channels(g);
         }
-        // PlayerList.sendPlayerPermissionLevel, then the recipe book.
-        self.send_permission_level(i);
+        // PlayerList.sendPlayerPermissionLevel, then the recipe book. The command tree follows
+        // once the player is placed: the game asks the permission nodes with the player there
+        // and sends it (`send_commands`), so the first tree never rests on a lookup that missed.
+        self.send_level_event(i);
         self.send_initial_recipe_book(i);
         // PlayerList.placeNewPlayer broadcasts the join line before
         // players.add: the others read it, the newcomer doesn't (nor those
@@ -1947,12 +1949,17 @@ impl Hub {
     /// PlayerList.sendPlayerPermissionLevel: the op level as an entity event
     /// (24 + level), then the commands that level may use.
     fn send_permission_level(&self, i: usize) {
+        self.send_level_event(i);
+        self.send_commands(i);
+    }
+
+    /// The operator level entity event alone (`EntityEvent` 24 to 28), without the command tree.
+    fn send_level_event(&self, i: usize) {
         let g = &self.guests[i];
         g.send(&C::EntityEvent(play::EntityEvent {
             id: g.entity_id,
             event: 24 + g.permission.min(4) as i8,
         }));
-        self.send_commands(i);
     }
 
     /// The permissions changed: tell everyone their level and commands again.
@@ -5009,6 +5016,23 @@ impl Hub {
         portal_cooldown: i32,
         ctx: &TickCtx,
     ) {
+        self.change_level_with(i, at, yaw, pitch, portal, portal_cooldown, ctx, true);
+    }
+
+    /// [`Self::change_level`], with the command tree left out when `send_tree` is false: the
+    /// game then asks the permission nodes with the player in the new level and sends the tree
+    /// itself (`send_commands`).
+    pub fn change_level_with(
+        &mut self,
+        i: usize,
+        at: [f64; 3],
+        yaw: f32,
+        pitch: Option<f32>,
+        portal: bool,
+        portal_cooldown: i32,
+        ctx: &TickCtx,
+        send_tree: bool,
+    ) {
         let info = self.spawn_info(i, portal_cooldown, ctx.sea_level);
         self.close_container_for(i);
         self.before_travel(i);
@@ -5040,7 +5064,11 @@ impl Hub {
             difficulty: ctx.difficulty,
             locked: ctx.difficulty_locked,
         }));
-        self.send_permission_level(i);
+        if send_tree {
+            self.send_permission_level(i);
+        } else {
+            self.send_level_event(i);
+        }
         if portal {
             // A teleport still pending from the old level is void: its late
             // acceptance must not move the player back there.
