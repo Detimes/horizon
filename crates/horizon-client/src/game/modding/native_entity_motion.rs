@@ -532,6 +532,31 @@ mod tests {
     }
 
     #[test]
+    fn player_set_sneaking_sets_a_guests_shift_key() {
+        fn fake_shift<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut bool {
+            let host = game.lan.as_mut().unwrap();
+            let conn = host.hub.guests.iter().find(|g| g.uuid == 2).unwrap().conn;
+            &mut host
+                .hub
+                .guests
+                .motion_mut(conn)
+                .expect("a fake has a motion")
+                .shift_key_down
+        }
+        super::super::native_entity_refs::tests::with_game(|game| {
+            super::super::bossbars::audience_tests::add_real_and_fake(game);
+            game.options.dedicated = Some(Vec::new());
+            // A fake guest crouches, then stands.
+            let level = game.level(game.dim.id()).unwrap();
+            let fake = game.fake_player(level, 2, "fake").unwrap();
+            assert!(game.player_set_sneaking(fake, true));
+            assert!(*fake_shift(game));
+            assert!(game.player_set_sneaking(fake, false));
+            assert!(!*fake_shift(game));
+        });
+    }
+
+    #[test]
     #[ignore = "daily"]
     fn only_a_mount_its_rider_controls_takes_the_riders_speed() {
         use super::super::commands::Target;
