@@ -62,6 +62,13 @@ pub trait ItemsHost {
     /// overflow the parser.
     #[access(WorldOnly)]
     fn item_from_snbt(&self, snbt: &str) -> Option<ItemStack>;
+    /// Side: both.
+    /// The stack as an SNBT item compound, the inverse of `item_from_snbt`: `{id:"...",count:n}`
+    /// plus `components` when the stack has its own. It refuses with None air, an item this
+    /// world does not have, and a count outside 1 to 99 (the codec's range), so the text reads
+    /// back through `item_from_snbt` to the same stack.
+    #[access(WorldOnly)]
+    fn item_to_snbt(&self, stack: &ItemStack) -> Option<String>;
 }
 /// The server host's methods of the `items` area, implemented by the game and reached through [`ServerHost`].
 #[horizon_mod_api_macros::host_area]

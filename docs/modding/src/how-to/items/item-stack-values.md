@@ -59,6 +59,8 @@ to component NBT by `host.text_to_nbt(&text)`; `None` removes the name and an em
 removes the lore. A refused text returns `TextFormError` and changes nothing. Vanilla draws a
 custom name in italics unless its style sets `italic: false`.
 
+A stack goes back to SNBT with `host.item_to_snbt(&stack)`, the inverse of `item_from_snbt`: `None` for air, an item the world lacks or a count outside 1 to 99, and any other text it writes reads back to the same stack.
+
 ## Game boundaries
 
 A consume or death-protection override whose opaque native effect payload cannot be decoded
