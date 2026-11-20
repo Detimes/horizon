@@ -103,6 +103,8 @@ either flag. The separately modeled dragon has no such predicate and answers `No
 its persistence flag can be read and set. A `/summon` and a spawn egg set their flags before the entity-join hook
 runs, so a mod's own write in that hook is what stays.
 
+`living.set_sprinting(host, sprinting)` (`living_set_sprinting`) sets the shared sprinting flag of a mob, the one `Entity.setSprinting` writes (a cat or ocelot dashing after its target keeps it), and sends it to the players tracking the mob. It returns `false`, changing nothing, for a player, a guest, an armor stand, the dragon or a stale handle: a player's sprint is what their own client reports, so the server could not hold it.
+
 ## Riding topology and resident handles
 
 `EntityRef` names only an entity resident in the current level. A rejected Mob
