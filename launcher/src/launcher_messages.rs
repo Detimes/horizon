@@ -60,6 +60,7 @@ impl Launcher {
                     self.multiplayer.stale();
                     telemetry::set_official_server(&links.official_server);
                     self.links = links;
+                    self.follow_min_launcher(cx);
                 }
                 // The page reads is_prepared when drawn; `changed` redraws it.
                 Msg::Reused(_) => self.installed = backend::installed(),
@@ -243,6 +244,9 @@ impl Launcher {
                     if let Some(next) = self.install_next.take() {
                         self.install_for_instance(next);
                     }
+                    // After the selection and the queued install: a build waiting for this
+                    // install sees both.
+                    self.native_look_again(None, None);
                 }
                 Msg::Removed(tag, result) => {
                     self.removing.retain(|t| *t != tag);
@@ -326,7 +330,7 @@ impl Launcher {
                         // Read against the mods this build was given, not the instance now
                         // selected.
                         let built = std::mem::take(&mut self.native_built_mods);
-                        self.native_failed(String::from(e), &built);
+                        self.native_failed(e.said(native_mods::Caller::Window), &built);
                     }
                     let play_now = wanted.is_some()
                         && built.is_some()
@@ -354,6 +358,7 @@ impl Launcher {
                         }
                         Err(e) => SelfUpdate::Failed(e),
                     };
+                    self.follow_min_launcher(cx);
                 }
                 Msg::PackLine(line) => {
                     self.pack_log.push_back(line);
@@ -420,6 +425,11 @@ impl Launcher {
                                     .filter(|_| e.starts_with("Exited with"));
                                 tail.map_or(e.clone(), |t| format!("{e}: {t}"))
                             });
+                            let (ended, error) = (
+                                tag.map(|t| backend::prepared_in(&t)),
+                                self.prepare_error.clone(),
+                            );
+                            self.native_look_again(ended.as_deref(), error.as_deref());
                         }
                         Job::Client => {
                             self.client = None;
