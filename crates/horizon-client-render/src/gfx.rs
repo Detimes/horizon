@@ -496,6 +496,7 @@ mod displace;
 mod frame_policy;
 pub mod lightning;
 mod linear_blend;
+pub mod ray_lights;
 #[cfg(test)]
 use frame_policy::frame_format;
 use frame_policy::{frame_configuration, hand_depth_store, horizon_tone_curve, overlay_format};
@@ -1735,7 +1736,7 @@ pub struct Renderer {
     /// Changes whenever `block_entities` does (unique across renderers).
     block_entity_revision: u64,
     /// The light sources of each section and their revision, for `block_light`.
-    light_blocks: FxHashMap<SectionKey, Vec<([i32; 3], u32)>>,
+    light_blocks: block_light::SectionLights,
     light_revision: u64,
     /// VisGraph face connectivity per meshed section (cave culling).
     occlusion: occlusion::Occlusion,
@@ -5795,6 +5796,8 @@ impl Renderer {
         self.newest_upload = None;
         self.newest_lod_fade = None;
         self.block_entity_revision = next_block_entity_revision();
+        self.light_blocks.clear();
+        self.light_revision += 1;
         self.sections.clear();
         self.ray_clear();
         self.lods.clear();
@@ -6703,7 +6706,8 @@ impl Renderer {
             Vec<(String, f64)>,
             Vec<(u32, u32)>,
             Vec<(u32, u32)>,
-            block_light::LightTable,
+            // The `[[lights]]` colours, and the light sources rays read (`NativePack::new`).
+            (block_light::LightTable, ray_lights::Sources),
         )>,
     ) -> std::result::Result<Vec<String>, String> {
         self.world_held = false;
@@ -9410,6 +9414,7 @@ impl Renderer {
                 output: &output,
                 lights: &self.light_blocks,
                 light_revision: self.light_revision,
+                min_y: self.layout.min_y(),
                 sky_visible,
                 scene: self.ray_scene.as_ref(),
                 lightmap: &self.lightmap_pixels,
@@ -12554,10 +12559,11 @@ mod tests {
         use wgpu::Backends;
         let (v, d, g) = (Backends::VULKAN, Backends::DX12, Backends::GL);
         let search = |api, os, arch| device_search(api, os, arch, false);
-        // #5185: DirectX 12 chosen on an Intel HD 2500 (WARP only): OpenGL's GPU before WARP.
+        // #18291: DirectX 12, which the launcher picks after Vulkan or OpenGL crashed in the
+        // driver, never goes back to either: its GPU, then WARP.
         assert_eq!(
             search(GraphicsApi::Dx12, "windows", "x86_64"),
-            [(vec![d], false), (vec![g], false), (vec![d], true)]
+            [(vec![d], false), (vec![d], true)]
         );
         assert_eq!(
             search(GraphicsApi::Vulkan, "windows", "x86_64"),
