@@ -1,0 +1,3 @@
+ids = ["method:prelude::PlayersServerHost::permission_snapshot", "type:PermissionSnapshot", "type:PermissionSnapshotEntry"]
+why = "Adds PlayersServerHost::permission_snapshot and the plain-data PermissionSnapshot (typed permission nodes, #17831): one player's answers to up to 256 nodes, read afterwards without a host. A typed query needs the host mutably because a provider's answer runs a mod, so code that asks through &self traits lost the provider's answers."
+migrate = "Additive. None."

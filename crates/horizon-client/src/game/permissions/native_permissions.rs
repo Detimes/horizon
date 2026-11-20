@@ -5,8 +5,9 @@ use super::Game;
 use super::handler::gather_handlers;
 use super::permission_service::{LevelSource, ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
-    NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
-    PermissionNodes, PermissionValue, PermissionValueType,
+    MAX_SNAPSHOT_NODES, NodeDefault, PermissionContext, PermissionError, PermissionLevel,
+    PermissionNode, PermissionNodes, PermissionSnapshot, PermissionSnapshotEntry, PermissionValue,
+    PermissionValueType, check_contexts,
 };
 use std::{
     collections::HashMap,
@@ -37,6 +38,11 @@ impl QueryState {
         }
         self.active = true;
         Ok(())
+    }
+
+    /// Whether a query is being answered, so the service is out of the host for its handler.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
     }
 
     /// Ends the query `enter` started; a query asked again while it was answered fails it too.
@@ -106,6 +112,41 @@ pub(crate) fn run_query<H: PermissionHost>(
     let (service, state) = host.permission_parts();
     *service = taken;
     state.leave(result)
+}
+
+/// One player's answers to `nodes` as plain data: each distinct node is one query of its own, in
+/// the order given, and a refused query is kept in its entry. Refused as a whole with `Recursive`
+/// while a query is being answered, `InvalidInput` for more than [`MAX_SNAPSHOT_NODES`] nodes or
+/// bad contexts, and `NotInitialized` before gathering. Side: server.
+pub(crate) fn run_snapshot<H: PermissionHost>(
+    host: &mut H,
+    uuid: u128,
+    nodes: &[PermissionNode],
+    contexts: &[PermissionContext],
+) -> Result<PermissionSnapshot, PermissionError> {
+    let (service, state) = host.permission_parts();
+    if state.is_active() {
+        return Err(PermissionError::Recursive);
+    }
+    if !service.is_initialized() {
+        return Err(PermissionError::NotInitialized);
+    }
+    if nodes.len() > MAX_SNAPSHOT_NODES {
+        return Err(PermissionError::InvalidInput);
+    }
+    check_contexts(contexts)?;
+    let mut entries: Vec<PermissionSnapshotEntry> = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        if entries.iter().any(|entry| entry.node == *node) {
+            continue;
+        }
+        let answer = run_query(host, node, uuid, contexts);
+        entries.push(PermissionSnapshotEntry {
+            node: node.clone(),
+            answer,
+        });
+    }
+    Ok(PermissionSnapshot { uuid, entries })
 }
 
 /// `run_query` for a Boolean node. Refused with `WrongType` for any other node, before any handler
@@ -267,6 +308,16 @@ impl Game<'_> {
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError> {
         run_query(self, node, uuid, contexts)
+    }
+
+    /// One player's answers to `nodes` as plain data. Side: server.
+    pub(super) fn permission_snapshot(
+        &mut self,
+        uuid: u128,
+        nodes: &[PermissionNode],
+        contexts: &[PermissionContext],
+    ) -> Result<PermissionSnapshot, PermissionError> {
+        run_snapshot(self, uuid, nodes, contexts)
     }
 
     /// `permission_query` for a Boolean node. Side: server.

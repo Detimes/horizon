@@ -67,6 +67,25 @@ pub trait PlayersServerHost {
         uuid: u128,
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError>;
+    /// Side: server.
+    /// Asks the selected handler for each of `nodes` (distinct ones, in the order given) for the
+    /// player `uuid` and returns the answers as plain data, a `PermissionSnapshot`. A query needs
+    /// the host mutably, because a provider's answer runs a mod, while a ported library often
+    /// asks its permission questions through `&self` traits; take the snapshot where the host is
+    /// in hand and read it from there (`snapshot.bool(&node)`), so the provider's answers (a
+    /// LuckPerms-style handler) are not lost. It is a copy at this moment and caches nothing:
+    /// take a new one when answers may have changed. Each node is one query with `contexts`,
+    /// as `permission_query` asks it, and a node whose query is refused keeps that error in its
+    /// entry, so one bad node does not hide the others. Refuses the whole call with `InvalidInput`
+    /// for more than 256 nodes or bad contexts, `NotInitialized` before gathering and `Recursive`
+    /// from inside a handler's answer.
+    #[access(WorldOnly)]
+    fn permission_snapshot(
+        &mut self,
+        uuid: u128,
+        nodes: &[PermissionNode],
+        contexts: &[PermissionContext],
+    ) -> Result<PermissionSnapshot, PermissionError>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]

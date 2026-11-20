@@ -46,12 +46,32 @@ string and component errors must not be read as a Boolean denial.
 |---|---|
 | `permission_query(node, uuid, contexts)` | Returns `Result<PermissionValue, PermissionError>`: the node's typed value from the selected handler. |
 | `permission_bool(player, &node)` | The same for a Boolean node and a connected player, as `Result<bool, PermissionError>`. |
+| `permission_snapshot(uuid, &nodes, contexts)` | One player's answers to up to 256 nodes as plain data, readable without a host. |
 
 `PermissionError` names each refusal: `NotInitialized` (a query before the service is ready), `Unregistered`
 (an unknown node, never an implicit registration), `DuplicateNode`, `DuplicateHandler`, `WrongType`,
 `UnknownPlayer`, `HandlerFailed`, `Recursive` (a handler that queries inside its own query fails both queries)
 and `InvalidInput`. In `permission_handler_query`, `online` is the player's UUID when the player is on this
 server and `None` for an offline UUID; ask `host.player(uuid)` for the handle. A failed query changes nothing and grants nothing.
+
+## Asking through `&self`: snapshots
+
+A query runs the selected handler, which may be a mod, so it needs the host mutably (`&mut dyn ServerHost`). A
+ported library often asks its permission questions through `&self` traits and has no mutable host there, so a
+provider's answers (a LuckPerms-style handler) would be lost and only operator levels left. Take a snapshot where
+the host is in hand, for the nodes the library will ask, and pass the snapshot down:
+
+```rust,ignore
+let snapshot = host.permission_snapshot(player.uuid(), &my_nodes, &[])?;
+// later, from a `&self` method that only holds `&PermissionSnapshot`:
+let allowed = snapshot.bool(&node).unwrap_or(false);
+```
+
+A snapshot is a copy at that moment: it caches nothing in the server, so take a new one when answers may have
+changed (a grant, a rank change, `player_resend_command_tree`). Each node is one query with the given contexts and
+keeps its own refusal in its entry: `bool` returns that error, `Unregistered` for a node that was not asked for,
+and `WrongType` for a node that is not Boolean, so a refusal never reads as a grant or a denial. The call itself is
+refused with `InvalidInput` (more than 256 nodes, bad contexts), `NotInitialized` and `Recursive`.
 
 Queries take no cache and write nothing. A node decision does not fire `permissions_changed`, and that hook
 does not report node decisions. There are no wildcards, no hierarchy and no namespace ownership: a node name
