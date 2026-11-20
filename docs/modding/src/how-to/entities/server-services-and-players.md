@@ -166,6 +166,7 @@ the mods do not finish within half a second. With no listener the request is not
 The legacy ping of pre-1.7 clients is not asked.
 The read `player.protocol_version(host)` returns the protocol number the player's client stated in its handshake (`Option<i32>`). A client of the same release reads this game's own number; a client let in by `horizon-accept-older-clients` reads its own, older one, so a mod can tell what an older client can see. Behind a proxy it is the number the proxy forwards. `None` means a stale or unavailable player, a fake one, or a connection that sent no handshake.
 `host.player_last_played(uuid)` answers when a player, on or off, last played (`Option<i64>`, milliseconds since the Unix epoch). A player who is on reads the current time. A player who is off reads when their player file was last saved, which is their leaving, or a periodic save of a player who has since gone. `None` means the server has no file for that UUID, so the player never joined, and also that no world is open. For a player who is not on, `player_last_played(uuid).is_some()` is Paper's `hasPlayedBefore`.
+The read `player.locale(host)` returns the language the player's client announced (`Option<String>`, as the client writes it: `en_us`, `de_de`). It follows the client's latest information packet, so a player who changes the language in the options menu reads the new one, and it is `en_us` until the client has sent any. `None` means a stale or unavailable player, or a fake one.
 
 ## Chat lines and respawn
 

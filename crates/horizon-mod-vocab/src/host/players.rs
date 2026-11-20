@@ -515,6 +515,13 @@ pub trait PlayersBackend {
     /// connection that sent no handshake.
     #[access(WorldOnly)]
     fn player_protocol_version(&self, player: PlayerRef) -> Option<i32>;
+    /// The language the player's client announced in its client information
+    /// (`ServerPlayer.language`, Paper's `Player#locale`), as the client writes it: lower case
+    /// with an underscore (`en_us`, `de_de`). It follows the client's latest information
+    /// packet; `en_us` until it sends one. None for a stale or unavailable player and for a
+    /// fake player.
+    #[access(WorldOnly)]
+    fn player_locale(&self, player: PlayerRef) -> Option<String>;
     /// Side: server.
     /// The plugin channels the player's client announced in `minecraft:register`, less those
     /// it withdrew in `minecraft:unregister`, during configuration and play, in announcement
