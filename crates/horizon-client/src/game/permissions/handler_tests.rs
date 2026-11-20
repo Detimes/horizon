@@ -7,7 +7,7 @@ use super::permission_service::{
     ModAnswer, ModAnswers, NodePolicy, PermissionHandler, PermissionService,
 };
 use mod_api::{
-    PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
+    NodeDefault, PermissionContext, PermissionLevel, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
 
 /// A mod's answer as the test double gives it: the mod that answers and a non-capturing
@@ -25,6 +25,7 @@ impl ModAnswers for Reply {
         _handler: &str,
         provider: &str,
         _node: &PermissionNode,
+        _default: &NodeDefault,
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
@@ -54,6 +55,7 @@ fn ask(
     let mut handler = ModPermissionHandler::new("garden.policy", "garden");
     handler.query(
         node,
+        &NodeDefault::Level(PermissionLevel::All),
         Some(7),
         7,
         &[],
@@ -201,8 +203,73 @@ fn a_query_is_asked_of_the_providing_mod_alone() {
     };
     let node = node(PermissionValueType::Boolean);
     assert_eq!(
-        handler.query(&node, Some(7), 7, &[], &mut reply),
+        handler.query(
+            &node,
+            &NodeDefault::Level(PermissionLevel::All),
+            Some(7),
+            7,
+            &[],
+            &mut reply
+        ),
         Ok(PermissionValue::Boolean(true))
     );
     assert_eq!(reply.providers, ["garden"]);
+}
+
+#[test]
+fn the_providing_mod_sees_the_default_the_node_was_declared_with() {
+    /// Records the default of each query it is asked.
+    struct Recorder(Vec<NodeDefault>);
+    impl ModAnswers for Recorder {
+        fn answer(
+            &mut self,
+            _handler: &str,
+            _provider: &str,
+            node: &PermissionNode,
+            default: &NodeDefault,
+            _online: Option<u128>,
+            _uuid: u128,
+            _contexts: &[PermissionContext],
+        ) -> Option<ModAnswer> {
+            self.0.push(default.clone());
+            let answer = match node.value_type {
+                PermissionValueType::Integer => PermissionValue::Integer(1),
+                _ => PermissionValue::Boolean(true),
+            };
+            Some(ModAnswer {
+                mod_id: "garden".to_owned(),
+                answer: Ok(answer),
+            })
+        }
+    }
+
+    let mut service = PermissionService::new();
+    let level = node(PermissionValueType::Boolean);
+    let count = PermissionNode::new("garden.count", PermissionValueType::Integer);
+    service
+        .register_node(level.clone(), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    service
+        .register_node(
+            count.clone(),
+            NodeDefault::Value(PermissionValue::Integer(7)),
+        )
+        .unwrap();
+    gather_handlers(&mut service, &[("garden.policy", "garden")], "garden.policy").unwrap();
+    let mut recorder = Recorder(Vec::new());
+    assert_eq!(
+        service.query_with(&level, Some(7), 7, &[], &mut recorder),
+        Ok(PermissionValue::Boolean(true))
+    );
+    assert_eq!(
+        service.query_with(&count, Some(7), 7, &[], &mut recorder),
+        Ok(PermissionValue::Integer(1))
+    );
+    assert_eq!(
+        recorder.0,
+        [
+            NodeDefault::Level(PermissionLevel::Admins),
+            NodeDefault::Value(PermissionValue::Integer(7))
+        ]
+    );
 }

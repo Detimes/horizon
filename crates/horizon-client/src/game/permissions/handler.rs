@@ -9,7 +9,7 @@ use super::permission_service::{
     DEFAULT_HANDLER_ID, ModAnswers, PermissionHandler, PermissionService,
 };
 use mod_api::{
-    PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
+    NodeDefault, PermissionContext, PermissionError, PermissionNode, PermissionValue, PermissionValueType,
 };
 
 /// A handler a mod provided. Every query goes to that mod alone: the other mods are not called
@@ -39,12 +39,13 @@ impl PermissionHandler for ModPermissionHandler {
     fn query(
         &mut self,
         node: &PermissionNode,
+        default: &NodeDefault,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
         answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
-        let Some(answered) = answers.answer(&self.id, &self.owner, node, online, uuid, contexts)
+        let Some(answered) = answers.answer(&self.id, &self.owner, node, default, online, uuid, contexts)
         else {
             log::warn!(
                 "permission node \"{}\": handler \"{}\" got no answer from mod \"{}\"",

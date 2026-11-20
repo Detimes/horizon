@@ -41,7 +41,8 @@ pub(crate) struct ModAnswer {
 /// which hands the mod the game's own server host, so the service never holds the game.
 /// Side: server.
 pub(crate) trait ModAnswers {
-    /// Asks the mod `provider`, which provided handler `handler`, for `node`, for the player
+    /// Asks the mod `provider`, which provided handler `handler`, for `node` (declared with
+    /// `default`), for the player
     /// `uuid` (`online` is the same UUID when the player is on this server, `None` when offline)
     /// with the supplied `contexts`. No other mod is called, so none sees the UUID or the contexts.
     fn answer(
@@ -49,6 +50,7 @@ pub(crate) trait ModAnswers {
         handler: &str,
         provider: &str,
         node: &PermissionNode,
+        default: &NodeDefault,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
@@ -61,12 +63,14 @@ pub(crate) trait PermissionHandler: Send {
     /// The handler's id, as the server configuration names it.
     fn id(&self) -> &str;
 
-    /// Answers `node` for `uuid` (and `online` when the player is on this server). Returns the
-    /// node's declared type or an explicit error. A handler a mod provides asks `answers`.
+    /// Answers `node`, declared with `default`, for `uuid` (and `online` when the player is on this
+    /// server). Returns the node's declared type or an explicit error. A handler a mod provides
+    /// asks `answers`, handing it `default`.
     /// Side: server.
     fn query(
         &mut self,
         node: &PermissionNode,
+        default: &NodeDefault,
         online: Option<u128>,
         uuid: u128,
         contexts: &[PermissionContext],
@@ -262,17 +266,14 @@ impl PermissionService {
             return Err(PermissionError::NotInitialized);
         }
         check_contexts(contexts)?;
-        if !self
-            .nodes
-            .contains_key(&(node.name.clone(), node.value_type))
-        {
+        let Some((_, default)) = self.nodes.get(&(node.name.clone(), node.value_type)) else {
             return Err(PermissionError::Unregistered);
-        }
+        };
         let Some(handler) = self.handler.as_mut() else {
             return Err(PermissionError::NotInitialized);
         };
         let answer = catch_unwind(AssertUnwindSafe(|| {
-            handler.query(node, online, uuid, contexts, answers)
+            handler.query(node, default, online, uuid, contexts, answers)
         }))
         .unwrap_or(Err(PermissionError::HandlerFailed));
         let value = match answer {
@@ -339,6 +340,7 @@ impl ModAnswers for NoMods {
         _handler: &str,
         _provider: &str,
         _node: &PermissionNode,
+        _default: &NodeDefault,
         _online: Option<u128>,
         _uuid: u128,
         _contexts: &[PermissionContext],
@@ -386,6 +388,7 @@ impl PermissionHandler for DefaultHandler {
     fn query(
         &mut self,
         node: &PermissionNode,
+        _default: &NodeDefault,
         online: Option<u128>,
         uuid: u128,
         _contexts: &[PermissionContext],
