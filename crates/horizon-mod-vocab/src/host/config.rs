@@ -166,6 +166,15 @@ pub trait ConfigServerHost {
     /// keeps world data in level attachments.
     #[access(WorldOnly)]
     fn world_dir(&self) -> Option<PathBuf>;
+    /// Side: server.
+    /// The `latest.log` this run writes, absolute: the server's own on a dedicated server
+    /// (`logs/` beside `server.properties`). None when the run logs to the terminal only, which
+    /// is when another game holds that folder or the file could not be opened. The file is
+    /// read-only to a mod; `console_line` is the way to hear its lines as they are logged.
+    ///
+    /// Not on wasm: a path in the game's file system, which a wasm mod has none of.
+    #[access(Metadata)]
+    fn log_file(&self) -> Option<PathBuf>;
     /// Side: server. The calling mod's bulk files in the current save's
     /// `horizon-mod-data/<mod id>/`, copied, backed up and deleted with that
     /// save. Paths omit the mod id. Calls refuse with `NoWorld` before a
