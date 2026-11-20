@@ -460,6 +460,9 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                 let Some(new) = self.sculk_state_for_placement(old, target, face_to) else {
                     continue;
                 };
+                if !self.level.allow_natural_spread("sculk", pos, target) {
+                    continue;
+                }
                 if self.set_block(target, new, 2) {
                     count += 1;
                 }

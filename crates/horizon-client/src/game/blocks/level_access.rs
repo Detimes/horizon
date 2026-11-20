@@ -117,6 +117,15 @@ impl LevelAccess for GameLevel<'_> {
         }
         !canceled
     }
+    fn allow_natural_spread(&self, kind: &'static str, from: BlockPos, to: BlockPos) -> bool {
+        let mut canceled = false;
+        if self.native_authoritative
+            && mod_api::__private::listened(mod_api::HookId::NaturalBlockSpread)
+        {
+            self.native_natural_block_spread(self.dimension, kind, from, to, &mut canceled);
+        }
+        !canceled
+    }
     fn fluid_place_block(
         &self,
         pos: BlockPos,
