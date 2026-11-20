@@ -57,6 +57,8 @@ return `None`.
 
 Game profiles (server only): `host.profile_by_uuid(uuid)` and `host.profile_by_name(name)` (any case) return the `GameProfile` the server knows: an online player's, with its properties, else the name from the user cache (`usercache.json`, on a dedicated server), without properties. Neither asks Mojang, and `None` means neither the server nor its cache knows the player. To change a skin, `player.set_profile_property(host, "textures", value, signature)` sets the `textures` property (Mojang's base64 value and its signature). Other players see it once `player.refresh(host)` sends the player to them again; the player's own client keeps its current skin until they change level or join again. A property set this way is published and returned by the two lookups; `player.profile(host)` keeps returning the properties the player logged in with.
 
+`entity.fall_distance(host)` (`entity_fall_distance`) returns the blocks a server player, a guest or a mob has fallen since it last landed or was reset, negative after a rise, as Paper's `Entity#getFallDistance` does. Other kinds, a client and a stale handle give `None`.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or

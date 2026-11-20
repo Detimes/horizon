@@ -96,6 +96,16 @@ impl Game<'_> {
     pub(super) fn entity_is_crouching(&self, entity: EntityRef) -> Option<bool> {
         Some(self.entity_pose(entity)? == "crouching")
     }
+    /// `Entity.fallDistance`: the blocks the entity has fallen since it last landed or was
+    /// reset, negative after a rise. Server players, guests and mobs; None for another kind.
+    pub(super) fn entity_fall_distance(&self, entity: EntityRef) -> Option<f64> {
+        Some(match self.native_entity_body(entity)? {
+            Body::Player(p) => p.fall_distance,
+            Body::Mob(m) => m.fall_distance,
+            Body::Other(_) => return None,
+        })
+    }
+    /// Whether the entity sprints (`Entity.isSprinting`): a player, or a
     /// Whether the entity sprints (`Entity.isSprinting`): a player, or a
     /// cat or ocelot dashing after its target (their shared sprinting flag);
     /// false for the other kinds.
@@ -622,6 +632,8 @@ mod tests {
             assert!(game.mobs[0].glowing);
             assert!(entity.set_no_gravity(game, true));
             assert!(game.mobs[0].no_gravity);
+            game.mobs[0].fall_distance = 12.5;
+            assert_eq!(game.entity_fall_distance(entity), Some(12.5));
             assert!(game.mobs[0].needs_sync);
         });
     }
