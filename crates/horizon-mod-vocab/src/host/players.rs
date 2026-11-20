@@ -57,6 +57,15 @@ pub trait PlayersServerHost {
     /// made an offline player.
     #[access(WorldOnly)]
     fn profile_by_name(&self, name: &str) -> Option<GameProfile>;
+    /// Side: server.
+    /// The entries of one of the dedicated server's ban lists, in the list's order: name bans
+    /// (`banned-players.json`, `BanListKind::Players`) or address bans (`banned-ips.json`,
+    /// `BanListKind::Ips`). An expired ban stays listed until the server next checks it, as
+    /// vanilla's list does. Read only: adding or removing a ban is not part of this method
+    /// (Paper's `Bukkit.getBanList(type).getEntries()`). Empty on a client, on an integrated
+    /// server and where no server list is loaded.
+    #[access(WorldOnly)]
+    fn server_ban_list(&self, kind: BanListKind) -> Vec<BanRecord>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
