@@ -7,6 +7,7 @@ impl Game<'_> {
     pub(in crate::game) fn sync_hub_mod_flags(hub: &mut Hub) {
         hub.mods_loaded = !mod_api::__private::mods().is_empty();
         hub.moves_listened = mod_api::__private::listened(mod_api::HookId::PlayerMove);
+        hub.move_packets_listened = mod_api::__private::listened(mod_api::HookId::PlayerMovePacket);
         hub.lan
             .shared
             .handshake
@@ -29,17 +30,14 @@ impl Game<'_> {
         };
         let mut cancel = false;
         self.as_guest(conn, |game| {
-            game.native_player_move(mod_api::__private::PlayerMoveCall {
-                player: report.player,
-                from: report.from,
-                from_rotation: report.from_rotation,
-                to: report.to,
-                to_rotation: report.to_rotation,
-                on_ground: report.on_ground,
-                has_position: report.has_position,
-                has_rotation: report.has_rotation,
-                cancel: &mut cancel,
-            });
+            game.native_player_move(
+                report.player,
+                report.from,
+                report.from_rotation,
+                report.to,
+                report.to_rotation,
+                &mut cancel,
+            );
         });
         if let Some(host) = self.lan.as_mut() {
             host.hub.resolve_move(conn, !cancel);

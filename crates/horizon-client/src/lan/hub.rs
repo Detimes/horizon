@@ -184,6 +184,15 @@ pub enum HostEvent {
     ),
     /// A changed movement report is held for the game to rule on ([`Hub::resolve_move`]).
     PlayerMove(u32),
+    /// A validated movement packet, whether or not it changes anything (`player_move_packet`).
+    PlayerMovePacket {
+        conn: u32,
+        to: [f64; 3],
+        to_rotation: [f32; 2],
+        on_ground: bool,
+        has_position: bool,
+        has_rotation: bool,
+    },
     /// An accepted position started a jump, before later gameplay packets.
     Jump {
         conn: u32,
@@ -348,6 +357,9 @@ pub struct Hub {
     pending_kicks: Vec<HostEvent>,
     /// A native mod listens to `player_move`: a changed report waits for the game ([`pending_move`]).
     pub moves_listened: bool,
+    /// A native mod listens to `player_move_packet`: every validated movement packet is told to
+    /// the game.
+    pub move_packets_listened: bool,
     /// `[transfer]` on (a dedicated server's `--transfers`): the players a proxy
     /// said would arrive (`player-expect`). None while it is off.
     pub transfers: Option<super::arrivals::Transfers>,
@@ -852,6 +864,7 @@ impl Hub {
             deferred_payloads: Default::default(),
             pending_kicks: Vec::new(),
             moves_listened: false,
+            move_packets_listened: false,
             transfers: None,
             native_tracking: Vec::new(),
             attachment_snapshots: Vec::new(),

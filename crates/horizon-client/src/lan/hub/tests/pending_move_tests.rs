@@ -221,45 +221,11 @@ fn a_veto_drops_the_report_and_corrects_the_client() {
 }
 
 #[test]
-fn a_report_that_changes_nothing_is_held_with_the_packets_shape() {
+fn a_report_that_changes_nothing_is_not_held() {
     let mut hub = standing(true, vec![at(0.0)]);
-    let conn = hub.guests[0].conn;
-    assert_eq!(
-        moves(&drain(&mut hub)),
-        [conn],
-        "heard as vanilla's flying packet"
-    );
-    let report = hub.pending_move_report(conn).unwrap();
-    assert_eq!(report.from, report.to);
-    assert_eq!(
-        (report.on_ground, report.has_position, report.has_rotation),
-        (true, true, false)
-    );
-}
-
-#[test]
-fn a_status_only_packet_is_held_with_neither_position_nor_rotation() {
-    let status = S::MovePlayerStatus(play::MovePlayerStatus { flags: 0 });
-    let mut hub = standing(true, vec![status]);
-    let conn = hub.guests[0].conn;
-    assert_eq!(moves(&drain(&mut hub)), [conn]);
-    let report = hub.pending_move_report(conn).unwrap();
-    assert_eq!(
-        (report.on_ground, report.has_position, report.has_rotation),
-        (false, false, false)
-    );
-}
-
-#[test]
-fn a_turn_reports_a_rotation_and_no_position() {
-    let mut hub = standing(true, vec![turned(30.0)]);
-    let conn = hub.guests[0].conn;
-    drain(&mut hub);
-    let report = hub.pending_move_report(conn).unwrap();
-    assert_eq!(
-        (report.on_ground, report.has_position, report.has_rotation),
-        (true, false, true)
-    );
+    let events = drain(&mut hub);
+    assert!(moves(&events).is_empty(), "the same position is not heard");
+    assert!(hub.guests[0].pending_move.is_none());
 }
 
 #[test]
@@ -324,4 +290,87 @@ fn a_vetoed_report_is_counted_before_the_hook_and_adds_no_violation() {
     for check in horizon_anticheat::Check::ALL {
         assert_eq!(g.anticheat.vl(&config, *check, hub.ticks), 0.0, "{check:?}");
     }
+}
+
+/// The `player_move_packet` events of `events`: `(conn, to, to_rotation, flags)`.
+#[allow(clippy::type_complexity)]
+fn packets(events: &[HostEvent]) -> Vec<(u32, [f64; 3], [f32; 2], (bool, bool, bool))> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            HostEvent::PlayerMovePacket {
+                conn,
+                to,
+                to_rotation,
+                on_ground,
+                has_position,
+                has_rotation,
+            } => Some((
+                *conn,
+                *to,
+                *to_rotation,
+                (*on_ground, *has_position, *has_rotation),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_packet_that_changes_nothing_is_heard_as_a_packet_and_not_as_a_move() {
+    let mut hub = standing(false, vec![at(0.0)]);
+    hub.move_packets_listened = true;
+    let conn = hub.guests[0].conn;
+    let events = drain(&mut hub);
+    assert!(moves(&events).is_empty(), "player_move keeps its rule");
+    assert_eq!(
+        packets(&events),
+        [(conn, [0.0, 64.0, 0.0], [0.0, 0.0], (true, true, false))]
+    );
+}
+
+#[test]
+fn a_status_only_packet_is_heard_with_neither_position_nor_rotation() {
+    let status = S::MovePlayerStatus(play::MovePlayerStatus { flags: 0 });
+    let mut hub = standing(false, vec![status]);
+    hub.move_packets_listened = true;
+    let conn = hub.guests[0].conn;
+    assert_eq!(
+        packets(&drain(&mut hub)),
+        [(conn, [0.0, 64.0, 0.0], [0.0, 0.0], (false, false, false))]
+    );
+}
+
+#[test]
+fn a_turn_is_heard_as_a_rotation_without_a_position() {
+    let mut hub = standing(true, vec![turned(30.0)]);
+    hub.move_packets_listened = true;
+    let conn = hub.guests[0].conn;
+    let events = drain(&mut hub);
+    assert_eq!(moves(&events), [conn], "a turn is also a player_move");
+    assert_eq!(
+        packets(&events),
+        [(conn, [0.0, 64.0, 0.0], [30.0, 0.0], (true, false, true))]
+    );
+}
+
+#[test]
+fn a_walking_packet_keeps_the_clients_ground_flag_and_no_listener_hears_nothing() {
+    let mut hub = standing(false, vec![walking(1.0)]);
+    hub.move_packets_listened = true;
+    let events = drain(&mut hub);
+    assert!(matches!(
+        packets(&events).as_slice(),
+        [(_, [x, _, _], _, (false, true, false))] if *x == 1.0
+    ));
+    let mut hub = standing(false, vec![walking(1.0)]);
+    assert!(packets(&drain(&mut hub)).is_empty());
+}
+
+#[test]
+fn the_first_tick_in_a_level_is_not_heard_as_a_packet() {
+    let mut hub = standing(false, vec![at(1.0)]);
+    hub.move_packets_listened = true;
+    hub.guests.update(0, |g| g.level_entered = 9);
+    assert!(packets(&drain(&mut hub)).is_empty());
 }
