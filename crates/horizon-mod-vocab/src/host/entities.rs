@@ -37,6 +37,15 @@ pub trait EntitiesHost {
     /// dimension the server hasn't loaded. API 373.
     #[access(WorldOnly)]
     fn level(&self, dimension: &str) -> Option<LevelRef>;
+    /// Side: both.
+    /// Whether `id` names an entity type in the game's registry (`EntityType.byString` finds it),
+    /// such as `minecraft:zombie` or a mod's type. The check is literal: `id` is compared as
+    /// written, with its namespace (a bare `zombie` is not in the registry). The answer comes
+    /// from the loaded entity-type registry, which loads with the first world, so it is false
+    /// while no world has loaded it. Use it to validate a configured id before a mod acts on it,
+    /// for example whitelist or blacklist entries, which the game drops when unknown.
+    #[access(Metadata)]
+    fn entity_type_exists(&self, id: &str) -> bool;
 }
 /// The server host's methods of the `entities` area, implemented by the game and reached through [`ServerHost`].
 #[horizon_mod_api_macros::host_area]
