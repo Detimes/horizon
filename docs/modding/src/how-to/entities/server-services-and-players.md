@@ -98,6 +98,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+`player.chat(host, message)` makes a player say a line in public chat, as Paper's `Player#chat` does for plain text: the line is shown to every player who is on, under the player's display name and the server's chat format, as an unsigned line (clients show it as not verified). It does not go through the chat event, the chat filter or `chat_recipient`, so use it for a line a mod itself writes (a menu's chat action, a scripted greeting), not for a player's own typing. A leading `/` is refused as `PlayerChatRefusal::Command`: a command runs with `entity.run_command`. The other refusals are `Stale` (the handle's player is not on, or is a fake player), `Empty`, `TooLong` (over 256 characters) and `IllegalCharacter` (a control character, DEL or `§`); each changes nothing.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`

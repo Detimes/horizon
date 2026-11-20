@@ -1107,6 +1107,19 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_respawn(&mut self, player: PlayerRef) -> Result<(), RespawnRefusal>;
     /// Side: server.
+    /// Makes the player say `message` in public chat (Paper's `Player#chat`): a line shown to
+    /// every player who is on and shows chat, under the player's display name and the server's
+    /// chat format (`<name> message`), as an unsigned line, the way a mod's or a bot's line is
+    /// (the receiving clients show it as not verified, and a server that enforces secure
+    /// profiles still delivers it). It is also callable from inside the player's own hook.
+    /// The line does not go through the player's own chat event, the chat filter or
+    /// `chat_recipient`: it reaches every player who is on. Each refusal changes nothing and is
+    /// named by `PlayerChatRefusal`, checked in this order: `Stale`, `Empty`, `Command` (a
+    /// leading `/`: run commands with `entity.run_command`), `TooLong` (over 256 characters)
+    /// and `IllegalCharacter`.
+    #[access(WorldOnly)]
+    fn player_chat(&mut self, player: PlayerRef, message: &str) -> Result<(), PlayerChatRefusal>;
+    /// Side: server.
     /// The play packets the player's connection sent and received since the last call while
     /// packets were counted (`count_packets`), by direction (sent first) then id; clears them.
     /// Keep-alives and the disconnect are counted; packets of the login and configuration
