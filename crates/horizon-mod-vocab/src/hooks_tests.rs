@@ -870,6 +870,7 @@ fn spawn_policy_writes_take_a_server_host(
     let _: Option<SpawnFlags> = level.spawn_flags(read);
     let _: Option<bool> = level.can_spawn_entities_in_chunk(read, [0, 0]);
     let _: bool = level.set_spawn_limits(server, SpawnLimits::VANILLA);
+    let _: bool = level.set_ticks_per_spawn(server, MobCategory::Creature, 400);
     let _: bool = level.set_spawn_flags(server, SpawnFlags::default());
     let _: Option<EntityRef> = level.spawn_mob(
         server,
