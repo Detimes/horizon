@@ -4970,7 +4970,13 @@ impl Hub {
     /// `viewer_entity_spawn`: an `AddEntity` of `kind` (its registry id, `entity_type`) with entity id
     /// `id` at `pos`, to `viewer`'s client alone. False when the viewer has no client or `kind` is not
     /// an entity type. The UUID is the id itself: the entity is not in the level.
-    pub fn spawn_viewer_entity(&mut self, viewer: u128, id: u32, kind: &str, pos: [f64; 3]) -> bool {
+    pub fn spawn_viewer_entity(
+        &mut self,
+        viewer: u128,
+        id: u32,
+        kind: &str,
+        pos: [f64; 3],
+    ) -> bool {
         let Some(index) = self
             .guests
             .iter()
@@ -5035,7 +5041,9 @@ impl Hub {
         else {
             return false;
         };
-        self.guests[index].send(&C::RemoveEntities(play::RemoveEntities { ids: vec![id as i32] }));
+        self.guests[index].send(&C::RemoveEntities(play::RemoveEntities {
+            ids: vec![id as i32],
+        }));
         true
     }
 
@@ -8832,25 +8840,31 @@ mod tests {
         assert_eq!(hub.guests[0].ticket_chunk(), left);
     }
 
-
     /// A client-only entity reaches only its viewer: spawn, move and remove are one packet each to that
     /// client, and a move or removal of an id the viewer does not hold is refused. Uuid 1 is Bob,
     /// uuid 2 is Alice.
     #[test]
     fn a_viewer_entity_reaches_that_viewer_only() {
         let (mut hub, bob) = hub_with_a_guest();
+        hub.entity_types.insert("minecraft:shulker".into(), 1);
         let alice = add_alice(&mut hub);
         sent(&alice);
         sent(&bob);
         assert!(hub.spawn_viewer_entity(2, 9001, "minecraft:shulker", [1.0, 2.0, 3.0]));
         let got = sent(&alice);
-        assert!(matches!(&got[0], play::Clientbound::AddEntity(e) if e.id == 9001 && e.position == [1.0, 2.0, 3.0]));
+        assert!(
+            matches!(&got[0], play::Clientbound::AddEntity(e) if e.id == 9001 && e.position == [1.0, 2.0, 3.0])
+        );
         assert_eq!(got.len(), 1);
         assert!(sent(&bob).is_empty(), "the other players are not told");
         assert!(hub.move_viewer_entity(2, 9001, [4.0, 5.0, 6.0]));
-        assert!(matches!(&sent(&alice)[0], play::Clientbound::TeleportEntity(t) if t.id == 9001 && t.position == [4.0, 5.0, 6.0]));
+        assert!(
+            matches!(&sent(&alice)[0], play::Clientbound::TeleportEntity(t) if t.id == 9001 && t.position == [4.0, 5.0, 6.0])
+        );
         assert!(hub.remove_viewer_entity(2, 9001));
-        assert!(matches!(&sent(&alice)[0], play::Clientbound::RemoveEntities(r) if r.ids == [9001]));
+        assert!(
+            matches!(&sent(&alice)[0], play::Clientbound::RemoveEntities(r) if r.ids == [9001])
+        );
         // Gone for good: a second removal or move is refused, and nothing is sent.
         assert!(!hub.remove_viewer_entity(2, 9001));
         assert!(!hub.move_viewer_entity(2, 9001, [0.0; 3]));
