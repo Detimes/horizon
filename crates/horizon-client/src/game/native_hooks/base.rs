@@ -2254,6 +2254,17 @@ impl Game<'_> {
     ) {
         self.fire_player_bucket_entity(player, name, entity_id, entity);
     }
+    /// A server player milked a cow, a mooshroom or a goat with a bucket, after the milk bucket
+    /// was given. `entity` is the species id. Server-side.
+    pub(in crate::game) fn native_player_milk_entity(
+        &mut self,
+        player: u128,
+        name: &str,
+        entity_id: i32,
+        entity: &str,
+    ) {
+        let _ = (player, name, entity_id, entity);
+    }
     /// A server player changed a beacon's selected effects, after they were stored. Each selected
     /// effect is its load-owned key; None means no effect. Server-side.
     pub(in crate::game) fn native_player_change_beacon_effect(
