@@ -98,6 +98,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+`host.player_last_played(uuid)` answers when a player, on or off, last played (`Option<i64>`, milliseconds since the Unix epoch). A player who is on reads the current time. A player who is off reads when their player file was last saved, which is their leaving, or a periodic save of a player who has since gone. `None` means the server has no file for that UUID, so the player never joined, and also that no world is open. For a player who is not on, `player_last_played(uuid).is_some()` is Paper's `hasPlayedBefore`.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`

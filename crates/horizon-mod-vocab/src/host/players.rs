@@ -57,6 +57,16 @@ pub trait PlayersServerHost {
     /// made an offline player.
     #[access(WorldOnly)]
     fn profile_by_name(&self, name: &str) -> Option<GameProfile>;
+    /// Side: server.
+    /// When the player with this UUID last played, in milliseconds since the Unix epoch
+    /// (Paper's `OfflinePlayer#getLastPlayed`): the current time for a player who is on now,
+    /// else the time their player file was last saved (their leaving, or a periodic save of a
+    /// player who has since gone). None when the server has no file for them, which is also how
+    /// a mod tells a player who never joined (`OfflinePlayer#hasPlayedBefore` is
+    /// `player_last_played(uuid).is_some()` for a player who is not on), and where no world is
+    /// open to read from.
+    #[access(WorldOnly)]
+    fn player_last_played(&self, uuid: u128) -> Option<i64>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
