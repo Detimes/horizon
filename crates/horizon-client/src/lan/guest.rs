@@ -524,6 +524,11 @@ pub struct Guest {
     /// saves neither its player file nor its records, since the other server has the
     /// player now.
     pub released: bool,
+    /// A hand-over of this player was started (`player-export ... freeze`) and has not been
+    /// settled by a release. It outlives the freeze, which runs out on its own: the destination
+    /// may have committed in the meantime, so until a release settles who owns the player the
+    /// mods' `player_leaving` is not heard for them.
+    pub transfer_unresolved: bool,
     /// Root command names the mods took out of this player's command tree
     /// (`native_player_commands_sent`); their tree is sent without them.
     pub hidden_commands: Vec<String>,
@@ -870,6 +875,7 @@ impl Guest {
             arrival_recentered: false,
             quiet_leave: false,
             released: false,
+            transfer_unresolved: false,
             hidden_commands: Vec::new(),
             abilities: Default::default(),
             dimension: "minecraft:overworld".into(),

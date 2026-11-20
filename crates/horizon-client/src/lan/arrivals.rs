@@ -494,6 +494,7 @@ pub fn export_record(
     if let Some(id) = id {
         let since = hub.ticks;
         hub.guests.update(i, |g| {
+            g.transfer_unresolved = true;
             g.handover = Some(Handover {
                 id,
                 since,
@@ -1770,6 +1771,10 @@ mod hub_tests {
             stats: serde_json::json!({"stats": {"minecraft:custom": {"minecraft:jump": 3}}}),
         };
         let record = super::export_record(&mut hub, i, false, records).unwrap();
+        assert!(
+            !hub.guests[i].transfer_unresolved,
+            "a plain export is no hand-over"
+        );
         assert_eq!(record["version"], 1);
         assert_eq!(record["data_version"], horizon_world::DATA_VERSION);
         assert_eq!(record["uuid"], UUID);
@@ -1817,6 +1822,7 @@ mod hub_tests {
         let record = super::export_record(&mut hub, i, true, Default::default()).unwrap();
         let handover = hub.guests[i].handover.clone().unwrap();
         assert_eq!(handover.since, hub.ticks);
+        assert!(hub.guests[i].transfer_unresolved);
         assert_eq!(
             record["handover"].as_str(),
             Some(super::handover_text(handover.id).as_str())
@@ -1860,6 +1866,10 @@ mod hub_tests {
         assert!(hub.guests[i].handover.is_some());
         assert!(hub.poll(&mut ctx).iter().any(|e| is_warn(e, "frozen")));
         assert_eq!(hub.guests[i].handover, None, "the hand-over is over");
+        assert!(
+            hub.guests[i].transfer_unresolved,
+            "a freeze running out does not say who owns the player"
+        );
     }
 
     #[test]

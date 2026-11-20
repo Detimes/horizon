@@ -6,8 +6,9 @@ impl Game<'_> {
     /// leave with the plain-text `reason`, with that player's state swapped in: they are still
     /// listed and placed, before their menus close and their file is saved. Server-side.
     ///
-    /// Not heard for a guest a proxy transfer released: the destination already owns their
-    /// state, so what a mod did to it here would be lost or, worse, duplicated.
+    /// Not heard for a guest whose proxy transfer is released or still unresolved: the
+    /// destination may already own their state, so what a mod did to it here would be lost or,
+    /// worse, duplicated.
     pub(in crate::game) fn announce_player_leaving(
         &mut self,
         conn: u32,
@@ -15,15 +16,19 @@ impl Game<'_> {
         name: &str,
         reason: &str,
     ) {
-        let released = self
+        // The flag is only set for a guest the hook is heard for.
+        let skip = self
             .lan
             .as_mut()
             .and_then(|host| {
-                host.hub
-                    .update_guest(conn, |g| (g.released, g.leaving = true).0)
+                host.hub.update_guest(conn, |g| {
+                    let skip = g.released || g.transfer_unresolved;
+                    g.leaving = !skip;
+                    skip
+                })
             })
             .unwrap_or(true);
-        if released {
+        if skip {
             return;
         }
         self.as_guest(conn, |game| {

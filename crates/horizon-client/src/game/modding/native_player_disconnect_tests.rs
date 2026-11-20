@@ -326,6 +326,12 @@ mod leaving {
             assert!(heard.leaving.lock().unwrap().is_empty());
             let hub = &mut game.lan.as_mut().unwrap().hub;
             hub.update_guest(12, |g| g.released = false);
+            // An export whose freeze ran out is still unsettled: the destination may own them.
+            hub.update_guest(12, |g| g.transfer_unresolved = true);
+            game.announce_player_leaving(12, uuid, "Guest12", "Disconnected");
+            assert!(heard.leaving.lock().unwrap().is_empty());
+            let hub = &mut game.lan.as_mut().unwrap().hub;
+            hub.update_guest(12, |g| g.transfer_unresolved = false);
             game.announce_player_leaving(12, uuid, "Guest12", "Disconnected");
             assert_eq!(*heard.leaving.lock().unwrap(), [uuid]);
         });
