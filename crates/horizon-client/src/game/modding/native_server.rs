@@ -2058,6 +2058,19 @@ impl Game<'_> {
         }
     }
 
+    /// Sends guest `i` its command tree with the permission nodes asked again first, for a tree a
+    /// join or `Hub::change_level_with` left out: the nodes see the player placed, in its new
+    /// level.
+    pub(super) fn send_tree_with_fresh_nodes(&mut self, i: usize) {
+        let Some(conn) = self.lan.as_ref().map(|host| host.hub.guests[i].conn) else {
+            return;
+        };
+        self.native_refresh_node_paths(conn);
+        if let Some(host) = self.lan.as_ref() {
+            host.hub.send_commands(i);
+        }
+    }
+
     /// The gated command paths a permission node refuses this player (empty without a custom
     /// permission handler): their tree leaves them out.
     fn node_hidden_paths(&mut self, uuid: u128) -> Vec<Vec<String>> {
