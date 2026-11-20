@@ -531,7 +531,7 @@ pub struct StatusAsk {
 const MAX_STATUS_ASKS: usize = 64;
 /// How long a status request waits for the mods before the plain answer goes out.
 const STATUS_HOOK_WAIT: Duration = Duration::from_millis(500);
-/// The longest status answer a client reads (a `String` of 32767 characters).
+/// The longest status answer a client reads (a `String` of 32767 UTF-16 units).
 const STATUS_ANSWER_LIMIT: usize = 32767;
 /// The most names a status answer's sample keeps from a mod.
 pub const STATUS_SAMPLE_LIMIT: usize = 64;
@@ -814,7 +814,8 @@ impl Shared {
         match answer.recv_timeout(STATUS_HOOK_WAIT) {
             Ok(Some(changed)) => {
                 let json = self.render_status(&changed, shown);
-                if json.chars().count() <= STATUS_ANSWER_LIMIT {
+                // Vanilla's `ByteBufCodecs.stringUtf8(32767)` counts UTF-16 units, not characters.
+                if json.encode_utf16().count() <= STATUS_ANSWER_LIMIT {
                     Some(json)
                 } else {
                     Some(self.render_status(&parts, shown))
