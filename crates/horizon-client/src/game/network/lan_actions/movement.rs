@@ -40,7 +40,8 @@ impl Game<'_> {
         let Some(g) = self.lan.as_ref().and_then(|host| host.hub.guest(conn)) else {
             return;
         };
-        let start = !g.fall_flying && self.guest_can_glide(conn) == Some(true);
+        let (uuid, name, was) = (g.uuid, g.name.clone(), g.fall_flying);
+        let start = !was && self.guest_can_glide(conn) == Some(true);
         let in_liquid = self
             .as_guest(conn, |game| {
                 game.player
@@ -48,20 +49,27 @@ impl Game<'_> {
                     .is_some_and(|p| p.fluids.was_touching_water || p.is_in_lava())
             })
             .unwrap_or(true);
-        let mut changed = None;
+        let gliding = start && !in_liquid;
+        if was != gliding {
+            // Heard before the change is applied: a cancel keeps the state.
+            let mut cancel = false;
+            if self.native_authoritative
+                && mod_api::__private::listened(mod_api::HookId::EntityToggleGlide)
+            {
+                self.native_entity_toggle_glide(uuid, &name, gliding, &mut cancel);
+            }
+            if cancel {
+                return;
+            }
+        }
         if let Some(host) = self.lan.as_mut() {
             let _ = host.hub.update_guest(conn, |g| {
-                let gliding = start && !in_liquid;
                 if g.fall_flying != gliding {
                     g.fall_flying = gliding;
-                    changed = Some((g.uuid, g.name.clone(), gliding));
                 } else if !gliding {
                     g.sent_shared ^= -128;
                 }
             });
-        }
-        if let Some((uuid, name, gliding)) = changed {
-            self.native_entity_toggle_glide(uuid, &name, gliding);
         }
     }
 
