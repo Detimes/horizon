@@ -473,7 +473,9 @@ impl Game<'_> {
             .adv
             .progress
             .to_json(&self.adv.tree, horizon_world::DATA_VERSION);
-        horizon_gameplay::atomic_json::save_json(&path, &json);
+        if let Err(e) = super::stats::write_player_json(&path, &json) {
+            log::warn!("{e}");
+        }
     }
     /// The player as predicates see it.
     /// The predicate view of a command target.

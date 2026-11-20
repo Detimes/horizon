@@ -21,7 +21,9 @@ impl Game<'_> {
         let json = guest
             .advancements
             .to_json(&self.adv.tree, horizon_world::DATA_VERSION);
-        horizon_gameplay::atomic_json::save_json(&path, &json);
+        if let Err(e) = super::stats::write_player_json(&path, &json) {
+            log::warn!("{e}");
+        }
     }
     /// `PlayerAdvancements.save` and `ServerStatsCounter.save` of a network player.
     pub(in crate::game) fn save_guest_records(
