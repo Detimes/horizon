@@ -1609,6 +1609,8 @@ struct Game<'a> {
     /// The ender inventory (27 slots) and the ender chest showing it.
     ender_items: Vec<Option<ItemStack>>,
     ender_open: Option<(i32, i32, i32)>,
+    /// The guest who last opened each brewing stand, for `brewing_owner_results`.
+    brew_owners: std::collections::HashMap<(i32, i32, i32), u128>,
     /// Block entity data of broken blocks waiting for their dropped item.
     pending: spill::Pending,
     /// Item entities spawned and block entities removed while the block
@@ -10807,6 +10809,7 @@ impl<'a> Game<'a> {
             pending_vehicle: None,
             ender_items: vec![None; 27],
             ender_open: None,
+            brew_owners: Default::default(),
             pending: Default::default(),
             spill: Default::default(),
             recipe_ui: Default::default(),

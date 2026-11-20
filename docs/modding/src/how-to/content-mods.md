@@ -480,6 +480,8 @@ table, the inventory grid, the crafter and as furnace fuel (the last of the stac
 the fuel slot, a stack with more left drops it), not in a brewing stand. What the item leaves once eaten
 or drunk is the `minecraft:use_remainder` component instead:
 
+A native mod hears a finished brew through `brewing_owner_results`: the three bottles as they are after the brew, and the guest who last opened that stand (None when no guest did). It fires right after `brewing_complete`, listen only.
+
 ```json
 { "template": "minecraft:mushroom_stew", "crafting_remainder": "minecraft:bowl" }
 ```
