@@ -502,6 +502,14 @@ pub trait MobsBackendMut {
     #[access(WorldOnly)]
     fn mob_set_left_handed(&mut self, mob: MobRef, left_handed: bool) -> bool;
     /// Side: server.
+    /// `AbstractPiglin.finishConversion`, as a mod starts it: the piglin turns into a zombified piglin in its
+    /// place, keeping its equipment and loot pickup (`ConversionParams` as vanilla's zombification), with the
+    /// nausea it leaves and `living_conversion_pre` as the game's own conversions. Only a piglin: other kinds
+    /// refuse. Immunity to zombification does not stop the call. False for a stale handle, a client, the dragon,
+    /// or a mob that is not a piglin.
+    #[access(WorldOnly)]
+    fn mob_zombify(&mut self, mob: MobRef) -> bool;
+    /// Side: server.
     /// `Mob.setCanPickUpLoot`: whether the mob picks up the items it sees
     /// (saved with it as `CanPickUpLoot`; clients are not told, as in
     /// vanilla). An allay and a sulfur cube decide for themselves. False

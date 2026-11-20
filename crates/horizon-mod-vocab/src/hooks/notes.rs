@@ -1060,6 +1060,7 @@ steers a mob through the engine's own controls, each a momentary wish the mob's 
   `LeftHanded`) and `can_pick_up_loot` / `set_can_pick_up_loot` (`Mob.setCanPickUpLoot`, saved as `CanPickUpLoot`;
   an allay and a sulfur cube decide for themselves) moved here from the flat `living_*` helpers of #938's first round:
   vanilla keeps both on `Mob`, so `MobRef` is their home. The flat helpers are gone, with no aliases.
+- `mob.zombify(host)` (`AbstractPiglin.finishConversion`): a piglin turns into a zombified piglin in its place through the game's own conversion (equipment and loot pickup kept, the nausea after, `living_conversion_pre` asked). Refuses other kinds, stale handles, clients and the dragon. Immunity to zombification does not stop the call.
 - All of these answer `None`/`false` for a stale handle, a client, the dragon (no `Mob` state), and a mob whose copy is
   held out of the level.
 
