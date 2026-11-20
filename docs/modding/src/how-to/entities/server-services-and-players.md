@@ -77,6 +77,8 @@ in place of the player's name, `None` when there is none (`Option<Option<String>
 An outer `None` means a stale or unavailable player for all three, a client or an
 unjoinable world for `hidden`, and no server list for `nickname`.
 
+A team's looks and rules are set with `host.team_set_prefix(team, text)` and `team_set_suffix`, `team_set_name_tag_visibility(team, TeamVisibility)`, `team_set_collision_rule(team, TeamCollisionRule)` and `team_set_friendly_fire(team, bool)`. Each is `/team modify` for that field: the world's scoreboard keeps the value, and clients see it from the next tick's scoreboard sync. Each returns whether the value changed, so setting the same value again, a stale team and a client all read `false`. Prefix and suffix are checked for depth before anything is applied (`TextFormError`). A player's Tab list and name tag follow the team through the usual rules; a mod that wants a different Tab entry sets `player.set_list_name`.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`

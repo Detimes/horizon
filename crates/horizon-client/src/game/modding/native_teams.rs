@@ -1,7 +1,11 @@
 //! Scoreboard teams for server mods (`/team add|join|leave|remove|modify color`).
 use super::Game;
 use mod_api::__private::game::{Fields, team_ref};
-use mod_api::{ScoreHolder, TeamColor, TeamError, TeamRef};
+use horizon_client::{
+    scoreboard::{CollisionRule, Visibility},
+    text::Text,
+};
+use mod_api::{ScoreHolder, TeamColor, TeamCollisionRule, TeamError, TeamRef, TeamVisibility};
 
 /// Whether the scoreboard's save keeps `text` as it is: the disk writer empties an NBT string whose modified
 /// UTF-8 form (U+0000 as two bytes, a character past the basic plane as a surrogate pair of three bytes each)
@@ -113,6 +117,83 @@ impl Game<'_> {
         self.score.board.add_team(&name).color = color;
         true
     }
+    /// The team's own text field `get` reads and `set` writes, when it differs from `text`:
+    /// true when it was changed. False for a stale team.
+    fn team_set_text(
+        &mut self,
+        team: &TeamRef,
+        text: &Text,
+        field: fn(&mut horizon_client::scoreboard::Team) -> &mut serde_json::Value,
+    ) -> bool {
+        let Some(name) = self.live_team(team) else {
+            return false;
+        };
+        let component = text.component();
+        let slot = field(self.score.board.add_team(&name));
+        if *slot == component {
+            return false;
+        }
+        *slot = component;
+        true
+    }
+    /// `PlayerTeam.setPlayerPrefix`: true when the prefix changed.
+    pub(super) fn team_set_prefix(&mut self, team: TeamRef, prefix: Text) -> bool {
+        self.team_set_text(&team, &prefix, |t| &mut t.prefix)
+    }
+    /// `PlayerTeam.setPlayerSuffix`: true when the suffix changed.
+    pub(super) fn team_set_suffix(&mut self, team: TeamRef, suffix: Text) -> bool {
+        self.team_set_text(&team, &suffix, |t| &mut t.suffix)
+    }
+    /// `PlayerTeam.setNameTagVisibility`: true when it changed.
+    pub(super) fn team_set_name_tag_visibility(
+        &mut self,
+        team: TeamRef,
+        visibility: TeamVisibility,
+    ) -> bool {
+        let Some(name) = self.live_team(&team) else {
+            return false;
+        };
+        let visibility = match visibility {
+            TeamVisibility::Never => Visibility::Never,
+            TeamVisibility::HideForOtherTeams => Visibility::HideForOtherTeams,
+            TeamVisibility::HideForOwnTeam => Visibility::HideForOwnTeam,
+            _ => Visibility::Always,
+        };
+        let team = self.score.board.add_team(&name);
+        let changed = team.nametag_visibility != visibility;
+        team.nametag_visibility = visibility;
+        changed
+    }
+    /// `PlayerTeam.setCollisionRule`: true when it changed.
+    pub(super) fn team_set_collision_rule(
+        &mut self,
+        team: TeamRef,
+        rule: TeamCollisionRule,
+    ) -> bool {
+        let Some(name) = self.live_team(&team) else {
+            return false;
+        };
+        let rule = match rule {
+            TeamCollisionRule::Never => CollisionRule::Never,
+            TeamCollisionRule::PushOtherTeams => CollisionRule::PushOtherTeams,
+            TeamCollisionRule::PushOwnTeam => CollisionRule::PushOwnTeam,
+            _ => CollisionRule::Always,
+        };
+        let team = self.score.board.add_team(&name);
+        let changed = team.collision_rule != rule;
+        team.collision_rule = rule;
+        changed
+    }
+    /// `PlayerTeam.setAllowFriendlyFire`: true when it changed.
+    pub(super) fn team_set_friendly_fire(&mut self, team: TeamRef, allowed: bool) -> bool {
+        let Some(name) = self.live_team(&team) else {
+            return false;
+        };
+        let team = self.score.board.add_team(&name);
+        let changed = team.allow_friendly_fire != allowed;
+        team.allow_friendly_fire = allowed;
+        changed
+    }
     /// `Scoreboard.addPlayerToTeam`: `holder` leaves its team and joins `team`; Ok(false) when it
     /// is on that team already.
     pub(super) fn team_join(
@@ -168,6 +249,38 @@ impl Game<'_> {
 mod tests {
     use super::super::native_guest_turn_tests::with_guests;
     use mod_api::{ScoreHolder, TeamColor, TeamError};
+
+    /// A team's prefix, suffix, name tag visibility, collision rule and friendly fire are set in
+    /// the world's scoreboard; the same value again, and a removed team, change nothing.
+    #[test]
+    #[ignore = "daily"]
+    fn team_options_are_kept_in_the_worlds_scoreboard() {
+        use horizon_client::{scoreboard::{CollisionRule, Visibility}, text::Text};
+        use mod_api::{TeamCollisionRule, TeamVisibility};
+        with_guests(|game| {
+            game.load_scoreboard();
+            let team = game.add_team("opts").unwrap();
+            assert!(game.team_set_prefix(team.clone(), Text::literal("[VIP] ")));
+            assert!(!game.team_set_prefix(team.clone(), Text::literal("[VIP] ")));
+            assert!(game.team_set_suffix(team.clone(), Text::literal(" *")));
+            let board = game.score.board.team("opts").unwrap();
+            assert_eq!(board.prefix, serde_json::json!("[VIP] "));
+            assert_eq!(board.suffix, serde_json::json!(" *"));
+            assert!(game.team_set_name_tag_visibility(team.clone(), TeamVisibility::Never));
+            assert!(!game.team_set_name_tag_visibility(team.clone(), TeamVisibility::Never));
+            assert!(game.team_set_collision_rule(team.clone(), TeamCollisionRule::PushOwnTeam));
+            assert!(!game.team_set_collision_rule(team.clone(), TeamCollisionRule::PushOwnTeam));
+            assert!(game.team_set_friendly_fire(team.clone(), false));
+            assert!(!game.team_set_friendly_fire(team.clone(), false));
+            let board = game.score.board.team("opts").unwrap();
+            assert_eq!(board.nametag_visibility, Visibility::Never);
+            assert_eq!(board.collision_rule, CollisionRule::PushOwnTeam);
+            assert!(!board.allow_friendly_fire);
+            assert!(game.team_remove(team.clone()));
+            assert!(!game.team_set_prefix(team.clone(), Text::literal("x")));
+            assert!(!game.team_set_friendly_fire(team, true), "a removed team is stale");
+        });
+    }
 
     /// Teams are made, coloured, joined, left and removed in the world's scoreboard, which
     /// the next tick's sync sends to the players; refused input changes nothing.

@@ -1583,6 +1583,35 @@ pub enum TeamColor {
     White,
 }
 
+/// Who sees a team's name tags (or its members' death messages): `Team.Visibility`, the four
+/// values `/team modify <team> nametagVisibility` takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, horizon_mod_api_macros::Wire)]
+#[non_exhaustive]
+pub enum TeamVisibility {
+    /// `always`: everyone.
+    Always,
+    /// `never`: no one.
+    Never,
+    /// `hideForOtherTeams`: only the team's own members.
+    HideForOtherTeams,
+    /// `hideForOwnTeam`: everyone but the team's own members.
+    HideForOwnTeam,
+}
+
+/// How a team's members collide (`Team.CollisionRule`, `/team modify <team> collisionRule`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, horizon_mod_api_macros::Wire)]
+#[non_exhaustive]
+pub enum TeamCollisionRule {
+    /// `always`: members collide with everyone.
+    Always,
+    /// `never`: members collide with no one.
+    Never,
+    /// `pushOtherTeams`: members push members of other teams only.
+    PushOtherTeams,
+    /// `pushOwnTeam`: members push members of their own team only.
+    PushOwnTeam,
+}
+
 /// Who or what a team holds: the scoreboard keeps a player by name and any other entity by UUID.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, horizon_mod_api_macros::Wire)]
 #[non_exhaustive]

@@ -25,6 +25,38 @@ pub trait ScoreboardServerHost {
     #[access(WorldOnly)]
     fn team_set_color(&mut self, team: TeamRef, color: Option<TeamColor>) -> bool;
     /// Side: server.
+    /// `PlayerTeam.setPlayerPrefix`, as `/team modify <team> prefix`: the text shown before
+    /// each member's name in chat, the Tab list and above their heads, in every client from
+    /// the next tick's scoreboard sync (an empty text takes it away). Ok(true) when the prefix
+    /// changed; Ok(false) for a stale team, on a client and when the team has that prefix.
+    #[access(WorldOnly)]
+    /// Refuses text deeper than 512 component nodes before applying any changes.
+    fn team_set_prefix(&mut self, team: TeamRef, prefix: Text) -> Result<bool, TextFormError>;
+    /// Side: server.
+    /// `PlayerTeam.setPlayerSuffix`, as `/team modify <team> suffix`: the same as
+    /// `team_set_prefix`, after each member's name.
+    #[access(WorldOnly)]
+    /// Refuses text deeper than 512 component nodes before applying any changes.
+    fn team_set_suffix(&mut self, team: TeamRef, suffix: Text) -> Result<bool, TextFormError>;
+    /// Side: server.
+    /// `PlayerTeam.setNameTagVisibility`, as `/team modify <team> nametagVisibility`: who sees
+    /// the members' name tags. True when it changed; false for a stale team, on a client and
+    /// when the team has that value.
+    #[access(WorldOnly)]
+    fn team_set_name_tag_visibility(&mut self, team: TeamRef, visibility: TeamVisibility) -> bool;
+    /// Side: server.
+    /// `PlayerTeam.setCollisionRule`, as `/team modify <team> collisionRule`: how the members
+    /// collide. True when it changed; false for a stale team, on a client and when the team
+    /// has that rule.
+    #[access(WorldOnly)]
+    fn team_set_collision_rule(&mut self, team: TeamRef, rule: TeamCollisionRule) -> bool;
+    /// Side: server.
+    /// `PlayerTeam.setAllowFriendlyFire`, as `/team modify <team> friendlyFire`: whether
+    /// members can hurt each other (a new team allows it). True when it changed; false for a
+    /// stale team, on a client and when the team has that value.
+    #[access(WorldOnly)]
+    fn team_set_friendly_fire(&mut self, team: TeamRef, allowed: bool) -> bool;
+    /// Side: server.
     /// `Scoreboard.addPlayerToTeam`, as `/team join`: `holder` leaves the team it is on and
     /// joins `team`, in every client from the next tick's sync. Ok(false) when it is on that
     /// team already. `Stale` for a team that is gone, `UnknownHolder` for a holder the
