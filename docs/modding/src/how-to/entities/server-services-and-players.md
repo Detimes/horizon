@@ -98,7 +98,7 @@ state. A mod uses it for a per-player hologram, a vanish that only some players 
 helper entity only its owner should see. It is kept by the entity's UUID until shown again or
 the viewer leaves; a rejoin starts with nothing hidden. A hidden player stays in the viewer's
 Tab list (`hide` lists them out too), and chat is not filtered. The calls return whether
-anything changed, and refuse with `PlayerWorldRefusal`: `Client`, `Stale`, `NoConnection` for a
+anything changed, and refuse with `EntityVisibilityRefusal`: `Client`, `Stale`, `NoConnection` for a
 fake viewer and `StaleEntity` for an entity handle that names nothing or the viewer's own player.
 
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`

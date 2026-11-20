@@ -4,7 +4,10 @@
 use super::native_entity_refs::tests::with_client_game;
 use super::native_guest_turn_tests::with_guests;
 use horizon_protocol::packets::play::Clientbound as C;
-use mod_api::{EntityRef, PlayerRef, PlayerWorldRefusal as Refusal, WorldEpoch};
+use mod_api::{
+    EntityRef, EntityVisibilityRefusal as Visibility, PlayerRef, PlayerWorldRefusal as Refusal,
+    WorldEpoch,
+};
 
 /// The API's value for a block state of the world.
 fn api_state(game: &super::Game<'_>, name: &str) -> mod_api::BlockState {
@@ -250,7 +253,7 @@ fn an_entity_is_hidden_from_one_viewer_alone() {
         assert_eq!(b.sees(game, a), Ok(true));
         assert_eq!(
             a.entity().set_visible_to(game, a, false),
-            Err(Refusal::StaleEntity),
+            Err(Visibility::StaleEntity),
             "a viewer's own player is never tracked to it"
         );
         assert_eq!(b.entity().set_visible_to(game, a, true), Ok(true));
@@ -258,12 +261,12 @@ fn an_entity_is_hidden_from_one_viewer_alone() {
         assert_eq!(a.sees(game, b), Ok(true));
         assert_eq!(
             b.entity().set_visible_to(game, stale(a), false),
-            Err(Refusal::Stale)
+            Err(Visibility::Stale)
         );
         let machine = fake(game);
         assert_eq!(
             b.entity().set_visible_to(game, machine, false),
-            Err(Refusal::NoConnection)
+            Err(Visibility::NoConnection)
         );
     });
 }

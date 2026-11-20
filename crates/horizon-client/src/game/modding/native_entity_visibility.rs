@@ -1,6 +1,6 @@
 //! `entity_set_visible_to`: an entity hidden from one player's client alone.
 use super::Game;
-use mod_api::{EntityRef, PlayerRef, PlayerWorldRefusal as Refusal};
+use mod_api::{EntityRef, EntityVisibilityRefusal as Refusal, PlayerRef};
 
 impl Game<'_> {
     /// The viewer's UUID and the entity's, once both name something in the server's list. A viewer's

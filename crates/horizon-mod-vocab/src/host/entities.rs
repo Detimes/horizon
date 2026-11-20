@@ -592,7 +592,7 @@ pub trait EntitiesBackendMut {
     /// in the viewer's Tab list (`player_hide` also lists them out); chat and commands are not
     /// filtered. Kept per viewer, by the entity's UUID, until shown again or the viewer leaves
     /// (a rejoin starts with nothing hidden). Returns whether it changed (`false`: it was
-    /// already so). This API refuses with `PlayerWorldRefusal`: `Client` on a client, `Stale`
+    /// already so). This API refuses with `EntityVisibilityRefusal`: `Client` on a client, `Stale`
     /// for a viewer handle that no longer identifies a player in the server's list,
     /// `NoConnection` for a fake viewer, and `StaleEntity` for an entity handle that names
     /// nothing or the viewer's own player.
@@ -602,7 +602,7 @@ pub trait EntitiesBackendMut {
         entity: EntityRef,
         viewer: PlayerRef,
         visible: bool,
-    ) -> Result<bool, PlayerWorldRefusal>;
+    ) -> Result<bool, EntityVisibilityRefusal>;
     /// Side: server.
     /// Whether `entity_set_visible_to` left the entity visible to that viewer (Paper's
     /// `Player.canSee(Entity)`): `false` only while a mod has it hidden from that viewer. Not
@@ -613,7 +613,7 @@ pub trait EntitiesBackendMut {
         &mut self,
         entity: EntityRef,
         viewer: PlayerRef,
-    ) -> Result<bool, PlayerWorldRefusal>;
+    ) -> Result<bool, EntityVisibilityRefusal>;
     /// Side: server.
     /// `Entity.resetFallDistance`: how far the entity has fallen is forgotten, so its next
     /// landing hurts it as a step does (a fan's or a launcher's push, a mod's soft block).
