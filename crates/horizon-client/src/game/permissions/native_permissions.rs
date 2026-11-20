@@ -39,6 +39,11 @@ impl QueryState {
         Ok(())
     }
 
+    /// Whether a query is being answered, so the service is out of the host for its handler.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
+
     /// Ends the query `enter` started; a query asked again while it was answered fails it too.
     fn leave<T>(&mut self, result: Result<T, PermissionError>) -> Result<T, PermissionError> {
         self.active = false;
@@ -106,6 +111,35 @@ pub(crate) fn run_query<H: PermissionHost>(
     let (service, state) = host.permission_parts();
     *service = taken;
     state.leave(result)
+}
+
+/// Grants the Boolean node `node` to `uuid` for `source`. Refused with `Recursive` while a query
+/// is being answered (the service is out of the host then), else as `PermissionService::grant`.
+/// Side: server.
+pub(crate) fn run_grant<H: PermissionHost>(
+    host: &mut H,
+    uuid: u128,
+    node: &PermissionNode,
+    source: &str,
+) -> Result<(), PermissionError> {
+    let (service, state) = host.permission_parts();
+    if state.is_active() {
+        return Err(PermissionError::Recursive);
+    }
+    service.grant(uuid, node, source)
+}
+
+/// Takes back every grant `source` made to `uuid`; the number taken back. Side: server.
+pub(crate) fn run_revoke<H: PermissionHost>(
+    host: &mut H,
+    uuid: u128,
+    source: &str,
+) -> Result<u32, PermissionError> {
+    let (service, state) = host.permission_parts();
+    if state.is_active() {
+        return Err(PermissionError::Recursive);
+    }
+    service.revoke(uuid, source)
 }
 
 /// `run_query` for a Boolean node. Refused with `WrongType` for any other node, before any handler
@@ -267,6 +301,25 @@ impl Game<'_> {
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError> {
         run_query(self, node, uuid, contexts)
+    }
+
+    /// Grants a Boolean node to a player for a source. Side: server.
+    pub(super) fn permission_grant(
+        &mut self,
+        uuid: u128,
+        node: &PermissionNode,
+        source: &str,
+    ) -> Result<(), PermissionError> {
+        run_grant(self, uuid, node, source)
+    }
+
+    /// Takes back a source's grants for a player. Side: server.
+    pub(super) fn permission_revoke(
+        &mut self,
+        uuid: u128,
+        source: &str,
+    ) -> Result<u32, PermissionError> {
+        run_revoke(self, uuid, source)
     }
 
     /// `permission_query` for a Boolean node. Side: server.

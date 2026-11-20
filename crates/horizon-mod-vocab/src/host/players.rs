@@ -67,6 +67,34 @@ pub trait PlayersServerHost {
         uuid: u128,
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError>;
+    /// Side: server.
+    /// Grants the declared Boolean node `node` to the player `uuid` (online or not) until
+    /// `source` takes it back with `permission_revoke`: a query of that node for that player
+    /// answers `true` where the selected handler answers `false`, so a mod can hand out the
+    /// nodes a job level or a rank card names (Bukkit's `Permissible#addAttachment`). A handler's
+    /// error stays an error and is never turned into a grant. `source` is any non-empty name of
+    /// at most 128 bytes the mod chose, usually its own id with what it grants for. A grant
+    /// lives in memory until it is revoked or the server closes; the mod grants again when it
+    /// loads. It decides the node's queries only: a command path that asks the node under the
+    /// built-in handler keeps its operator level, and a player's command tree is sent again by
+    /// `player_resend_command_tree`. Granting the same node twice for one source changes
+    /// nothing. Refuses with `NotInitialized`, `Unregistered`, `WrongType` for a node that is not
+    /// Boolean, `InvalidInput` for a bad source or more than 65536 grants, and `Recursive` from
+    /// inside a handler's answer.
+    #[access(WorldOnly)]
+    fn permission_grant(
+        &mut self,
+        uuid: u128,
+        node: &PermissionNode,
+        source: &str,
+    ) -> Result<(), PermissionError>;
+    /// Side: server.
+    /// Takes back every grant `source` made to the player `uuid` with `permission_grant` and
+    /// returns how many that were (0 when it had made none). Grants other sources made to the
+    /// same player stay. Refuses with `NotInitialized`, `InvalidInput` for a bad source and
+    /// `Recursive` from inside a handler's answer.
+    #[access(WorldOnly)]
+    fn permission_revoke(&mut self, uuid: u128, source: &str) -> Result<u32, PermissionError>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]

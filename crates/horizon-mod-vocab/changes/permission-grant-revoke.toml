@@ -1,0 +1,3 @@
+ids = ["method:prelude::PlayersServerHost::permission_grant", "method:prelude::PlayersServerHost::permission_revoke"]
+why = "Adds PlayersServerHost::permission_grant and permission_revoke (typed permission nodes, #17831): a mod grants a declared Boolean node to a player by source and takes the source's grants back; a grant turns the selected handler's false into true, never an error. Memory only, at most 65536 grants."
+migrate = "Additive. None."

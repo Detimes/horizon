@@ -22,6 +22,22 @@ no late registration: a node added after that is refused.
   the dedicated server's operator list by UUID, else level 0. It ignores the contexts. A caller may leave out
   any context key; the service refuses only too many contexts or an empty or over-long key.
 
+## Granting nodes for a while
+
+`host.permission_grant(uuid, &node, source)` grants a declared Boolean node to a player (online or not) until
+`source` takes it back with `host.permission_revoke(uuid, source)`, for permissions a mod hands out itself: the
+nodes a job level or a rank card names. While a grant holds, a query of that node for that player answers `true`
+where the selected handler answers `false`; a handler's error stays an error and is never turned into a grant.
+`source` is a non-empty name of at most 128 bytes the mod chose, usually its own id with what it grants for;
+`permission_revoke` takes back every grant that source made to the player and returns how many that were. A
+second source granting the same node keeps it held when the first revokes.
+
+Grants live in memory until they are revoked or the server closes, so the mod grants again when it loads its own
+data. They decide the node's queries only: a command path that asks the node under the built-in handler keeps its
+operator level, and a player's command tree is sent again with `player_resend_command_tree`. Both calls refuse with
+`NotInitialized`, `InvalidInput` (a bad source, or more than 65536 grants) and `Recursive` from inside a handler's
+answer; `permission_grant` also with `Unregistered` and `WrongType` for a node that is not a declared Boolean node.
+
 ## Handlers
 
 Exactly one handler answers every node on a server. The built-in default handler answers from each node's
