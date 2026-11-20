@@ -1,0 +1,2 @@
+# A guest's menu needs prepared resources.
+horizon-client game::modding::native_menus::typed_menu_tests::a_hopper_and_a_dispenser_menu_have_their_own_slot_counts lib daily resources
