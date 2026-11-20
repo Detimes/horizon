@@ -15,7 +15,7 @@ impl Game<'_> {
             return None;
         }
         let host = self.lan.as_mut()?;
-        let id = host.shared.next_id()?;
+        let id = host.hub.lan.shared.next_id()?;
         host.hub
             .spawn_viewer_entity(viewer.uuid(), id, kind, pos)
             .then_some(id)

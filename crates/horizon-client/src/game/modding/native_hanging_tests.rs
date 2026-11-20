@@ -87,7 +87,7 @@ fn the_facing_is_read_back_and_other_kinds_answer_none() {
         assert!(game.entity_set_hanging_direction(painting, Direction::East));
         assert_eq!(game.entity_hanging_direction(painting), Some(Direction::East));
         // A stale handle answers None, as a set does.
-        let stale = mod_api::EntityRef::new(frame.epoch().wrapping_add(1), FRAME);
+        let stale = mod_api::EntityRef::new(mod_api::WorldEpoch::new(frame.epoch().get() + 1), FRAME);
         assert_eq!(game.entity_hanging_direction(stale), None);
     });
 }

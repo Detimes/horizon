@@ -573,6 +573,7 @@ mod tests {
                 .get("minecraft:zombie")
                 .unwrap()
                 .clone();
+            use horizon_client::mobs::Mob;
             game.mobs.push(Mob::new(40, kind, Vec3::ZERO, 0.0));
             // A mob refuses: its swim is its own AI's.
             assert!(!game.entity_set_swimming(game.entity(40).unwrap(), true));
