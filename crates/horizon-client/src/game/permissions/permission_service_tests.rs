@@ -275,6 +275,46 @@ fn queries_and_late_declarations_are_refused_before_initialization() {
 }
 
 #[test]
+fn the_default_answer_is_the_operator_level_check_and_ignores_the_handler() {
+    let calls = Arc::new(AtomicU32::new(0));
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_node(boolean("a.admin"), NodeDefault::Level(PermissionLevel::Admins))
+        .unwrap();
+    service
+        .register_node(integer("a.count"), NodeDefault::Value(PermissionValue::Integer(1)))
+        .unwrap();
+    service
+        .register_handler_factory(
+            "fixed",
+            fixed(Ok(PermissionValue::Boolean(false)), calls.clone()),
+        )
+        .unwrap();
+    assert_eq!(
+        service.default_answer(&boolean("a.admin"), None, BOB),
+        Err(PermissionError::NotInitialized)
+    );
+    service.finish_gathering(Some("fixed"));
+    // ALICE is an administrator and online, BOB a moderator, CAROL level 0.
+    assert_eq!(
+        service.default_answer(&boolean("a.admin"), Some(ALICE), ALICE),
+        Ok(true)
+    );
+    assert_eq!(service.default_answer(&boolean("a.admin"), None, BOB), Ok(false));
+    assert_eq!(service.default_answer(&boolean("a.admin"), None, CAROL), Ok(false));
+    assert_eq!(
+        service.default_answer(&boolean("a.none"), None, CAROL),
+        Err(PermissionError::Unregistered)
+    );
+    assert_eq!(
+        service.default_answer(&integer("a.count"), None, CAROL),
+        Err(PermissionError::WrongType)
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "the handler is never asked");
+}
+
+#[test]
 fn duplicate_handler_ids_and_the_reserved_default_id_are_refused() {
     let mut service = PermissionService::new();
     let calls = Arc::new(AtomicU32::new(0));

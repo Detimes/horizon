@@ -230,6 +230,32 @@ impl PermissionService {
         self.handler = Some(handler);
     }
 
+    /// What the node's own default gives `uuid`, before any handler decides: a Boolean node is
+    /// granted when the player's operator level is at least the level the node asks. The
+    /// built-in handler answers exactly this. Refused with `NotInitialized`, `Unregistered`, and
+    /// `WrongType` for a node that is not Boolean. Side: server.
+    pub(crate) fn default_answer(
+        &self,
+        node: &PermissionNode,
+        online: Option<u128>,
+        uuid: u128,
+    ) -> Result<bool, PermissionError> {
+        if !self.is_initialized() {
+            return Err(PermissionError::NotInitialized);
+        }
+        match self.nodes.get(&(node.name.clone(), node.value_type)) {
+            None => Err(PermissionError::Unregistered),
+            Some((_, NodeDefault::Level(required))) => {
+                let level = self
+                    .levels
+                    .as_ref()
+                    .map_or(PermissionLevel::All, |levels| levels(online, uuid));
+                Ok(level >= *required)
+            }
+            Some(_) => Err(PermissionError::WrongType),
+        }
+    }
+
     /// Who decides the command usages that ask a node: the built-in handler's levels, a mod's
     /// handler, or nobody (`Refused`). A failed setup and a configured handler no mod provided
     /// are `Refused`; a service that has not gathered yet is `Levels`, as before there was a

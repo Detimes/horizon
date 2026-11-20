@@ -46,12 +46,20 @@ string and component errors must not be read as a Boolean denial.
 |---|---|
 | `permission_query(node, uuid, contexts)` | Returns `Result<PermissionValue, PermissionError>`: the node's typed value from the selected handler. |
 | `permission_bool(player, &node)` | The same for a Boolean node and a connected player, as `Result<bool, PermissionError>`. |
+| `permission_query_tristate(&node, uuid, contexts)` | For a Boolean node: `TriState::True` or `False` when the handler's answer differs from what the node's default alone gives, `Default` when it matches. |
 
 `PermissionError` names each refusal: `NotInitialized` (a query before the service is ready), `Unregistered`
 (an unknown node, never an implicit registration), `DuplicateNode`, `DuplicateHandler`, `WrongType`,
 `UnknownPlayer`, `HandlerFailed`, `Recursive` (a handler that queries inside its own query fails both queries)
 and `InvalidInput`. In `permission_handler_query`, `online` is the player's UUID when the player is on this
 server and `None` for an offline UUID; ask `host.player(uuid)` for the handle. A failed query changes nothing and grants nothing.
+
+A `false` from `permission_query` can mean "a policy denied this" or "nothing granted it". A mod that has to let
+an explicit deny override an operator level (an editor that denies a player its permission node while they hold
+level 2) asks `permission_query_tristate`: it compares the handler's answer with the node's default for that player
+(the operator level the node asks for) and reports `False` or `True` only where they differ. A deny of someone the
+default denies anyway, and a grant of someone the default grants anyway, are `Default`, because they change
+nothing. The built-in handler answers the default, so it is always `Default`.
 
 Queries take no cache and write nothing. A node decision does not fire `permissions_changed`, and that hook
 does not report node decisions. There are no wildcards, no hierarchy and no namespace ownership: a node name

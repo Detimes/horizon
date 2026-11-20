@@ -6,7 +6,7 @@ use super::handler::gather_handlers;
 use super::permission_service::{LevelSource, ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
-    PermissionNodes, PermissionValue, PermissionValueType,
+    PermissionNodes, PermissionValue, PermissionValueType, TriState,
 };
 use std::{
     collections::HashMap,
@@ -119,6 +119,42 @@ pub(crate) fn run_query_bool<H: PermissionHost>(
         return Err(PermissionError::WrongType);
     }
     match run_query(host, node, uuid, &[])? {
+        PermissionValue::Boolean(answer) => Ok(answer),
+        _ => Err(PermissionError::WrongType),
+    }
+}
+
+/// Tells an explicit decision from "no policy decided" for a Boolean node: the handler's answer
+/// against what the node's default alone gives `uuid`. A different answer is `True` or `False`;
+/// the same answer changes nothing and is `Default`. Refused with `WrongType` for a node that is
+/// not Boolean, before any handler runs. Side: server.
+pub(crate) fn run_query_tristate<H: PermissionHost>(
+    host: &mut H,
+    node: &PermissionNode,
+    uuid: u128,
+    contexts: &[PermissionContext],
+) -> Result<TriState, PermissionError> {
+    let answer = run_query_bool_with(host, node, uuid, contexts)?;
+    let online = host.online_level(uuid).map(|_| uuid);
+    let default = host.permission_parts().0.default_answer(node, online, uuid)?;
+    Ok(match (answer == default, answer) {
+        (true, _) => TriState::Default,
+        (false, true) => TriState::True,
+        (false, false) => TriState::False,
+    })
+}
+
+/// `run_query_bool` with contexts. Side: server.
+fn run_query_bool_with<H: PermissionHost>(
+    host: &mut H,
+    node: &PermissionNode,
+    uuid: u128,
+    contexts: &[PermissionContext],
+) -> Result<bool, PermissionError> {
+    if node.value_type != PermissionValueType::Boolean {
+        return Err(PermissionError::WrongType);
+    }
+    match run_query(host, node, uuid, contexts)? {
         PermissionValue::Boolean(answer) => Ok(answer),
         _ => Err(PermissionError::WrongType),
     }
@@ -267,6 +303,16 @@ impl Game<'_> {
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError> {
         run_query(self, node, uuid, contexts)
+    }
+
+    /// `permission_query_tristate`: an explicit decision, or none. Side: server.
+    pub(super) fn permission_query_tristate(
+        &mut self,
+        node: &PermissionNode,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<TriState, PermissionError> {
+        run_query_tristate(self, node, uuid, contexts)
     }
 
     /// `permission_query` for a Boolean node. Side: server.

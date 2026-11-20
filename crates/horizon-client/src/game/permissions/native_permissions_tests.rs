@@ -3,12 +3,12 @@
 
 use super::handler::gather_handlers;
 use super::native_permissions::{
-    PermissionHost, QueryState, gathered_nodes, run_query, run_query_bool,
+    PermissionHost, QueryState, gathered_nodes, run_query, run_query_bool, run_query_tristate,
 };
 use super::permission_service::{ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
     NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
-    PermissionValue, PermissionValueType,
+    PermissionValue, PermissionValueType, TriState,
 };
 
 const ALICE: u128 = 0xa11ce; // online
@@ -271,4 +271,63 @@ fn distinct_nodes_gather_into_an_uninitialized_service() {
     .unwrap();
     // Not published until `finish_gathering`: it answers nothing yet.
     assert!(!service.is_initialized());
+}
+
+#[test]
+fn a_decision_that_differs_from_the_default_is_explicit_and_one_that_matches_is_not() {
+    // `a.staff` is granted by default from level 2: ALICE (live level 3) holds it by default,
+    // CAROL (not listed, level 0) does not.
+    let mut host = host("garden.policy");
+    host.alice_level = 3;
+    let staff = boolean("a.staff");
+    host.reply = Ok(PermissionValue::Boolean(false));
+    assert_eq!(
+        run_query_tristate(&mut host, &staff, ALICE, &[]),
+        Ok(TriState::False),
+        "an explicit deny of someone the default would allow"
+    );
+    assert_eq!(
+        run_query_tristate(&mut host, &staff, CAROL, &[]),
+        Ok(TriState::Default),
+        "a deny of someone the default denies anyway decides nothing"
+    );
+    host.reply = Ok(PermissionValue::Boolean(true));
+    assert_eq!(
+        run_query_tristate(&mut host, &staff, CAROL, &[]),
+        Ok(TriState::True),
+        "an explicit grant of someone the default denies"
+    );
+    assert_eq!(
+        run_query_tristate(&mut host, &staff, ALICE, &[]),
+        Ok(TriState::Default)
+    );
+}
+
+#[test]
+fn the_built_in_handler_never_decides_and_refusals_are_the_querys_own() {
+    let mut host = host("");
+    assert_eq!(
+        run_query_tristate(&mut host, &boolean("a.staff"), BOB, &[]),
+        Ok(TriState::Default)
+    );
+    assert_eq!(
+        run_query_tristate(&mut host, &boolean("a.none"), BOB, &[]),
+        Err(PermissionError::Unregistered)
+    );
+    assert_eq!(
+        run_query_tristate(
+            &mut host,
+            &PermissionNode::new("a.staff", PermissionValueType::Integer),
+            BOB,
+            &[]
+        ),
+        Err(PermissionError::WrongType)
+    );
+    // A failing handler is its own error, never a decision.
+    let mut host = host("garden.policy");
+    host.reply = Err(PermissionError::HandlerFailed);
+    assert_eq!(
+        run_query_tristate(&mut host, &boolean("a.staff"), BOB, &[]),
+        Err(PermissionError::HandlerFailed)
+    );
 }
