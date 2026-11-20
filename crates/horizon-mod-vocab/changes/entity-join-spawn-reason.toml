@@ -1,0 +1,3 @@
+ids = ["hook:entity_join_level"]
+why = "entity_join_level version 3 adds reason: the EntitySpawnReason a mob was spawned with (natural, spawner, command, conversion, ...), None for every other kind and for a mob loaded from disk. NeoForge's EntityJoinLevelEvent has no reason; this comes from the spawn site that finalized the mob (FinalizeSpawnEvent's reason). Clear-lag and spawner-limit mods need it at the join."
+migrate = "Named injections request hook_version = 3 to read reason. A listener that ignores it needs no change. Rebuild against this SDK."
