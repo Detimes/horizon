@@ -2385,17 +2385,7 @@ impl Game<'_> {
                     }
                 }
                 HostEvent::PlayerMove(conn) => self.lan_player_move(conn),
-                HostEvent::Pong { conn, id } => {
-                    if !mod_api::__private::listened(mod_api::HookId::PlayerPong) {
-                        continue;
-                    }
-                    if let Some(g) = self.lan.as_ref().and_then(|host| host.hub.guest(conn)) {
-                        let (uuid, name) = (g.uuid, g.name.clone());
-                        self.as_guest(conn, |game| {
-                            game.native_player_pong(uuid, &name, id);
-                        });
-                    }
-                }
+                HostEvent::Pong { conn, id } => self.announce_player_pong(conn, id),
                 HostEvent::Input { conn, flags } => {
                     if !mod_api::__private::listened(mod_api::HookId::PlayerInput) {
                         continue;
