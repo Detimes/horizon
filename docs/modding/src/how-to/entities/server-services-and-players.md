@@ -244,3 +244,9 @@ a client. `player.set_statistics(host, json)` replaces all of them with a JSON o
 changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
 goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
 `player_stat_award` is not heard.
+
+## Death messages
+
+`player_death_message` runs once a player's death message is built, before it reaches the chat and the death screen.
+A mod can replace the text, or set the message to `None`: then nothing is said to anyone and the dying player's death
+screen gets an empty message.
