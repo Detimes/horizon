@@ -17,12 +17,17 @@ pub trait Hooks {
     /// the item helpers reach them. Not heard: a menu a mod opens
     /// (`native_open_menu`), the inventory screen, and the editors (sign,
     /// book, command block). Server-side, for every player of the world.
+    /// `menu_owner` names whose inventory the menu shows when that is the player
+    /// themselves: an ender chest (`Some` of the player's own name, the block at `pos` being
+    /// `minecraft:ender_chest`), so a mod can tell an ender chest transaction from a
+    /// chest's without reading the block. `None` for every other menu.
     #[hook(
         side = "server",
         contract = "cancel",
         out = "cancel",
         neoforge = "none (not NeoForge's PlayerContainerEvent.Open: this hook can cancel the opening)",
-        cancellable = true
+        cancellable = true,
+        version = 2
     )]
     fn container_opened();
 }

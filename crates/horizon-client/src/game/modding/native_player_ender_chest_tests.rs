@@ -176,3 +176,59 @@ fn a_write_while_the_local_ender_chest_is_open_survives_closing_it() {
         assert_eq!(game.ender_items[3], Some(new), "closing keeps it");
     });
 }
+
+/// The menu an ender chest opens names its opener as `menu_owner`; a chest's menu names none.
+#[test]
+#[ignore = "daily"]
+fn an_ender_chest_menu_names_its_owner_and_a_chest_does_not() {
+    use horizon_client::chunk::Chunk;
+    use mod_api::BlockUpdateFlags;
+    use std::sync::{Arc, Mutex};
+    with_guests(|game| {
+        game.options.dedicated = Some(Vec::new());
+        game.world
+            .chunks
+            .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+        let level = game.level("minecraft:overworld").unwrap();
+        let ender = [0, 64, 0];
+        let chest = [2, 64, 0];
+        for (pos, block) in [(ender, "minecraft:ender_chest"), (chest, "minecraft:chest")] {
+            let state = game.pack.assets.registry.default_state(block).unwrap();
+            assert_eq!(
+                game.level_set_block(level, pos, state, BlockUpdateFlags::NEIGHBORS),
+                Ok(true)
+            );
+        }
+        let guest_name = game.lan.as_ref().unwrap().hub.guest(12).unwrap().name.clone();
+        let seen = Arc::new(Mutex::new(Vec::<Option<String>>::new()));
+        struct Owners(Arc<Mutex<Vec<Option<String>>>>);
+        #[mod_api::__subscriptions]
+        impl mod_api::Hooks for Owners {
+            fn container_opened(
+                &self,
+                _: &mut dyn mod_api::ServerHost,
+                event: &mut mod_api::ContainerOpenedEvent<'_>,
+            ) -> mod_api::Flow {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(event.menu_owner.map(str::to_owned));
+                mod_api::Flow::Continue
+            }
+        }
+        let listener = Owners(seen.clone());
+        mod_platform::testing::with_mods(
+            vec![mod_api::ModEntry::new("owners", Box::new(listener))].into(),
+            || {
+                game.open_block_menu(12, (ender[0], ender[1], ender[2]));
+                game.guest_close_all(12);
+                game.open_block_menu(12, (chest[0], chest[1], chest[2]));
+            },
+        );
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![Some(guest_name), None],
+            "the ender chest names its opener, the chest names none"
+        );
+    });
+}

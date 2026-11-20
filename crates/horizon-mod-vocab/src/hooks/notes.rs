@@ -66,12 +66,12 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   swapped in, so `host.players().acting_player`, `PlayerRef::tell` and the item helpers reach them. A vehicle a player rode and left is
   still told of, with no `player` and nobody swapped in, until it has stood still for ten seconds. Mounts (horses...) and
   vehicles nobody ever rode are not covered. It only hears and costs one position compare a tick for each watched vehicle.
-- **`container_opened(player, name, kind, pos, cancel)`**: a player is about to open one of the game's own menus
+- **`container_opened(player, name, kind, pos, menu_owner, cancel)`**: a player is about to open one of the game's own menus
   (a chest, furnace, crafting table, villager, anvil, lectern, a horse's inventory...). `kind` is the menu type
   (`minecraft:generic_9x3`, `minecraft:merchant`...), `pos` the block it belongs to, none for a villager, a mount or a
   vehicle's chest. Heard after the checks that refuse the menu (a locked chest), before the open menu closes. Set
   `cancel` and nothing opens. The player's state is swapped in, so `host.players().acting_player`, `PlayerRef::tell` and the item
-  helpers reach them. Menus a mod opens (`native_open_menu`) are not heard.
+  helpers reach them. `menu_owner` is the player's own name for an ender chest (their own inventory), `None` for every other menu. Menus a mod opens (`native_open_menu`) are not heard.
 - **`creative_slot(player, name, slot, item, count, cancel)`**: a creative-mode player sets a slot from the creative
   screen (`slot` is the inventory menu's slot; below 0 is a stack thrown out of the screen), with the `item` (`minecraft:air`
   for an emptied slot) and `count`. Heard after vanilla's checks, before the slot changes. Set `cancel` and the packet is
@@ -2393,7 +2393,7 @@ registration path.
 
 - A player taking an item from or putting one on an armor stand: `armor_stand_manipulate(player, name, stand_id, slot, cancel)` is heard after the stand's disabled-slot checks and before anything moves, with the stand's entity id and the slot the click reached (`mainhand`, `offhand`, `feet`, `legs`, `chest`, `head`), on a server, with the player's state swapped in. A mod sets `cancel` and neither the stand nor the player's hand changes.
 
-- A player opening one of the game's own menus: `container_opened(player, name, kind, pos, cancel)` is heard when a chest, furnace, crafting table, villager, anvil, lectern, horse inventory... is about to open (the job of NeoForge's `PlayerContainerEvent.Open`, but before the menu opens), after the checks that refuse it, with the menu type and the block's position, on a server, with the player's state swapped in. A mod sets `cancel` and nothing opens. Menus a mod opens (`native_open_menu`) are not heard.
+- A player opening one of the game's own menus: `container_opened(player, name, kind, pos, menu_owner, cancel)` is heard when a chest, furnace, crafting table, villager, anvil, lectern, horse inventory... is about to open (the job of NeoForge's `PlayerContainerEvent.Open`, but before the menu opens), after the checks that refuse it, with the menu type and the block's position, on a server, with the player's state swapped in. A mod sets `cancel` and nothing opens. Menus a mod opens (`native_open_menu`) are not heard.
 
 - A creative player setting a slot: `creative_slot(player, name, slot, item, count, cancel)` is heard when the creative screen sets an inventory slot, or throws a stack out (a slot below 0), after the packet passed vanilla's checks and before the slot changes, on a server, with the player's state swapped in. A mod sets `cancel` and the packet is ignored.
 
