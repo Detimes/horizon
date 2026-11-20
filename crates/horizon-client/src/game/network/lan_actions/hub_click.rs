@@ -53,28 +53,40 @@ impl Game<'_> {
         let clicked = if p.container == 0 {
             at.and_then(|s| g.menu_sent.get(s).cloned().flatten())
         } else {
-            match g
-                .menu
-                .as_ref()
-                .filter(|m| m.window == p.container && m.slots != horizon_client::lan::menu::Slots::Native)
-            {
+            match g.menu.as_ref().filter(|m| {
+                m.window == p.container && m.slots != horizon_client::lan::menu::Slots::Native
+            }) {
                 Some(m) => at.and_then(|s| m.sent.get(s).cloned().flatten()),
                 None => return false,
             }
         };
         let (uuid, carried) = (g.uuid, g.carried.clone());
         let mut canceled = false;
+        let Ok(api_carried) = carried
+            .as_ref()
+            .map(crate::game::api_values::TryIntoApi::try_into_api)
+            .transpose()
+        else {
+            return false;
+        };
+        let Ok(api_clicked) = clicked
+            .as_ref()
+            .map(crate::game::api_values::TryIntoApi::try_into_api)
+            .transpose()
+        else {
+            return false;
+        };
         self.as_guest(conn, |game| {
-            game.native_container_click(
-                uuid,
-                p.container,
+            game.native_container_click(mod_api::__private::ContainerClickCall {
+                player: uuid,
+                window: p.container,
                 slot,
-                i32::from(p.button),
-                p.input,
-                carried.as_ref(),
-                clicked.as_ref(),
-                &mut canceled,
-            );
+                button: i32::from(p.button),
+                mode: p.input,
+                carried: api_carried.as_ref(),
+                clicked: api_clicked.as_ref(),
+                canceled: &mut canceled,
+            });
         });
         if !canceled {
             return false;

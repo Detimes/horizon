@@ -9,16 +9,9 @@ impl Game<'_> {
     /// menu and the cursor are sent again. Their state is swapped in. Server-side.
     pub(in crate::game) fn native_container_click(
         &mut self,
-        player: u128,
-        window: i32,
-        slot: i32,
-        button: i32,
-        mode: i32,
-        carried: Option<&ItemStack>,
-        clicked: Option<&ItemStack>,
-        canceled: &mut bool,
+        call: mod_api::__private::ContainerClickCall<'_>,
     ) {
-        self.fire_container_click(player, window, slot, button, mode, carried, clicked, canceled);
+        self.fire_container_click(call);
     }
 }
 
@@ -44,7 +37,9 @@ mod container_click_tests {
         ) -> Flow {
             let carried = event.carried.map(|c| {
                 (
-                    mod_api::__private::item_key_id(c.item()).unwrap().to_owned(),
+                    mod_api::__private::item_key_id(c.item())
+                        .unwrap()
+                        .to_owned(),
                     c.count(),
                 )
             });

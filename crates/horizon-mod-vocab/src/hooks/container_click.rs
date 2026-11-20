@@ -24,5 +24,14 @@ pub trait Hooks {
         neoforge = "none (NeoForge has no event for a container click)",
         paper = "InventoryClickEvent"
     )]
-    fn container_click();
+    fn container_click(
+        player: u128,
+        window: i32,
+        slot: i32,
+        button: i32,
+        mode: i32,
+        carried: Option<&ItemStack>,
+        clicked: Option<&ItemStack>,
+        canceled: &mut bool,
+    );
 }
