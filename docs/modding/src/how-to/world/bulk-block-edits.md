@@ -31,6 +31,9 @@ loader runs on a block entity of a chunk of that version and the entity chunk lo
 included), up to the game's `DataVersion`. Both are server-side and pure: they read nothing from the level and change
 nothing in it.
 
+`host.upgrade_block_state_nbt(data_version, nbt)` does the same for one block state (`{Name, Properties}`): a state
+saved before 1.13 comes out with its 1.13 name and properties, and data of the game's version comes back unchanged.
+
 - Data at exactly the game's version comes back unchanged, and so does a block entity whose `id` its version
   doesn't know (as a chunk keeps one) and data the fixes can't read. Version 0 is a valid source.
 - The fixes that need a whole chunk don't run: those that look at the blocks around a block entity, and the one that
