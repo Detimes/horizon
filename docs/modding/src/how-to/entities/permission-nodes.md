@@ -77,8 +77,10 @@ with a node is decided in this order:
    usage is left out of the command tree and logged. It never runs at an operator level. A mod's own
    `permission_query` calls are not changed by this.
 
-A path whose check fails is left out of the command tree sent to that player and of the completions the server
-answers them, and typing it answers as an unknown command. Each node is asked once per player when a tree is
+A path whose check fails is left out of the command tree sent to that player (its nodes are not in the packet at
+all) and of the completions the server answers them, and typing it answers as an unknown command. An argument the
+server cannot parse on such a path still answers with that parse error, because the line is parsed before its node
+is asked. Each node is asked once per player when a tree is
 sent, however many paths it gates. Commands without a node keep their operator level, and vanilla's commands are unchanged.
 
 ## Refreshing a player's command tree
@@ -92,6 +94,10 @@ stale tree affects only the suggestions the client shows.
 It returns `Result<(), PlayerWorldRefusal>`, refusing with `Client` on a client, `Stale` for a player that is not
 in the server's list (or a handle of an earlier open of the world) and `NoConnection` for a fake player. A
 refusal sends nothing.
+
+A handler that reads `host.player_permission_level` while a clickable sign or a function runs a command sees the
+level that run has (2 for a sign, as in vanilla, where only an operator can write one), not the player's own. A
+handler that needs the player's own level must not rely on it during sign or function commands.
 
 ## What a node does not do
 
