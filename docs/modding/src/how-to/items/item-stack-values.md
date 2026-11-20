@@ -59,6 +59,8 @@ to component NBT by `host.text_to_nbt(&text)`; `None` removes the name and an em
 removes the lore. A refused text returns `TextFormError` and changes nothing. Vanilla draws a
 custom name in italics unless its style sets `italic: false`.
 
+The list of every item id a server has is `host.item_ids()` (`Material.values()`): registry order, vanilla first, mod items after, each id once. It is for offering names, such as tab completion; it reads no stack.
+
 ## Game boundaries
 
 A consume or death-protection override whose opaque native effect payload cannot be decoded
