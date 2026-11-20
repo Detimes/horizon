@@ -2,8 +2,9 @@
 
 use crate::permission::PermissionNode;
 
-/// Literal words use lowercase letters, digits, `_` and `-`. Only the first word may
-/// additionally begin with one `/`: register `/set <x:word>` and type `//set stone` in chat.
+/// Literal words use ASCII letters, digits, `_` and `-`, matched with their case as Brigadier's
+/// (`cu callItemClear`). Only the first word may additionally begin with one `/`: register
+/// `/set <x:word>` and type `//set stone` in chat.
 /// The command's literals retain `/set`. A slash alone, repeated leading slashes and
 /// slashes in later literal words are refused.
 ///

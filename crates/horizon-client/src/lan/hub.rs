@@ -4921,6 +4921,20 @@ impl Hub {
     /// `rotation` is the facing a mod's `player_respawn_position` chose; none
     /// is the level's respawn direction.
     pub fn respawn(&mut self, i: usize, at: [f64; 3], rotation: Option<[f32; 2]>, ctx: &TickCtx) {
+        self.respawn_with(i, at, rotation, ctx, true);
+    }
+
+    /// [`Self::respawn`], with the command tree left out when `send_tree` is false: the game
+    /// then asks the permission nodes with the player in the respawn level and sends the tree
+    /// itself (`send_commands`).
+    pub fn respawn_with(
+        &mut self,
+        i: usize,
+        at: [f64; 3],
+        rotation: Option<[f32; 2]>,
+        ctx: &TickCtx,
+        send_tree: bool,
+    ) {
         let info = self.spawn_info(i, 0, ctx.sea_level);
         self.close_container_for(i);
         let id = self.guests.update(i, |g| {
@@ -5010,7 +5024,11 @@ impl Hub {
             g.send(&C::PostEffects(play::PostEffects { effects: list }));
         });
         self.send_level_info(i, ctx, true);
-        self.send_permission_level(i);
+        if send_tree {
+            self.send_permission_level(i);
+        } else {
+            self.send_level_event(i);
+        }
         // ServerLevel.addRespawnedPlayer: the chunk tracking starts again at the player.
         self.guests.update(i, |g| {
             let (cx, cz) = g.chunk();

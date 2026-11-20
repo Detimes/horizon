@@ -180,8 +180,18 @@ impl Game<'_> {
             streaming: Some(&self.streaming),
         };
         if let Some(host) = self.lan.as_mut() {
-            host.hub.respawn(i, spawn, rotation, &ctx);
+            host.hub.respawn_with(i, spawn, rotation, &ctx, false);
         }
+        // The permission nodes are asked with the player in the respawn level, then its tree is
+        // sent; a handler may change the guest list, so the index is found again.
+        self.send_tree_with_fresh_nodes(conn);
+        let Some(i) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().position(|g| g.conn == conn))
+        else {
+            return;
+        };
         self.bind_player_attachments(conn, false);
         // ServerGamePacketListenerImpl.handleClientCommand: a hardcore world's
         // respawned player only watches.
