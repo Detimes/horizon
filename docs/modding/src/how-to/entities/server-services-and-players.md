@@ -244,3 +244,9 @@ a client. `player.set_statistics(host, json)` replaces all of them with a JSON o
 changing nothing, for text that is not an object or for a stale, unavailable or dead player. A statistic the text lacks
 goes back to 0, scoreboard criteria follow the changed values, and the client sees them on its next request. Server only;
 `player_stat_award` is not heard.
+
+## Online mode of the server
+
+`ConfigServerHost::server_online_mode()` (server side) returns the dedicated server's `online-mode` setting, as
+Paper's `Bukkit.getOnlineMode` does. It is `Option<bool>`: `None` off a dedicated server and before it listens,
+where a client or an integrated game has no such setting.
