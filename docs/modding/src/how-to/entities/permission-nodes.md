@@ -9,8 +9,9 @@ and checks do not consult nodes.
 ## Declaring nodes
 
 Add each node in the `permission_gather_nodes` hook through its collector, `PermissionNodes::add(node, default)`.
-Gathering runs once per logical server start, after operator levels load and before the server starts. There is
-no late registration: a node added after that is refused.
+Gathering runs once per logical server start, after operator levels load and before the server starts. A node
+added to the collector after that is refused; a node a mod can only name later is declared with
+`host.permission_declare_node` (see "Declaring nodes later").
 
 - Identity is the node's case-sensitive dot-separated name plus its value type. Boolean, integer, string and
   text-component nodes are distinct nodes even under one name.
@@ -29,6 +30,20 @@ no late registration: a node added after that is refused.
   deep, and a cycle of grants is refused with `Recursive`, never granted. At most 256 children per declaration, none
   the node itself, none listed twice. A child may be declared later; until then its query is `Unregistered`. A refused
   declaration keeps neither the node nor its grants. There are no wildcards: `jobs.boost.*` is not a node.
+
+## Declaring nodes later
+
+Some node names exist only once the server runs: one node per world, per region, per item once the registries are
+loaded, or per step of a numbered setting. `host.permission_declare_node(&node, &default)` declares one such node
+with the same rules as the collector (a valid name, a default of the node's type, no duplicate) and the node can be
+queried from the next call on. It lives until the server closes; the next start gathers afresh, so a mod that
+creates nodes from its own saved data declares them again when it loads that data.
+
+It refuses, declaring nothing, with `NotInitialized` before the server has gathered (use the collector then),
+`DuplicateNode` for a node already declared early or late, `InvalidInput` for a bad name or after 4096 late nodes,
+`WrongType` for a default of the wrong shape and `Recursive` from inside a handler's answer. A handler a mod
+provides is asked about a late node like any other and keeps no list to update; the built-in handler takes the
+declared default. Commands that ask a node (`with_node`) still use the nodes gathered at start.
 
 ## Handlers
 

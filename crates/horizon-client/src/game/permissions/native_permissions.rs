@@ -39,6 +39,11 @@ impl QueryState {
         Ok(())
     }
 
+    /// Whether a query is being answered, so the service is out of the host for its handler.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
+
     /// Ends the query `enter` started; a query asked again while it was answered fails it too.
     fn leave<T>(&mut self, result: Result<T, PermissionError>) -> Result<T, PermissionError> {
         self.active = false;
@@ -106,6 +111,21 @@ pub(crate) fn run_query<H: PermissionHost>(
     let (service, state) = host.permission_parts();
     *service = taken;
     state.leave(result)
+}
+
+/// Declares `node` after gathering, for the server's one service. Refused with `Recursive` while a
+/// query is being answered (the handler that is asked holds the service); the service's own
+/// refusals otherwise (`declare_late`). Side: server.
+pub(crate) fn run_declare<H: PermissionHost>(
+    host: &mut H,
+    node: &PermissionNode,
+    default: &NodeDefault,
+) -> Result<(), PermissionError> {
+    let (service, state) = host.permission_parts();
+    if state.is_active() {
+        return Err(PermissionError::Recursive);
+    }
+    service.declare_late(node.clone(), default.clone())
 }
 
 /// `run_query` for a Boolean node. Refused with `WrongType` for any other node, before any handler
@@ -287,6 +307,15 @@ impl Game<'_> {
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError> {
         run_query(self, node, uuid, contexts)
+    }
+
+    /// Declares `node` after the server started, as `permission_declare_node` asks. Side: server.
+    pub(super) fn permission_declare_node(
+        &mut self,
+        node: &PermissionNode,
+        default: &NodeDefault,
+    ) -> Result<(), PermissionError> {
+        run_declare(self, node, default)
     }
 
     /// `permission_query` for a Boolean node. Side: server.

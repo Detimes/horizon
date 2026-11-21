@@ -107,6 +107,22 @@ pub trait PlayersServerHost {
         uuid: u128,
         contexts: &[PermissionContext],
     ) -> Result<PermissionValue, PermissionError>;
+    /// Side: server.
+    /// Declares the permission node `node` with `default` after the server has started, as
+    /// `permission_gather_nodes` does at start: for a node a mod can only name later (one per
+    /// world, per region, per item or per step once the registries are loaded). The node can be
+    /// queried from the next call on; it lives until the server closes and is gathered afresh by
+    /// the next start. Refuses, declaring nothing, with `NotInitialized` before the server has
+    /// gathered its nodes (declare it in `permission_gather_nodes`), `InvalidInput` for a bad
+    /// name or when 4096 late nodes are declared, `WrongType` for a default of the wrong shape,
+    /// `DuplicateNode` for a node already declared (at start or later) and `Recursive` from inside
+    /// a handler's answer. Every declaration is the mod's own: the node asks no operator level.
+    #[access(WorldOnly)]
+    fn permission_declare_node(
+        &mut self,
+        node: &PermissionNode,
+        default: &NodeDefault,
+    ) -> Result<(), PermissionError>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
