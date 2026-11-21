@@ -327,11 +327,23 @@ mod leaving {
             let hub = &mut game.lan.as_mut().unwrap().hub;
             hub.update_guest(12, |g| g.released = false);
             // An export whose freeze ran out is still unsettled: the destination may own them.
-            hub.update_guest(12, |g| g.transfer_unresolved = true);
+            hub.update_guest(12, |g| g.transfer_unresolved = vec![1]);
             game.announce_player_leaving(12, uuid, "Guest12", "Disconnected");
             assert!(heard.leaving.lock().unwrap().is_empty());
             let hub = &mut game.lan.as_mut().unwrap().hub;
-            hub.update_guest(12, |g| g.transfer_unresolved = false);
+            hub.update_guest(12, |g| g.transfer_unresolved.clear());
+            // Freeze, abort, then an ordinary leave: the aborted transfer is settled and the
+            // player stayed, so the leave is heard.
+            let i = hub.guests.iter().position(|g| g.conn == 12).unwrap();
+            let record =
+                horizon_client::lan::arrivals::export_record(hub, i, true, Default::default())
+                    .unwrap();
+            let h = record["handover"].as_str().unwrap().to_owned();
+            let reply = horizon_client::lan::arrivals::release_request(
+                hub,
+                &format!("{:032x} {h} abort", hub.guests[i].uuid),
+            );
+            assert_eq!(reply["released"], "abort", "{reply}");
             game.announce_player_leaving(12, uuid, "Guest12", "Disconnected");
             assert_eq!(*heard.leaving.lock().unwrap(), [uuid]);
         });

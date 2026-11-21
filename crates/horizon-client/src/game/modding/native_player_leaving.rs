@@ -22,7 +22,7 @@ impl Game<'_> {
             .as_mut()
             .and_then(|host| {
                 host.hub.update_guest(conn, |g| {
-                    let skip = g.released || g.transfer_unresolved;
+                    let skip = g.released || !g.transfer_unresolved.is_empty();
                     g.leaving = !skip;
                     skip
                 })
