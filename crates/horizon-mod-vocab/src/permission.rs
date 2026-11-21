@@ -10,6 +10,8 @@ pub const MAX_NODE_NAME_LEN: usize = 256;
 pub const MAX_CHILDREN: usize = 256;
 /// The most declared Boolean nodes one prefix query may match; a prefix that matches more is refused.
 pub const MAX_PREFIX_MATCHES: usize = 1024;
+/// The most nodes one snapshot asks for.
+pub const MAX_SNAPSHOT_NODES: usize = 256;
 /// The most contexts one query accepts.
 pub const MAX_CONTEXTS: usize = 32;
 /// The longest accepted context key, in bytes.
@@ -154,6 +156,55 @@ pub enum NodeDefault {
     Nobody,
 }
 
+/// One node and what the selected handler answered for it, as a snapshot holds it.
+// exhaustive: fields are public so a test can build an entry literally; use `PermissionSnapshot::get`.
+#[derive(Clone, Debug, PartialEq, horizon_mod_api_macros::Wire)]
+pub struct PermissionSnapshotEntry {
+    /// The node that was asked.
+    pub node: PermissionNode,
+    /// The answer, or the explicit refusal of that one query.
+    pub answer: Result<PermissionValue, PermissionError>,
+}
+
+/// One player's answers to a set of nodes, taken at one moment by `permission_snapshot`. It is
+/// plain data: reading it needs no host, so code that only holds `&self` (a trait method of a
+/// ported library, a packet handler's helper) can check a permission the selected handler
+/// answered. It is a copy: a handler's later change is not in it, so take a new one when the
+/// answers may have changed. A node that was not asked for is not in it.
+// exhaustive: fields are public so a test can build a snapshot literally; use `PermissionSnapshot::get`.
+#[derive(Clone, Debug, PartialEq, horizon_mod_api_macros::Wire)]
+pub struct PermissionSnapshot {
+    /// The player's UUID.
+    pub uuid: u128,
+    /// One entry per distinct node asked for, in the order asked.
+    pub entries: Vec<PermissionSnapshotEntry>,
+}
+
+impl PermissionSnapshot {
+    /// The answer for `node`, or `None` when the node was not asked for.
+    pub fn get(&self, node: &PermissionNode) -> Option<&Result<PermissionValue, PermissionError>> {
+        self.entries
+            .iter()
+            .find(|entry| entry.node == *node)
+            .map(|entry| &entry.answer)
+    }
+
+    /// The answer for the Boolean node `node`. Refuses with `Unregistered` for a node that was not
+    /// asked for in this snapshot, with `WrongType` for a node that does not answer Boolean, and
+    /// with the error that query had: a refusal never reads as a denial or a grant.
+    pub fn bool(&self, node: &PermissionNode) -> Result<bool, PermissionError> {
+        if node.value_type != PermissionValueType::Boolean {
+            return Err(PermissionError::WrongType);
+        }
+        match self.get(node) {
+            None => Err(PermissionError::Unregistered),
+            Some(Ok(PermissionValue::Boolean(answer))) => Ok(*answer),
+            Some(Ok(_)) => Err(PermissionError::WrongType),
+            Some(Err(error)) => Err(*error),
+        }
+    }
+}
+
 /// The collector `permission_gather_nodes` passes: it declares one typed node with its default.
 /// Declarations are refused, never partly kept, when they break a rule.
 pub trait PermissionNodes {
@@ -279,6 +330,63 @@ mod tests {
         assert_eq!(
             check_node_prefix(&format!("{}.", "a".repeat(MAX_NODE_NAME_LEN))),
             Err(PermissionError::InvalidInput)
+        );
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    fn flag(name: &str) -> PermissionNode {
+        PermissionNode::new(name, PermissionValueType::Boolean)
+    }
+
+    fn snapshot() -> PermissionSnapshot {
+        PermissionSnapshot {
+            uuid: 7,
+            entries: vec![
+                PermissionSnapshotEntry {
+                    node: flag("a.yes"),
+                    answer: Ok(PermissionValue::Boolean(true)),
+                },
+                PermissionSnapshotEntry {
+                    node: flag("a.no"),
+                    answer: Ok(PermissionValue::Boolean(false)),
+                },
+                PermissionSnapshotEntry {
+                    node: flag("a.broken"),
+                    answer: Err(PermissionError::HandlerFailed),
+                },
+                PermissionSnapshotEntry {
+                    node: PermissionNode::new("a.count", PermissionValueType::Integer),
+                    answer: Ok(PermissionValue::Integer(4)),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_snapshot_reads_what_was_asked_and_refuses_the_rest_by_name() {
+        let snapshot = snapshot();
+        assert_eq!(snapshot.bool(&flag("a.yes")), Ok(true));
+        assert_eq!(snapshot.bool(&flag("a.no")), Ok(false));
+        assert_eq!(
+            snapshot.bool(&flag("a.broken")),
+            Err(PermissionError::HandlerFailed)
+        );
+        assert_eq!(
+            snapshot.bool(&flag("a.other")),
+            Err(PermissionError::Unregistered)
+        );
+        let count = PermissionNode::new("a.count", PermissionValueType::Integer);
+        assert_eq!(snapshot.bool(&count), Err(PermissionError::WrongType));
+        assert_eq!(snapshot.get(&count), Some(&Ok(PermissionValue::Integer(4))));
+        assert_eq!(snapshot.get(&flag("a.other")), None);
+        // The same name with another type is another node, so it was not asked for.
+        assert_eq!(
+            snapshot.get(&PermissionNode::new("a.yes", PermissionValueType::Integer)),
+            None
         );
     }
 }

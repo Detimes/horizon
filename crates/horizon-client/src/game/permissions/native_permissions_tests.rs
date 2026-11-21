@@ -4,7 +4,7 @@
 use super::handler::gather_handlers;
 use super::native_permissions::{
     PermissionHost, QueryState, gathered_nodes, run_declare, run_nodes_with_prefix, run_query,
-    run_query_bool,
+    run_query_bool, run_snapshot,
 };
 use super::permission_service::{ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
@@ -357,5 +357,76 @@ fn a_prefix_query_asks_the_mod_handler_per_node_and_a_failure_fails_the_whole_qu
     assert_eq!(
         run_nodes_with_prefix(&mut host, "a.", CAROL, &[], usize::MAX),
         Err(PermissionError::HandlerFailed)
+    );
+}
+    );
+}
+
+#[test]
+fn a_snapshot_holds_each_distinct_node_once_with_its_own_answer_or_refusal() {
+    let mut host = host("");
+    let nodes = [
+        boolean("a.staff"),
+        boolean("a.flag"),
+        boolean("a.staff"),
+        boolean("a.none"),
+    ];
+    // BOB is level 3 in the operator list.
+    let snapshot = run_snapshot(&mut host, BOB, &nodes, &[]).unwrap();
+    assert_eq!(snapshot.uuid, BOB);
+    assert_eq!(snapshot.entries.len(), 3, "the repeated node is asked once");
+    assert_eq!(snapshot.bool(&boolean("a.staff")), Ok(true));
+    assert_eq!(snapshot.bool(&boolean("a.flag")), Ok(true));
+    assert_eq!(
+        snapshot.bool(&boolean("a.none")),
+        Err(PermissionError::Unregistered)
+    );
+    let carol = run_snapshot(&mut host, CAROL, &nodes, &[]).unwrap();
+    assert_eq!(carol.bool(&boolean("a.staff")), Ok(false));
+    assert_eq!(carol.bool(&boolean("a.flag")), Ok(true));
+}
+
+#[test]
+fn a_snapshot_carries_the_providers_answers_and_its_failures() {
+    let mut host = host("garden.policy");
+    host.reply = Ok(PermissionValue::Boolean(false));
+    let snapshot = run_snapshot(&mut host, BOB, &[boolean("a.flag")], &[]).unwrap();
+    assert_eq!(
+        snapshot.bool(&boolean("a.flag")),
+        Ok(false),
+        "the provider's deny, not the node's default"
+    );
+    host.reply = Err(PermissionError::HandlerFailed);
+    let failed = run_snapshot(&mut host, BOB, &[boolean("a.flag")], &[]).unwrap();
+    assert_eq!(
+        failed.bool(&boolean("a.flag")),
+        Err(PermissionError::HandlerFailed)
+    );
+}
+
+#[test]
+fn a_snapshot_is_refused_as_a_whole_for_too_many_nodes_bad_contexts_and_recursion() {
+    let mut host = host("");
+    let many: Vec<PermissionNode> = (0..257).map(|n| boolean(&format!("a.n{n}"))).collect();
+    assert_eq!(
+        run_snapshot(&mut host, BOB, &many, &[]),
+        Err(PermissionError::InvalidInput)
+    );
+    assert!(run_snapshot(&mut host, BOB, &many[..256], &[]).is_ok());
+    let contexts: Vec<PermissionContext> = (0..33)
+        .map(|n| PermissionContext::new(format!("k{n}"), PermissionValue::Boolean(true)))
+        .collect();
+    assert_eq!(
+        run_snapshot(&mut host, BOB, &[boolean("a.flag")], &contexts),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        run_snapshot(
+            &mut host,
+            BOB,
+            &[boolean("a.flag")],
+            &[PermissionContext::new("", PermissionValue::Boolean(true))]
+        ),
+        Err(PermissionError::InvalidInput)
     );
 }
