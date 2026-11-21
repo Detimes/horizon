@@ -379,7 +379,7 @@ fn the_first_tick_in_a_level_is_not_heard_as_a_packet() {
 /// each time, so a client can send any number of them.
 fn status(n: usize) -> S {
     S::MovePlayerStatus(play::MovePlayerStatus {
-        flags: u8::from(n % 3 == 0),
+        flags: u8::from(n.is_multiple_of(3)),
     })
 }
 
@@ -413,6 +413,6 @@ fn the_queue_of_packets_over_the_budget_is_bounded_and_drops_the_oldest() {
     assert_eq!(packets(&drain(&mut hub)).len(), MOVE_PACKET_BUDGET);
     assert_eq!(hub.guests[0].move_packet_queue.len(), MOVE_PACKET_QUEUE);
     // The 5 oldest of those over the budget were dropped: the queue starts at packet 13.
-    let want = (MOVE_PACKET_BUDGET + 5) % 3 == 0;
+    let want = (MOVE_PACKET_BUDGET + 5).is_multiple_of(3);
     assert_eq!(hub.guests[0].move_packet_queue[0].on_ground, want);
 }
