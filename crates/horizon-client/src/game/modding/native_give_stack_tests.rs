@@ -169,3 +169,20 @@ fn a_dead_player_is_given_nothing() {
         assert_eq!(game.dropped.len(), before);
     });
 }
+
+/// `item_to_snbt` writes the compound `item_from_snbt` reads back to the same stack, and
+/// refuses air.
+#[test]
+#[ignore = "daily"]
+fn item_to_snbt_reads_back_through_item_from_snbt() {
+    with_guests(|game| {
+        let host: &dyn Host = game;
+        let stone = host.item_key(&Identifier::parse("minecraft:stone").unwrap()).unwrap();
+        let stack = ItemStack::new(stone, 64).unwrap();
+        let snbt = host.item_to_snbt(&stack).expect("stone writes");
+        assert_eq!(snbt, r#"{id:"minecraft:stone",count:64}"#);
+        assert_eq!(host.item_from_snbt(&snbt), Some(stack));
+        let air = host.item_key(&Identifier::parse("minecraft:air").unwrap()).unwrap();
+        assert!(host.item_to_snbt(&ItemStack::new(air, 1).unwrap()).is_none());
+    });
+}

@@ -78,6 +78,7 @@ stored, container first, with an entry left out when its item is unknown to the 
 malformed, and at most 256 entries read of each. `stack.nesting_depth(host)` counts how many containers deep the
 stack goes (0 for none, 1 for a box of plain items, 2 for a box with a bundle inside) and stops at 64, so an item
 built to be deep cannot make the walk long: a scan for hostile items asks it once per stack.
+A stack goes back to SNBT with `host.item_to_snbt(&stack)`, the inverse of `item_from_snbt`: `None` for air, an item the world lacks or a count outside 1 to 99, and any other text it writes reads back to the same stack.
 
 ## Game boundaries
 
