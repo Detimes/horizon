@@ -2208,6 +2208,16 @@ impl Game<'_> {
         self.fire_block_failed_dispense(dimension, pos, item);
     }
 
+    /// A server player's death message, once built and before it is sent: `message` holds it,
+    /// and a mod may replace it or set it to `None` to say nothing. Server-side.
+    pub(in crate::game) fn native_player_death_message(
+        &mut self,
+        player: u128,
+        message: &mut Option<horizon_client::text::Text>,
+    ) {
+        self.fire_player_death_message(player, message);
+    }
+
     /// A beacon at `pos` activated or deactivated after its beam was checked.
     /// `active` says whether it now has a complete pyramid. Server-side.
     pub(in crate::game) fn native_beacon_state_change(
