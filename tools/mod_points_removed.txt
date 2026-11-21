@@ -7,3 +7,10 @@
 # `#[horizon_mod_api_macros::replaceable]` on it in the lower crate (an issue is enough); that keeps its point.
 #
 # One line per point: name | #PR | short reason. Lines starting with # are comments.
+game_native_entity_refs_dragon_parts_table_dragon_slot_discard | #18777 | single-dragon slot replaced by the per-level dragon set
+game_native_entity_refs_dragon_parts_table_dragon_slot_id_assigned | #18777 | single-dragon slot replaced by the per-level dragon set
+game_native_entity_refs_dragon_parts_table_dragon_slot_install | #18777 | single-dragon slot replaced by the per-level dragon set
+game_native_entity_refs_dragon_parts_table_dragon_slot_parts_table | #18777 | single-dragon slot replaced by the per-level dragon set
+game_native_entity_refs_dragon_parts_table_dragon_slot_register | #18777 | single-dragon slot replaced by the per-level dragon set
+game_native_entity_refs_dragon_parts_table_dragon_slot_replace | #18777 | single-dragon slot replaced by the per-level dragon set
+game_native_entity_refs_dragon_parts_table_dragon_slot_retire_extracted | #18777 | single-dragon slot replaced by the per-level dragon set
