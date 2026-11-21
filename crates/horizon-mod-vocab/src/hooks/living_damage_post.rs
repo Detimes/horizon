@@ -15,6 +15,8 @@ pub trait Hooks {
     /// hit inside the cooldown unless its source bypasses it, independent of the final damage
     /// or modded invulnerability ticks. It only listens. It can't write the
     /// entity or the world's blocks: the level host gives the hit's random and level attachments.
+    /// `cancelled` is true for a hit a `living_incoming_damage` listener canceled: it fires at the
+    /// cancel, with no health taken. Armour and shields do not cancel; they fire with it false.
     /// The container is an API-owned scalar snapshot; the engine retains sequencing and normalization.
     #[hook(
         side = "server",

@@ -1370,13 +1370,14 @@ pub(super) fn damage_post(
     level: DamageLevel<'_>,
     hurting: Hurting<'_>,
     container: &DamageContainer,
+    cancelled: bool,
 ) {
     if !mod_api::__private::listened(mod_api::HookId::LivingDamagePost) {
         return;
     }
     let (entity, kind, source) = hurt_server_args(hurting, level.attack());
     let snapshot = (*container).try_into_api().expect("scalar damage snapshot");
-    HitLevel(level).native_living_damage_post(entity, kind, &source, &snapshot);
+    HitLevel(level).native_living_damage_post(entity, kind, &source, &snapshot, cancelled);
 }
 
 /// `native_living_shield_block` for the damage code. Its one

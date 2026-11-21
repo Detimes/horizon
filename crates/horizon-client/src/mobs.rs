@@ -3939,6 +3939,8 @@ impl Mob {
             victim,
             &mut container,
         ) {
+            // LivingDamageEvent.Post hears the canceled hit too, flagged as canceled.
+            level.damage_post(crate::health::Hurting::Mob(self, &source), &container, true);
             // Ghast.hurtServer: true for a reflected fireball whatever
             // super.hurtServer did.
             return reflected;
@@ -4234,7 +4236,7 @@ impl Mob {
             }
         }
         // The last of `LivingEntity.hurtServer`: `LivingDamageEvent.Post`, health taken or not.
-        level.damage_post(crate::health::Hurting::Mob(self, &source), &container);
+        level.damage_post(crate::health::Hurting::Mob(self, &source), &container, false);
         // Shulker.hurtServer: the low-health teleport roll after `super.hurtServer`.
         if success && self.species() == Species::Shulker {
             shulker::after_hurt(self);
