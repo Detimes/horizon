@@ -232,6 +232,13 @@ escapes such as `\u0041` are decoded.
 the font draws them; `&` codes are not read, so replace `&` with `§` first.
 Both work on either side.
 
+`text.plain()` returns the characters of a `Text` and its children with no
+styling, as Adventure's plain-text serializer writes them. A translation uses its
+`fallback` template with each `%s` replaced by the next argument's plain text,
+and the key when there is no fallback; a selector gives its pattern unresolved,
+and a score, an NBT path or an inline object gives nothing. An advancement's
+title is `host.advancement(id)` then its `display.title`; call `plain()` on it.
+
 ## Server clock, rules and distances
 
 `level.set_clock_time(host, ticks)` does what `/time set` does in that level's
