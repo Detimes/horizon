@@ -321,3 +321,8 @@ Measuring a client's transaction round trip (a lag-compensating anticheat): send
 `ConfigServerHost::server_online_mode()` (server side) returns the dedicated server's `online-mode` setting, as
 Paper's `Bukkit.getOnlineMode` does. It is `Option<bool>`: `None` off a dedicated server and before it listens,
 where a client or an integrated game has no such setting.
+## Loaded mods
+
+`ConfigHost::loaded_mod_ids()` (metadata, both sides) returns the ids of every mod loaded at startup, in dispatch
+order: the list Paper's `PluginManager#getPlugins` gives for plugins. A mod is loaded when its id is in the list;
+the list does not change while the process runs, and a mod the player switched off in Options > Mods still appears.
