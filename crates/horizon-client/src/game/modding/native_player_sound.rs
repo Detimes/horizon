@@ -71,7 +71,6 @@ mod tests {
                 game.guest_packets.as_slice(),
                 [C::Sound(p)] if p.x == 12 && p.y == 16 && p.z == -26 && p.volume == 1.0
             ));
-        })
-        .unwrap();
+        });
     }
 }

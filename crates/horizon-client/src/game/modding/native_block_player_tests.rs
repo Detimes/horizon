@@ -22,7 +22,7 @@ impl Hooks for Players {
     fn left_click_block(
         &self,
         _host: &mut dyn ServerHost,
-        event: &mut LeftClickBlockEvent<'_>,
+        event: &mut LeftClickBlockEvent,
     ) -> Flow {
         self.seen
             .lock()
