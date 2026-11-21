@@ -6313,7 +6313,7 @@ mod spawn_location_hook_tests {
             event: &mut PlayerSpawnLocationEvent<'_>,
         ) {
             *event.position = [1.0, 70.0, 2.0];
-            *event.yaw = 90.0;
+            event.yaw = 90.0;
         }
     }
 
