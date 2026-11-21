@@ -130,6 +130,20 @@ pub enum NbtUpgradeError {
     /// chain's depth) and the upgraded data has a list or compound 512 levels deep or more: no NBT read, vanilla's
     /// included, could take it back. Nothing is returned.
     UpgradedTooDeep,
+    /// The target version is not the game's DataVersion. This build upgrades only up to it. Refused before any fix runs.
+    TargetNotCurrent(i32),
+}
+/// The saved data kinds `data_fix` upgrades: the same three the upgrade methods take.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
+pub enum DataKind {
+    /// A block state, `{Name, Properties}`, as `upgrade_block_state_nbt` takes it.
+    BlockState,
+    /// A block entity, as `upgrade_block_entity_nbt` takes it.
+    BlockEntity,
+    /// An entity, its passengers included, as `upgrade_entity_nbt` takes it.
+    Entity,
 }
 impl std::fmt::Display for NbtUpgradeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,6 +152,7 @@ impl std::fmt::Display for NbtUpgradeError {
             Self::FutureVersion(v) => write!(f, "data version {v} is newer than the game's"),
             Self::TooDeep => f.write_str("the data nests 512 levels deep or more"),
             Self::UpgradedTooDeep => f.write_str("the upgraded data nests 512 levels deep or more"),
+            Self::TargetNotCurrent(v) => write!(f, "target data version {v} is not the game's"),
         }
     }
 }
