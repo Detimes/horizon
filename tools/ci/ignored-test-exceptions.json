@@ -602,6 +602,14 @@
   {
     "package": "horizon-client-render",
     "target": "lib",
+    "test": "gfx::hdr::tests::a_frame_without_room_keeps_no_targets_and_the_next_makes_them",
+    "path": "crates/horizon-client-render/src/gfx/hdr.rs",
+    "reason": "requires a Vulkan/Metal/DX12 adapter",
+    "rationale": "Existing adapter-gated GPU lane in tools/ci/ignored-tests/gpu.txt; a real available adapter is required and the runner handles adapter availability separately from prepared-resource daily selection."
+  },
+  {
+    "package": "horizon-client-render",
+    "target": "lib",
     "test": "gfx::pack_post::indirect_tests::an_unsupported_indirect_device_keeps_the_direct_and_render_passes",
     "path": "crates/horizon-client-render/src/gfx/pack_post/indirect_tests.rs",
     "reason": "requires an explicit capability mask",
@@ -690,6 +698,14 @@
   {
     "package": "horizon-client-render",
     "target": "lib",
+    "test": "menu_blur::tests::without_room_the_menu_is_not_blurred_and_the_next_screen_blurs",
+    "path": "crates/horizon-client-render/src/menu_blur.rs",
+    "reason": "requires a Vulkan/Metal/DX12 adapter",
+    "rationale": "Existing adapter-gated GPU lane in tools/ci/ignored-tests/gpu.txt; a real available adapter is required and the runner handles adapter availability separately from prepared-resource daily selection."
+  },
+  {
+    "package": "horizon-client-render",
+    "target": "lib",
     "test": "packs::cache::tests::benchmark_real_resource_root",
     "path": "crates/horizon-client-render/src/packs/cache.rs",
     "reason": "requires prepared resources and real pack paths in environment",
@@ -766,6 +782,14 @@
     "path": "crates/horizon-client-render/tests/world_view_slots.rs",
     "reason": "requires a Vulkan/Metal/DX12 adapter",
     "rationale": "Existing explicit manual runner by-hand in tools/ci/ignored-tests/manual-horizon-client-render.txt: requires a Vulkan/Metal/DX12 adapter; cargo test -p horizon-client-render --test world_view_slots -- --ignored. Not selected by daily shards."
+  },
+  {
+    "package": "horizon-client-render",
+    "target": "lib",
+    "test": "gfx::ray_lights::tests::rebuild_timings",
+    "path": "crates/horizon-client-render/src/gfx/ray_lights.rs",
+    "reason": "timing",
+    "rationale": "Manual wall-clock measurement of the ray light sources' rebuild (render-thread cost and worker build), not a daily correctness check. Run by hand on an idle machine with --release, exact-selecting the full test path with --ignored --exact --nocapture; the grid's correctness is covered by the other gfx::ray_lights tests."
   },
   {
     "package": "horizon-core",

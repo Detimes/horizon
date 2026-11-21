@@ -317,11 +317,12 @@ that belongs to one subsystem (an input source, the compositor) lives in the eng
 same shape: registered before the game runs, read-only after.
 
 **What players get.** The release builds (`game-build.yml`, so the nightly and the release; `tools/ci/build-musl.sh`)
-build `horizon-official` and ship it as `horizon-client`, the name the launcher and players know. The launcher's
-native-mod builds of the game do the same, and its generated executable for trait mods calls
-`horizon_official::register()` (`launcher/src/native_mods/api.rs`). The dedicated server build (`horizon-engine`)
-stays horizon-client's, with no Horizon part. horizon-client's own executable, the one `cargo run -p
-horizon-client`, the harnesses and horizon-plain build, has none either. The first part that moved this way is the
+build `horizon-official` and ship it as `horizon-client`, the name the launcher and players know. A game with
+native mods runs the client SDK's fixed executable, which calls `horizon_official::register()` too: the SDK build
+links the official parts into it from the game library's own build (`tools/prebuilt_game.py`, `api_route`), and its
+start check fails a client executable without them or a server one with them. The dedicated server build
+(`horizon-engine`) stays horizon-client's, with no Horizon part. horizon-client's own executable, the one
+`cargo run -p horizon-client`, the harnesses and horizon-plain build, has none either. The first part that moved this way is the
 "I'm playing" ping (`horizon-heartbeat`).
 
 ## Platform registries
@@ -620,7 +621,9 @@ prints how many points were added, removed (accepted and failing) and changed. I
 - a point is removed and is not listed in `tools/mod_points_removed.txt`, is a `Game` method or a published loop, or is
   named by a fixture (`tools/ci/fn-replace-check`, the wasm host's), a doc or a mod manifest;
 - a point changes (same name, new target or signature hash) and is not listed in that file;
-- the generated API differs with no accepted point change behind it, or `loops.json` differs at all;
+- the generated API differs without an accepted point change, or `loops.json` differs at all. With `--allow-added`,
+  a new catalog hook may add its own guest dispatch and update the catalog and hook notes. Existing guest dispatch
+  must match after accounting for the new hook and generated helper numbering;
 - `internals.json` loses an entry, or, without `--allow-added`, differs at all. With the flag, added and changed entries
   are listed and pass: `cargo horizon-mod update` already reports signature-hash changes for declared internals.
   Becoming `shape_only`, or losing a `cfg` variant, counts as a removal.
