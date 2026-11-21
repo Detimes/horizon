@@ -20,7 +20,9 @@ impl Game<'_> {
         // The death is decided; the loot and the message follow. `causing` is 0
         // when the blow has no attacker.
         let killer = u32::try_from(source.causing).unwrap_or(0);
-        let weapon = weapon.map_or("", |stack| stack.item().as_ref());
+        let weapon = weapon
+            .and_then(|stack| mod_api::__private::item_key_id(stack.item()))
+            .unwrap_or("");
         self.native_mob_died(mod_api::__private::MobDiedCall {
             entity,
             kind,
