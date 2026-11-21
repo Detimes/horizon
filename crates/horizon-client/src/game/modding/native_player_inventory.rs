@@ -91,7 +91,7 @@ impl Game<'_> {
             return Ok(taken);
         }
         let mut cleared = false;
-        let ran = self.native_as_player_handle(player, |game| {
+        let ran = self.native_as_player_handle_with(player, true, |game| {
             cleared = taken
                 .iter()
                 .all(|(slot, _)| inventory_slot(*slot).is_some_and(|t| game.slot_set(&t, None)));

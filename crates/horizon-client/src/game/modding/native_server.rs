@@ -1880,19 +1880,30 @@ impl Game<'_> {
         player: PlayerRef,
         f: impl FnOnce(&mut Self),
     ) -> bool {
+        self.native_as_player_handle_with(player, false, f)
+    }
+
+    /// `native_as_player_handle`, which with `allow_dead` also runs for a dead player (a grave
+    /// takes what a keep-inventory death left them).
+    pub(super) fn native_as_player_handle_with(
+        &mut self,
+        player: PlayerRef,
+        allow_dead: bool,
+        f: impl FnOnce(&mut Self),
+    ) -> bool {
         let Some(read) = self.player_handle_read(player) else {
             return false;
         };
         let conn = match read {
             PlayerRead::Acting { .. } => None,
-            PlayerRead::Guest(g) if !g.dead => Some(g.conn),
+            PlayerRead::Guest(g) if allow_dead || !g.dead => Some(g.conn),
             PlayerRead::Guest(_) => return false,
         };
         let Some(conn) = conn else {
             if self
                 .player
                 .as_ref()
-                .is_none_or(|p| p.health.health() <= 0.0)
+                .is_none_or(|p| !allow_dead && p.health.health() <= 0.0)
             {
                 return false;
             }
