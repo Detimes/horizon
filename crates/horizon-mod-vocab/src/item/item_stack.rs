@@ -488,6 +488,74 @@ impl ItemStack {
             })
             .collect()
     }
+
+    /// Force the enchantment glint on or off (`minecraft:enchantment_glint_override`, Bukkit's
+    /// `ItemMeta.setEnchantmentGlintOverride`); `None` returns the stack to the item's own rule.
+    /// Clearing records a removal when the item's prototype sets the component, so its default does
+    /// not come back.
+    pub fn set_glint_override(&mut self, host: &dyn crate::Host, glint: Option<bool>) {
+        const ID: &str = "minecraft:enchantment_glint_override";
+        match glint {
+            Some(on) => {
+                let _ = self.set_component_value(ID, Tag::Byte(i8::from(on)));
+            }
+            None => {
+                let default = host.item_default_component(self.item, ID);
+                self.remove_component_value(ID, default.is_some());
+            }
+        }
+    }
+    /// Hide or show the whole tooltip (`minecraft:tooltip_display.hide_tooltip`, Bukkit's
+    /// `ItemMeta.setHideTooltip`). The other keys of the display, such as `hidden_components`, are kept.
+    /// The stack's own display, else the item's prototype display, is the base; a display left with no
+    /// key is removed, recording a removal when the prototype sets it.
+    pub fn set_tooltip_hidden(&mut self, host: &dyn crate::Host, hidden: bool) {
+        const ID: &str = "minecraft:tooltip_display";
+        let own = self
+            .components()
+            .and_then(|c| c.as_nbt().get(&JavaString::from(ID)).cloned());
+        let mut display = match own.or_else(|| host.item_default_component(self.item, ID)) {
+            Some(Tag::Compound(display)) => display,
+            _ => Compound::new(),
+        };
+        if hidden {
+            display.insert(JavaString::from("hide_tooltip"), Tag::Byte(1));
+        } else {
+            display.remove(&JavaString::from("hide_tooltip"));
+        }
+        if display.is_empty() {
+            let default = host.item_default_component(self.item, ID);
+            self.remove_component_value(ID, default.is_some());
+        } else {
+            let _ = self.set_component_value(ID, Tag::Compound(display));
+        }
+    }
+    /// Dye the stack's colour (`minecraft:dyed_color`, Bukkit's `LeatherArmorMeta.setColor`): `Some(rgb)`
+    /// sets the 24-bit colour (bits above 24 are dropped) and keeps the component's other keys;
+    /// `None` returns the stack to the item's own colour, recording a removal when the prototype sets it.
+    pub fn set_leather_color(&mut self, host: &dyn crate::Host, rgb: Option<u32>) {
+        const ID: &str = "minecraft:dyed_color";
+        match rgb {
+            Some(rgb) => {
+                let own = self
+                    .components()
+                    .and_then(|c| c.as_nbt().get(&JavaString::from(ID)).cloned());
+                let mut color = match own {
+                    Some(Tag::Compound(color)) => color,
+                    _ => Compound::new(),
+                };
+                color.insert(
+                    JavaString::from("rgb"),
+                    Tag::Int((rgb & 0x00FF_FFFF) as i32),
+                );
+                let _ = self.set_component_value(ID, Tag::Compound(color));
+            }
+            None => {
+                let default = host.item_default_component(self.item, ID);
+                self.remove_component_value(ID, default.is_some());
+            }
+        }
+    }
     /// Encode the item NBT escape using this host's canonical id, never a process-local key.
     /// Returns None when id metadata is unavailable. Only components present on the
     /// stack are written; effective defaults and maxima belong to the items host area.
@@ -712,6 +780,113 @@ mod tests {
         // A removal marker reads empty.
         stack.remove_component_value("minecraft:enchantments", true);
         assert!(stack.enchantments().is_empty());
+    }
+
+    /// [`TextNbt`] over items whose prototype sets a tooltip display that hides a component, and a glint
+    /// override and a dyed colour.
+    struct Dressed;
+    impl crate::prelude::TextHost for Dressed {
+        fn text_to_nbt(&self, text: &crate::Text) -> Result<Tag, crate::TextFormError> {
+            TextNbt.text_to_nbt(text)
+        }
+    }
+    impl crate::prelude::ItemsHost for Dressed {
+        fn item_key(&self, _: &crate::Identifier) -> Option<ItemKey> {
+            None
+        }
+        fn item_default_component(&self, _: ItemKey, id: &str) -> Option<Tag> {
+            match id {
+                "minecraft:tooltip_display" => Some(Tag::compound([(
+                    "hidden_components",
+                    Tag::List(vec![Tag::String("minecraft:dyed_color".into())]),
+                )])),
+                "minecraft:enchantment_glint_override" => Some(Tag::Byte(1)),
+                "minecraft:dyed_color" => Some(Tag::compound([("rgb", Tag::Int(0x0000_00FF))])),
+                _ => None,
+            }
+        }
+    }
+    impl crate::Host for Dressed {
+        fn backend(&self) -> Option<crate::BackendRef<'_>> {
+            None
+        }
+    }
+    crate::impl_host_areas!(Dressed, except(text, items));
+
+    /// The glint override, the tooltip's hidden flag and the leather colour are written, keep the other
+    /// keys they share a component with, and clearing one leaves no trace when the item has no prototype
+    /// value for it (and records a removal when it has one).
+    #[test]
+    fn glint_tooltip_and_leather_colour_are_written_and_cleared() {
+        let patch = |stack: &ItemStack, id: &str| {
+            stack
+                .components()
+                .and_then(|c| c.as_nbt().get(&JavaString::from(id)).cloned())
+        };
+        let mut stack = ItemStack::of(ItemKey(0));
+        stack.set_glint_override(&TextNbt, Some(true));
+        assert_eq!(
+            patch(&stack, "minecraft:enchantment_glint_override"),
+            Some(Tag::Byte(1))
+        );
+        stack.set_glint_override(&TextNbt, Some(false));
+        assert_eq!(
+            patch(&stack, "minecraft:enchantment_glint_override"),
+            Some(Tag::Byte(0))
+        );
+        stack.set_glint_override(&TextNbt, None);
+        assert!(stack.components().is_none(), "no prototype: cleared");
+
+        stack.set_tooltip_hidden(&TextNbt, true);
+        assert_eq!(
+            patch(&stack, "minecraft:tooltip_display"),
+            Some(Tag::compound([("hide_tooltip", Tag::Byte(1))]))
+        );
+        stack.set_tooltip_hidden(&TextNbt, false);
+        assert!(stack.components().is_none(), "an empty display is removed");
+
+        stack.set_leather_color(&TextNbt, Some(0xFF_AA_00_12));
+        assert_eq!(
+            patch(&stack, "minecraft:dyed_color"),
+            Some(Tag::compound([("rgb", Tag::Int(0x00AA_0012))]))
+        );
+        stack.set_leather_color(&TextNbt, None);
+        assert!(stack.components().is_none(), "no prototype: cleared");
+    }
+
+    /// Over a prototype's display, hiding keeps its `hidden_components`, showing again keeps them too,
+    /// and clearing the glint or the colour records the removal of the prototype's own value.
+    #[test]
+    fn prototype_values_are_kept_and_their_removals_recorded() {
+        let mut stack = ItemStack::of(ItemKey(0));
+        stack.set_tooltip_hidden(&Dressed, true);
+        assert_eq!(
+            stack
+                .components()
+                .and_then(|c| c.as_nbt().get(&JavaString::from("minecraft:tooltip_display")).cloned()),
+            Some(Tag::compound([
+                (
+                    "hidden_components",
+                    Tag::List(vec![Tag::String("minecraft:dyed_color".into())]),
+                ),
+                ("hide_tooltip", Tag::Byte(1)),
+            ]))
+        );
+        stack.set_tooltip_hidden(&Dressed, false);
+        let patch = stack.components().unwrap().as_nbt();
+        assert_eq!(
+            patch.get(&JavaString::from("minecraft:tooltip_display")),
+            Some(&Tag::compound([(
+                "hidden_components",
+                Tag::List(vec![Tag::String("minecraft:dyed_color".into())]),
+            )]))
+        );
+        let mut plain = ItemStack::of(ItemKey(0));
+        plain.set_glint_override(&Dressed, None);
+        plain.set_leather_color(&Dressed, None);
+        let patch = plain.components().unwrap().as_nbt();
+        assert!(patch.contains_key(&JavaString::from("!minecraft:enchantment_glint_override")));
+        assert!(patch.contains_key(&JavaString::from("!minecraft:dyed_color")));
     }
 
     struct Number;

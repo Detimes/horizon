@@ -65,6 +65,13 @@ level. `ItemStack::enchantments()` returns them as `(id, level)` pairs in id ord
 `ItemStack::stored_enchantments()` returns an enchanted book's `minecraft:stored_enchantments` the same way.
 Only the stack's own patch is read: a prototype's enchantments are not reported, and an entry whose level is
 negative or not an integer is left out.
+Three item-meta setters write one component each, with no host call in the write itself.
+`ItemStack::set_glint_override(host, Some(on))` forces the glint on or off (`minecraft:enchantment_glint_override`);
+`None` returns the stack to the item's own rule. `ItemStack::set_tooltip_hidden(host, hidden)` sets
+`hide_tooltip` in `minecraft:tooltip_display` and keeps its other keys such as `hidden_components`; a display left
+with no key is removed. `ItemStack::set_leather_color(host, Some(rgb))` sets `rgb` in `minecraft:dyed_color` (only
+the low 24 bits are kept) and `None` returns the stack to the item's colour. Clearing any of them records a removal
+when the item's prototype supplies that component, so its default does not come back.
 
 ## Game boundaries
 
