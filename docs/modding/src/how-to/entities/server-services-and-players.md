@@ -341,3 +341,10 @@ stale when its team is removed or the world is opened again. Server only: a refu
 Paper's `Entity#getScoreboardTeam` does. It returns the team's name, `None` when the entity is on no team.
 The scoreboard keys an entity by its UUID, so the answer follows the team the entity's UUID joined. A stale
 entity, a client, or an entity without a UUID gives `None`.
+
+## Score of a holder
+
+`ScoreboardServerHost::scoreboard_score(holder, objective)` (server side) returns the value a holder has on an
+objective, as Paper's `Objective#getScore` does. The holder is the scoreboard's key: a player's name, an entity's
+UUID as text, or a name as written. `None` when the holder has no score there, the objective does not exist, or
+on a client.

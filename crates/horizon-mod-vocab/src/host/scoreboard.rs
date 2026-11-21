@@ -81,4 +81,12 @@ pub trait ScoreboardServerHost {
     /// entity, a client, or an entity whose UUID the server cannot give gives None.
     #[access(WorldOnly)]
     fn entity_team(&mut self, entity: EntityRef) -> Option<String>;
+    /// Side: server.
+    /// The score a holder has on an objective (`Scoreboard.getOrCreateScore`'s value, Paper's
+    /// `Score#getScore` through `Objective#getScore`). The holder is the scoreboard's key: a
+    /// player's name, an entity's UUID as text, or a name as written (`/scoreboard players`).
+    /// None when the holder has no score on that objective, the objective does not exist, or
+    /// this is a client, whose scoreboard the server keeps.
+    #[access(WorldOnly)]
+    fn scoreboard_score(&self, holder: &str, objective: &str) -> Option<i32>;
 }
