@@ -289,7 +289,7 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
 - **`player_velocity(player, name, velocity)`**: the server synced changed motion to a player, with `velocity` in blocks per tick.
 - **`player_stop_spectating_entity(player, name, entity_id)`**: a spectator's camera returned to their own player after they stopped watching `entity_id`.
 - **`player_map_filled(player, name, map_id)`**: a server player filled an empty map, after the filled map and its saved map data were created.
-- **`player_teleport_end_gateway(player, name, gateway, cancel)`**: a player is about to travel through the End gateway at `gateway`. Set `cancel` to leave them at the entrance; the gateway does not start its cooldown. The player is not swapped in.
+- **`player_teleport_end_gateway(player, name, gateway, to, cancel)`**: a player is about to travel through the End gateway at `gateway`; `to` is where they would land (the exit, or the search start). Set `cancel` to leave them at the entrance; the gateway does not start its cooldown. The player is not swapped in.
 - **`player_recipe_book_click(player, name, recipe, all)`**: a server player requests a known recipe be placed in their crafting grid through the recipe book. `all` is true for the shift click form. The player is not swapped in.
 - **`player_exp_cooldown_change(player, name, ticks)`**: the player’s XP orb pickup cooldown changed, after its new value is stored. This includes the two tick delay after an orb is picked up and each tick it counts down. The player is not swapped in.
 - **`entity_enter_block(entity, kind, pos, block)`**: a bee was stored in the beehive or nest at `pos`.
@@ -2597,7 +2597,7 @@ registration path.
 
 - A server player swapped their main hand with an equipment slot: `player_swap_with_equipment_slot(player, name, slot)` fires after both hands changed; `slot` is currently `offhand`.
 
-- A player is about to travel through an End gateway (`player_teleport_end_gateway(player, name, gateway, cancel)`). Set `cancel` to leave them at the entrance without starting the gateway cooldown.
+- A player is about to travel through an End gateway (`player_teleport_end_gateway(player, name, gateway, to, cancel)`, `to` = where they would land). Set `cancel` to leave them at the entrance without starting the gateway cooldown.
 
 - A server player used a golden dandelion on an ageable mob: `player_toggle_entity_age_lock(player, name, entity_id, locked)` fires after the lock and item use changed.
 

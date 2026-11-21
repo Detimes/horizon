@@ -2517,16 +2517,19 @@ impl Game<'_> {
     ) {
         self.fire_player_map_filled(player, name, map_id);
     }
-    /// A server player is about to travel through an End gateway at `gateway`. Set `cancel` to leave
-    /// them at the entrance; the gateway is not consumed and its cooldown does not start. Server-side.
+    /// A server player is about to travel through an End gateway at `gateway`. `to` is where they
+    /// would land: the exit (block centre), or the search start when no exit is known yet. Set
+    /// `cancel` to leave them at the entrance; the gateway is not consumed and its cooldown does not
+    /// start. Server-side.
     pub(in crate::game) fn native_player_teleport_end_gateway(
         &mut self,
         player: u128,
         name: &str,
         gateway: [i32; 3],
+        to: [f64; 3],
         cancel: &mut bool,
     ) {
-        self.fire_player_teleport_end_gateway(player, name, gateway, cancel);
+        self.fire_player_teleport_end_gateway(player, name, gateway, to, cancel);
     }
     /// A server player's recipe book requested a known recipe be placed in
     /// their crafting grid. `recipe` is the recipe id; `all` is the shift

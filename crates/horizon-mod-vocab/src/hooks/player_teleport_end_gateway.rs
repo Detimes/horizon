@@ -2,8 +2,10 @@
 // catalog-order: 0315
 
 pub trait Hooks {
-    /// A server player is about to travel through an End gateway at `gateway`. Set `cancel` to leave
-    /// them at the entrance; the gateway is not consumed and its cooldown does not start. Server-side.
+    /// A server player is about to travel through an End gateway at `gateway`. `to` is where they
+    /// would land: the exit (block centre), or the search start when no exit is known yet. Set
+    /// `cancel` to leave them at the entrance; the gateway is not consumed and its cooldown does not
+    /// start. Server-side.
     #[hook(
         side = "server",
         contract = "cancel",
