@@ -1365,4 +1365,12 @@ pub trait PlayersBackendMut {
     /// a stale, unavailable or fake player.
     #[access(WorldOnly)]
     fn player_set_view_distance(&mut self, player: PlayerRef, chunks: i32) -> bool;
+    /// Side: server.
+    /// Resolves the selector `token` (`@a`, `@e[type=villager]`, `@p`, a player name) as a command
+    /// the player ran would: `@s` and `@p` are them, a `distance` is from them (Paper's
+    /// `Server.selectEntities(sender, token)`). The token must be exactly one selector; the answer
+    /// is the entities it names now, possibly none. `None` for a token that does not parse, a
+    /// stale, unavailable or fake player and a client.
+    #[access(WorldOnly)]
+    fn player_select_entities(&mut self, player: PlayerRef, token: &str) -> Option<Vec<EntityRef>>;
 }

@@ -1,6 +1,6 @@
 //! What a server mod asks of one player's connection and of the server's files: a resource pack
 //! offered in play, a player's own view distance, and the path of the server log.
-use super::Game;
+use super::{Game, commands::Target};
 use horizon_client::server::{json::Json, properties::name_uuid};
 use horizon_protocol::packets::{configuration::ResourcePackPush, play::Clientbound as C};
 use mod_api::PlayerRef;
@@ -61,5 +61,51 @@ impl Game<'_> {
     /// The server log being written: `logs/latest.log` under the game's home.
     pub(super) fn log_file(&self) -> PathBuf {
         horizon_client::logging::logs_dir(&horizon_client::logging::game_home()).join("latest.log")
+    }
+}
+
+impl Game<'_> {
+    /// `Server.selectEntities(sender, token)`: the selector `token` (`@a`, `@e[type=villager]`, a
+    /// name) resolved as the player's command source would, as they stand now. None for a token
+    /// that is not exactly one selector, a client, or a player the game cannot reach.
+    pub(super) fn player_select_entities(
+        &mut self,
+        player: PlayerRef,
+        token: &str,
+    ) -> Option<Vec<mod_api::EntityRef>> {
+        if self.remote.is_some() || token.is_empty() || token.len() > 2048 {
+            return None;
+        }
+        let mut reader = horizon_client::command::Reader::new(token);
+        let selector =
+            horizon_client::command::selector::parse(&mut reader, &self.ui.registries, true).ok()?;
+        if reader.can_read() {
+            return None;
+        }
+        let mut found = None;
+        let reached = self.native_as_player_handle(player, |game| {
+            let targets = game.select(&selector);
+            found = Some(
+                targets
+                    .into_iter()
+                    .filter_map(|t| game.selected_entity(t))
+                    .collect(),
+            );
+        });
+        found.filter(|_| reached)
+    }
+}
+
+impl Game<'_> {
+    /// The handle of one selected target: a player by their uuid, anything else by its entity id.
+    fn selected_entity(&self, target: Target) -> Option<mod_api::EntityRef> {
+        match target {
+            Target::Player => self.player(self.lan_acting_uuid?).map(|p| p.entity()),
+            Target::Guest(conn) => {
+                let uuid = self.lan.as_ref()?.hub.guest(conn)?.uuid;
+                self.player(uuid).map(|p| p.entity())
+            }
+            other => self.entity(super::native_entities::target_id(other)?),
+        }
     }
 }

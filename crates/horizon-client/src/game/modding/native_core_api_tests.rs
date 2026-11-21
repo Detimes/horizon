@@ -86,3 +86,27 @@ fn the_log_file_is_latest_log_in_the_logs_folder() {
         assert_eq!(path.parent().unwrap().file_name().unwrap(), "logs");
     });
 }
+
+/// A selector token resolves as the player's own command would: `@a` is both guests, `@s` is the
+/// asker, a type with nobody of it is empty, and text that is not one selector is `None`.
+#[test]
+#[ignore = "daily"]
+fn a_mod_resolves_a_selector_for_a_player() {
+    with_guests(|game| {
+        game.build_registries();
+        let (a, b) = (game.player(12).unwrap(), game.player(13).unwrap());
+        let ids = |found: Option<Vec<mod_api::EntityRef>>| {
+            let mut ids: Vec<u32> = found.unwrap().iter().map(|e| e.id()).collect();
+            ids.sort();
+            ids
+        };
+        let mut both = vec![a.entity().id(), b.entity().id()];
+        both.sort();
+        assert_eq!(ids(game.player_select_entities(a, "@a")), both);
+        assert_eq!(ids(game.player_select_entities(b, "@s")), [b.entity().id()]);
+        assert_eq!(ids(game.player_select_entities(a, "@e[type=minecraft:zombie]")), Vec::<u32>::new());
+        assert!(game.player_select_entities(a, "@a extra").is_none());
+        assert!(game.player_select_entities(a, "@z[").is_none());
+        assert!(game.player_select_entities(a, "").is_none());
+    });
+}

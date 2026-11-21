@@ -103,6 +103,8 @@ can still refuse the player.
 
 `player.send_resource_pack(host, url, sha1, required, prompt)` (`player_send_resource_pack`) offers one player a resource pack while they play, as Paper's `Player#setResourcePack` does. Its id is the name UUID of the url, so offering the same url again replaces the pack; the answer comes back through `resource_pack_status`. `player.set_view_distance(host, chunks)` (`player_set_view_distance`) sets one player's radius, from 2 up to the server's view distance, until their client sends its settings again. `host.log_file()` is the path of the server log.
 
+`player.select_entities(host, token)` (`player_select_entities`) resolves one selector such as `@a` or `@e[type=villager]` as that player's command would, and returns the entities it names, or `None` when the text is not exactly one selector. `player_spawn_location` lets a mod change where a joining player is placed (level, position, look) before the login is sent. `player_teleport_cause` and `player_game_mode_cause` tell the cause of a teleport (`command`, `spectate`) and of a game mode change (`command`, `switcher`, `plugin`, `hardcore_death`); `mob_effect_added_detail` hears every effect given to a mob or player, with its duration and cause.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or

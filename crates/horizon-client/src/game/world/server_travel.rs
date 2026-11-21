@@ -1476,10 +1476,10 @@ impl Game<'_> {
             } = note;
             // In place when it is their turn already (as_guest finds them swapped in).
             if self.lan_acting == Some(conn) {
-                self.native_player_teleported(uuid, &name, from, to, &dimension);
+                self.teleported_because(uuid, &name, from, to, &dimension, "command");
             } else {
                 self.as_guest(conn, |g| {
-                    g.native_player_teleported(uuid, &name, from, to, &dimension);
+                    g.teleported_because(uuid, &name, from, to, &dimension, "command");
                 });
             }
         }
@@ -1543,7 +1543,7 @@ impl Game<'_> {
                 g.trigger_dimension(source, t.dim, origin);
                 // The mods hear the teleport into another level, with the
                 // player's state swapped in.
-                g.native_player_teleported(uuid, &name, origin, t.at, t.dim.id());
+                g.teleported_because(uuid, &name, origin, t.at, t.dim.id(), "command");
             });
             self.server_trips.retain(|trip| !trip.is(t.conn));
             self.server_trips.push(Trip {
