@@ -37,6 +37,8 @@ impl<T: ?Sized + 'static> ServiceKey<T> {
 
 /// Why a service name is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
 pub enum ServiceNameError {
     /// Longer than [`MAX_SERVICE_NAME_LEN`] bytes.
     TooLong,
