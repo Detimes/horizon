@@ -10,8 +10,7 @@
 mod fire;
 pub(in crate::game) use fire::{
     BlockDropsCall, BlockPlacedCall, BlockScreenEffectDrawCall, ConnectsToCall,
-    EntityChangeBlockPreCall,
-    ItemAfterVerticalCollisionCall, UpdateShapeCall,
+    EntityChangeBlockPreCall, ItemAfterVerticalCollisionCall, UpdateShapeCall,
 };
 use mod_api::{BlockEntityDataSource, BlockEntityRef, ClockAdjustment};
 
