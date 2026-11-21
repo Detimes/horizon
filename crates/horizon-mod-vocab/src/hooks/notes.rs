@@ -258,6 +258,7 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
 - **`crafter_craft(pos, recipe)`**: a crafter completed `recipe` at `pos`, after consuming its ingredients and handling its output. Server-side.
 - **`player_attack_cooldown_reset(player, name)`**: a server player's punch was handled: the main-hand swing and attack-strength reset have both happened. The player's state is not swapped in.
 - **`player_bucket_entity(player, name, entity_id, entity)`**: a server player caught a bucketable mob after the mob was removed and the filled bucket was put in the player's hand or inventory. `entity` is the mob species id.
+- **`player_milk_entity(player, name, entity_id, entity)`**: a server player milked a cow, mooshroom or goat with a bucket, after the milk bucket was given. `entity` is the species id.
 - **`player_change_beacon_effect(player, name, pos, primary, secondary)`**: a server player's beacon selection was stored. Effect values are `Option<EffectKey>`, `None` when none is selected.
 - **`player_deep_sleep(player, name)`**: a server player reached 100 ticks asleep in a bed and now counts as deeply asleep for the night-skip check.
 - **`player_egg_throw(player, name)`**: a server player threw an egg after its projectile was launched and its use applied.
@@ -2547,6 +2548,8 @@ registration path.
 - A server player is waking or standing up from the bed at `pos`; `player_bed_leave` is heard before their sleeping state is cleared, so a listener still reads them as sleeping.
 
 - A server player caught a bucketable mob: `player_bucket_entity(player, name, entity_id, entity)` runs after the mob was removed and the filled bucket was put in the player's hand or inventory. `entity` is the mob species id.
+
+- A server player milked an animal with a bucket: `player_milk_entity(player, name, entity_id, entity)` runs after the milk bucket was put in the player's hand or inventory (or dropped). `entity` is the species id (`minecraft:cow`, `minecraft:mooshroom`, `minecraft:goat`); a bowl on a mooshroom is not milking.
 
 - A server player's selected beacon effects were stored: `player_change_beacon_effect(player, name, pos, primary, secondary)`. The primary and secondary values are `Option<EffectKey>`; `None` means no effect is selected.
 
