@@ -1945,6 +1945,8 @@ horizon-client game::native_server::tests::native_typed_commands_reach_listeners
 horizon-client game::native_server::tests::native_unauthorized_commands_never_reach_the_listener lib daily resources
 horizon-client game::native_server::tests::server_events_are_posted_only_on_the_dedicated_role lib daily resources
 horizon-client game::native_server::tests::the_hubs_chunk_watches_reach_the_mods_in_order lib daily resources
+horizon-client game::native_serverbound_packet_tests::each_packet_is_heard_in_order_and_a_cancel_drops_only_that_packet lib daily resources
+horizon-client game::native_serverbound_packet_tests::with_no_listener_the_packet_is_handled_in_place lib daily resources
 horizon-client game::native_shield_totem_tests::a_blocked_damage_above_the_hit_is_clamped_to_it lib daily resources
 horizon-client game::native_shield_totem_tests::an_uncanceled_totem_saves_the_mob lib daily resources
 horizon-client game::native_shield_totem_tests::setting_blocked_false_blocks_nothing lib daily resources
