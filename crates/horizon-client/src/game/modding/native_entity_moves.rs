@@ -276,18 +276,28 @@ impl Game<'_> {
     /// follows), as Paper's `Player#setSneaking`. False for a stale or unavailable player and
     /// for an entity that is not a player.
     pub(super) fn player_set_sneaking(&mut self, player: PlayerRef, sneaking: bool) -> bool {
-        let motion = match self.native_entity_target(player.entity()) {
-            Some(Target::Player) => self.player.as_mut(),
+        match self.native_entity_target(player.entity()) {
+            Some(Target::Player) => self.player.as_mut().is_some_and(|motion| {
+                motion.shift_key_down = sneaking;
+                true
+            }),
+            // A guest's ticking and packet sync read `Guest.sneaking`, so write that and the
+            // body projection (`motion.shift_key_down`) together.
             Some(Target::Guest(conn)) => self
                 .lan
                 .as_mut()
-                .and_then(|host| host.hub.guests.motion_mut(conn)),
-            _ => None,
-        };
-        motion.is_some_and(|motion| {
-            motion.shift_key_down = sneaking;
-            true
-        })
+                .and_then(|host| {
+                    host.hub.update_guest(conn, |guest| {
+                        let motion = guest.motion.as_deref_mut()?;
+                        motion.shift_key_down = sneaking;
+                        guest.sneaking = sneaking;
+                        Some(())
+                    })
+                })
+                .flatten()
+                .is_some(),
+            _ => false,
+        }
     }
     /// Changes a player's velocity with `change` and sends their client the
     /// result: the acting player's record (`Target::Player`) or a guest's.

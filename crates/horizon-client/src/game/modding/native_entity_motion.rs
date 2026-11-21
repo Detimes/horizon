@@ -550,10 +550,21 @@ mod tests {
             // A fake guest crouches, then stands.
             let level = game.level(game.dim.id()).unwrap();
             let fake = game.fake_player(level, 2, "fake").unwrap();
+            let guest_sneaking = |game: &mut super::super::Game<'_>| {
+                let host = game.lan.as_mut().unwrap();
+                host.hub
+                    .guests
+                    .iter()
+                    .find(|g| g.uuid == 2)
+                    .unwrap()
+                    .sneaking
+            };
             assert!(game.player_set_sneaking(fake, true));
             assert!(*fake_shift(game));
+            assert!(guest_sneaking(game));
             assert!(game.player_set_sneaking(fake, false));
             assert!(!*fake_shift(game));
+            assert!(!guest_sneaking(game));
         });
     }
 
