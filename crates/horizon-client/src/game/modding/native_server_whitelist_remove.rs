@@ -12,7 +12,6 @@ impl Game<'_> {
             id: uuid,
             name: String::new(),
         };
-        let removed = shared.lock().unwrap().white.remove(&user);
-        removed
+        shared.lock().unwrap().white.remove(&user)
     }
 }

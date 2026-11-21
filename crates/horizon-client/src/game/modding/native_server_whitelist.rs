@@ -9,7 +9,6 @@ impl Game<'_> {
             return false;
         };
         let lists = lists.lock().unwrap();
-        let found = lists.white.entries().iter().any(|entry| entry.user.id == uuid);
-        found
+        lists.white.entries().iter().any(|entry| entry.user.id == uuid)
     }
 }
