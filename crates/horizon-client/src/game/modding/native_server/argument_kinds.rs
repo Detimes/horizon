@@ -377,6 +377,32 @@ pub(super) fn argument_type(node: &Value, arguments: &CommandArguments) -> ArgTy
             },
         ));
     }
+    // `player_name` asks the server for its completions (`usage_nodes`): names only, since the
+    // mod gets a name and the vanilla selector completion would offer `@p` and the like.
+    if node["parser"] == "minecraft:game_profile" {
+        return ArgType::Custom(horizon_client::command::CustomArgument::new(
+            MOD_ID,
+            horizon_client::command::CustomArgumentKind::Word,
+            |input| {
+                if input.starts_with('@') {
+                    return Err(Text::tr("argument.entity.notfound.player", &[]));
+                }
+                Ok(input.to_owned())
+            },
+            |reg: &horizon_client::command::Registries, prefix: &str| {
+                let typed = prefix.to_lowercase();
+                reg.players
+                    .iter()
+                    .filter(|name| name.to_lowercase().starts_with(&typed))
+                    .map(|name| horizon_client::command::CustomSuggestion {
+                        text: name.clone(),
+                        tooltip: None,
+                        replace_start: None,
+                    })
+                    .collect()
+            },
+        ));
+    }
     if node["parser"] == "minecraft:vec3" && node[UNCENTERED] == true {
         return ArgType::Vec3 { center: false };
     }
