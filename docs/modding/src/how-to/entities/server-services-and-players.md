@@ -169,6 +169,7 @@ the list shows) and `hide_players` start as vanilla's answer. `hide_players` lea
 is dropped. An answer longer than a client reads (32767 characters) is replaced by the plain one, and so is any answer
 the mods do not finish within half a second. With no listener the request is not put to the game thread at all.
 The legacy ping of pre-1.7 clients is not asked.
+`player.chat(host, message)` makes a player say a line in public chat, as Paper's `Player#chat` does for plain text: the line is shown to every player who is on, under the player's display name and the server's chat format, as an unsigned line (clients show it as not verified). It does not go through the chat event, the chat filter or `chat_recipient`, so use it for a line a mod itself writes (a menu's chat action, a scripted greeting), not for a player's own typing. A leading `/` is refused as `PlayerChatRefusal::Command`: a command runs with `entity.run_command`. The other refusals are `Stale` (the handle's player is not on, or is a fake player), `Empty`, `TooLong` (over 256 characters) and `IllegalCharacter` (a control character, DEL or `§`); each changes nothing.
 
 ## Chat lines and respawn
 
