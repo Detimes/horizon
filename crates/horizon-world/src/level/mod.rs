@@ -483,6 +483,12 @@ pub trait LevelAccess: BlockEntityNeighbors {
     fn allow_spread(&self, _kind: Spread, _from: BlockPos, _to: BlockPos) -> bool {
         true
     }
+    /// Whether a natural grower of `kind` (`vine` or `sculk`) may spread from `from` into `to`:
+    /// a native mod may refuse, and the block at `to` stays as it is. Asked after the grower's
+    /// own random draws, which a refusal does not change. The default allows.
+    fn allow_natural_spread(&self, _kind: &'static str, _from: BlockPos, _to: BlockPos) -> bool {
+        true
+    }
     /// Returns the state to place for a liquid conversion, or None to cancel.
     fn fluid_place_block(
         &self,
