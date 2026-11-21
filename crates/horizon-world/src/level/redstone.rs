@@ -693,6 +693,15 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                 .level
                 .allow_plate_signal(pos, state, old_signal, signal)
         {
+            // The retained signal still needs its next check, or the plate stays powered.
+            if old_signal > 0 {
+                let delay = if b.instance_of(state, Class::WeightedPressurePlate) {
+                    10
+                } else {
+                    20
+                };
+                self.schedule_tick(pos, b.block(state), delay);
+            }
             return;
         }
         let was = old_signal > 0;

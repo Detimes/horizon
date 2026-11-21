@@ -1399,52 +1399,56 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             }
             let test = rel(pos, direction);
             let edge = self.state(test);
-            if b.is_air(edge) && self.level.allow_natural_spread("vine", pos, test) {
+            if b.is_air(edge) {
                 let cw = super::query::clockwise(direction);
                 let ccw = super::query::counter_clockwise(direction);
                 let cw_face = b.table.bool(state, self.direction_prop(cw));
                 let ccw_face = b.table.bool(state, self.direction_prop(ccw));
                 let cw_test = rel(test, cw);
                 let ccw_test = rel(test, ccw);
-                if cw_face && b.multiface_can_attach(self.state(cw_test), cw) {
-                    self.set_block(
+                // The cell and state vanilla would write; the hook is asked about that cell.
+                let write = if cw_face && b.multiface_can_attach(self.state(cw_test), cw) {
+                    Some((
                         test,
                         b.table.set_bool(default, self.direction_prop(cw), true),
-                        2,
-                    );
+                    ))
                 } else if ccw_face && b.multiface_can_attach(self.state(ccw_test), ccw) {
-                    self.set_block(
+                    Some((
                         test,
                         b.table.set_bool(default, self.direction_prop(ccw), true),
-                        2,
-                    );
+                    ))
                 } else {
                     let opposite = direction.opposite();
                     if cw_face
                         && self.is_empty_block(cw_test)
                         && b.multiface_can_attach(self.rel_state(pos, cw), opposite)
                     {
-                        self.set_block(
+                        Some((
                             cw_test,
                             b.table
                                 .set_bool(default, self.direction_prop(opposite), true),
-                            2,
-                        );
+                        ))
                     } else if ccw_face
                         && self.is_empty_block(ccw_test)
                         && b.multiface_can_attach(self.rel_state(pos, ccw), opposite)
                     {
-                        self.set_block(
+                        Some((
                             ccw_test,
                             b.table
                                 .set_bool(default, self.direction_prop(opposite), true),
-                            2,
-                        );
+                        ))
                     } else if self.random().next_float() < 0.05
                         && b.multiface_can_attach(self.state(above(test)), Direction::Up)
                     {
-                        self.set_block(test, b.table.set_bool(default, p.up, true), 2);
+                        Some((test, b.table.set_bool(default, p.up, true)))
+                    } else {
+                        None
                     }
+                };
+                if let Some((at, new)) = write
+                    && self.level.allow_natural_spread("vine", pos, at)
+                {
+                    self.set_block(at, new, 2);
                 }
             } else if b.multiface_can_attach(edge, direction) {
                 self.set_block(

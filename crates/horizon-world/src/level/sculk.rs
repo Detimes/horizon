@@ -659,6 +659,10 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             if !self.sculk_in_tag(support_state, "minecraft:sculk_replaceable") {
                 continue;
             }
+            // The substrate conversion is a spread write too: ask before its effects.
+            if !self.level.allow_natural_spread("sculk", pos, support_pos) {
+                continue;
+            }
             let default_sculk = self.b.default_of(self.b.named.sculk);
             self.emit(LevelEvent::BlockEvent {
                 pos: support_pos,
