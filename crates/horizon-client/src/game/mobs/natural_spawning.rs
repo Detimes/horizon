@@ -1166,6 +1166,9 @@ impl<'a> Game<'a> {
                 self.next_entity += 1;
                 links.insert(mob.id, self.next_entity);
                 mob.id = self.next_entity;
+                if let Some(reason) = mob.spawn_reason.take() {
+                    self.native_lifecycle.spawn_reasons.insert(mob.id, reason);
+                }
             }
         }
         for group in groups.iter_mut() {

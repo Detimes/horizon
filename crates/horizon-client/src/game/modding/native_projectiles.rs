@@ -251,8 +251,30 @@ impl Game<'_> {
     }
 
     /// `EntityTeleportEvent.EnderPearl` for `owner`'s pearl that hit `hit`:
-    /// the listeners' `(target, damage, cancel)` (`damage` is `None` when a listener skipped the hurt call), starting from `to` and `damage`.
+    /// the listeners' `(target, damage, cancel)`, starting from `to` and `damage`.
+    /// A listener that skipped the hurt call leaves `damage` as it was; see
+    /// `native_pearl_teleport_detail` for that answer.
+    #[allow(dead_code)]
     pub(in crate::game) fn native_pearl_teleport(
+        &mut self,
+        owner: mod_api::EntityRef,
+        pearl: u32,
+        from: Vec3,
+        to: Vec3,
+        mut damage: f32,
+        hit: Hit,
+    ) -> ([f64; 3], f32, bool) {
+        let (target, answer, cancel) =
+            self.native_pearl_teleport_detail(owner, pearl, from, to, damage, hit);
+        if let Some(answer) = answer {
+            damage = answer;
+        }
+        (target, damage, cancel)
+    }
+
+    /// `native_pearl_teleport` with the damage as the listeners left it: `None` when one
+    /// skipped the hurt call.
+    pub(in crate::game) fn native_pearl_teleport_detail(
         &mut self,
         owner: mod_api::EntityRef,
         pearl: u32,
@@ -741,7 +763,7 @@ mod pearl_hit_tests {
                     who: Who::Mob(SPECIAL + 2),
                     at: Vec3::new(1.5, 64.5, -0.5),
                 };
-                let (target, damage, cancel) = game.native_pearl_teleport(
+                let (target, damage, cancel) = game.native_pearl_teleport_detail(
                     owner,
                     9,
                     Vec3::ZERO,
@@ -749,7 +771,10 @@ mod pearl_hit_tests {
                     0.0,
                     hit,
                 );
-                assert_eq!((target, damage, cancel), ([1.0, 2.0, 3.0], Some(0.0), false));
+                assert_eq!(
+                    (target, damage, cancel),
+                    ([1.0, 2.0, 3.0], Some(0.0), false)
+                );
                 assert_eq!(*heard.lock().unwrap(), [(Some(225009), [1, 64, -1])]);
             });
         });
@@ -789,7 +814,7 @@ mod pearl_hit_tests {
                     who: Who::Mob(SPECIAL + 2),
                     at: Vec3::new(1.5, 64.5, -0.5),
                 };
-                let (target, damage, cancel) = game.native_pearl_teleport(
+                let (target, damage, cancel) = game.native_pearl_teleport_detail(
                     owner,
                     9,
                     Vec3::ZERO,

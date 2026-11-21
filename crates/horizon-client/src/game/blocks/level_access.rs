@@ -212,7 +212,7 @@ impl LevelAccess for GameLevel<'_> {
         }
     }
     fn allow_block_burn(&self, pos: BlockPos, igniting: Option<BlockPos>) -> bool {
-        self.block_burn_allowed(pos, igniting)
+        self.block_burn_allowed_from(pos, igniting)
     }
     fn allow_leaves_decay(&self, pos: BlockPos) -> bool {
         let mut cancel = false;

@@ -498,6 +498,10 @@ impl Game<'_> {
                 &mut cancel,
             );
             if cancel {
+                // `open_text_edit` reserved the sign for this player first: a canceled open gives it back.
+                if !self.other_player_is_editing_sign(pos) {
+                    self.world.block_entities.set_sign_editor(pos, None);
+                }
                 return;
             }
         }

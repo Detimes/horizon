@@ -1077,6 +1077,9 @@ impl Game<'_> {
         spawner: Option<mod_api::SpawnSource>,
         group: &mut Option<Group>,
     ) -> (Finalized, spawning::LocalDifficulty) {
+        // Natural and spawner mobs carry a provisional id until the pass ends: the reason
+        // travels with the body to its real id (`resolve_spawn_ids`).
+        mob.spawn_reason = Some(reason);
         let at = [mob.position.x, mob.position.y, mob.position.z];
         let difficulty = self.local_difficulty(at);
         if !mod_api::__private::listened(mod_api::HookId::FinalizeSpawn) {
@@ -5229,7 +5232,7 @@ impl Game<'_> {
         let dimension = self.dim;
         let _: std::result::Result<(), ()> = mod_api::run_transaction(self, |game, _| {
             let (mut target, _, cancel) =
-                game.native_pearl_teleport(owner, pearl.id, from, pearl.previous, 0.0, hit);
+                game.native_pearl_teleport_detail(owner, pearl.id, from, pearl.previous, 0.0, hit);
             // Listener writes stay in the transaction; never overwrite a changed,
             // dead, sleeping or removed owner using the old decision.
             if cancel
@@ -5912,7 +5915,7 @@ impl Game<'_> {
                     let dimension = self.dim;
                     let target;
                     (target, damage, cancel) =
-                        self.native_pearl_teleport(owner, p.id, from, to, 5.0, hit);
+                        self.native_pearl_teleport_detail(owner, p.id, from, to, 5.0, hit);
                     cancel |= self.dim != dimension
                         || self.player.as_ref().is_none_or(|pl| pl.position != from)
                         || self.native_acting_player().map(|player| player.entity()) != Some(owner);

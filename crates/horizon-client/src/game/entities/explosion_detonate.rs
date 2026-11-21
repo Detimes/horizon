@@ -24,7 +24,10 @@ impl Game<'_> {
         blocks: &mut Vec<[i32; 3]>,
     ) {
         // `ServerExplosion.hurtEntities` fires it only for a radius of at least 0.00001.
-        if radius < 1.0e-5 || !mod_api::__private::listened(mod_api::HookId::ExplosionDetonate) {
+        if radius < 1.0e-5
+            || !(mod_api::__private::listened(mod_api::HookId::ExplosionDetonate)
+                || mod_api::__private::listened(mod_api::HookId::ExplosionDetonateDetail))
+        {
             return;
         }
         let reach = f64::from(radius) * 2.0 + 1.0;
@@ -157,7 +160,9 @@ mod tests {
     use crate::game::native_entity_refs::tests::with_game;
     use horizon_client::mobs::Mob;
     use horizon_core::{geometry::Vec3, random::RandomSource};
-    use mod_api::{EntityRef, ExplosionDetonateDetailEvent, ExplosionDetonateEvent, Hooks, ServerHost};
+    use mod_api::{
+        EntityRef, ExplosionDetonateDetailEvent, ExplosionDetonateEvent, Hooks, ServerHost,
+    };
     use std::sync::{Arc, Mutex};
 
     struct Noop;

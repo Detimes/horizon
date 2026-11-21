@@ -13,9 +13,15 @@ impl GameLevel<'_> {
         !cancel
     }
 
+    /// `allow_block_burn`: the `block_burn` hook's cancel.
+    #[allow(dead_code)]
+    pub(in crate::game) fn block_burn_allowed(&self, pos: BlockPos) -> bool {
+        self.block_burn_allowed_from(pos, None)
+    }
+
     /// `allow_block_burn`: the `block_burn` and `block_burn_detail` hooks' cancel. `igniting` is
     /// the fire that burns the block.
-    pub(in crate::game) fn block_burn_allowed(
+    pub(in crate::game) fn block_burn_allowed_from(
         &self,
         pos: BlockPos,
         igniting: Option<BlockPos>,

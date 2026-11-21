@@ -502,6 +502,44 @@ impl Game<'_> {
         true
     }
 
+    /// `player_take_lectern_book_cancel` for a guest's Take Book on lectern window `window`.
+    fn lan_lectern_take_canceled(&mut self, conn: u32, window: i32) -> bool {
+        let Some(key) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.play.get(&conn))
+            .and_then(|p| p.lectern.as_ref())
+            .filter(|l| l.window == window)
+            .map(|l| l.key)
+        else {
+            return false;
+        };
+        let Some(BlockEntity::Lectern(lectern)) = self.world.block_entities.get(&key) else {
+            return false;
+        };
+        let Some(book) = lectern.book.as_ref().map(|book| book.item.clone()) else {
+            return false;
+        };
+        let Some((player, name)) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guest(conn))
+            .filter(|g| !g.spectator())
+            .map(|g| (g.uuid, g.name.clone()))
+        else {
+            return false;
+        };
+        let mut cancel = false;
+        self.native_player_take_lectern_book_cancel(
+            player,
+            &name,
+            [key.0, key.1, key.2],
+            &book,
+            &mut cancel,
+        );
+        cancel
+    }
+
     /// A click on the guest's lectern window; false for other windows.
     pub(super) fn lan_lectern_click(&mut self, conn: u32, p: &play::ContainerClick) -> bool {
         self.lan_lectern_op(conn, p.container, |menu, env| {
@@ -811,7 +849,11 @@ impl Game<'_> {
             }
             return;
         }
-        // LecternMenu's page buttons and Take Book.
+        // LecternMenu's page buttons and Take Book. A listener may keep the book on the lectern.
+        if id == 3 && self.lan_lectern_take_canceled(conn, window) {
+            self.lan_send_lectern(conn, true);
+            return;
+        }
         if self.lan_lectern_op(conn, window, |menu, env| {
             menu.button(env, id);
         }) {
