@@ -8,6 +8,8 @@ use crate::{PermissionLevel, PlayerRef, ServerHost, Text};
 pub const MAX_NODE_NAME_LEN: usize = 256;
 /// The most child nodes one `add_with_children` declaration grants.
 pub const MAX_CHILDREN: usize = 256;
+/// The most declared Boolean nodes one prefix query may match; a prefix that matches more is refused.
+pub const MAX_PREFIX_MATCHES: usize = 1024;
 /// The most contexts one query accepts.
 pub const MAX_CONTEXTS: usize = 32;
 /// The longest accepted context key, in bytes.
@@ -172,16 +174,41 @@ pub trait PermissionNodes {
     ) -> Result<(), PermissionError>;
 }
 
+fn segment_ok(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
 /// Refuses a node name that is empty, longer than [`MAX_NODE_NAME_LEN`], or not made of
-/// non-empty dot-separated segments of ASCII letters, digits, `_` and `-`. Side: server.
+/// non-empty dot-separated segments of ASCII letters, digits, `_` and `-`. The last segment may
+/// instead be a lone `*` after at least one other segment: a wildcard node such as
+/// `citizens.npc.*`, which is an ordinary node whose name ends in `.*`: no handler is asked to
+/// expand it, and a prefix query (`permission_nodes_with_prefix`) counts it under its prefix.
+/// Side: server.
 pub fn check_node_name(name: &str) -> Result<(), PermissionError> {
-    let segment_ok = |segment: &str| {
-        !segment.is_empty()
-            && segment
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    let (stem, last) = match name.rsplit_once('.') {
+        Some((stem, last)) => (Some(stem), last),
+        None => (None, name),
     };
-    if name.len() > MAX_NODE_NAME_LEN || !name.split('.').all(segment_ok) {
+    let last_ok = segment_ok(last) || (last == "*" && stem.is_some());
+    if name.len() > MAX_NODE_NAME_LEN || !last_ok || !stem.is_none_or(|s| s.split('.').all(segment_ok))
+    {
+        return Err(PermissionError::InvalidInput);
+    }
+    Ok(())
+}
+
+/// Refuses a prefix that is empty, longer than [`MAX_NODE_NAME_LEN`], does not end in `.` or is
+/// not made of non-empty dot-separated segments of ASCII letters, digits, `_` and `-` followed by
+/// that final dot. A prefix names whole segments, so `jobs.boost.` matches `jobs.boost.miner` and
+/// not `jobs.boosted`. Side: server.
+pub fn check_node_prefix(prefix: &str) -> Result<(), PermissionError> {
+    let Some(stem) = prefix.strip_suffix('.') else {
+        return Err(PermissionError::InvalidInput);
+    };
+    if prefix.len() > MAX_NODE_NAME_LEN || !stem.split('.').all(segment_ok) {
         return Err(PermissionError::InvalidInput);
     }
     Ok(())
@@ -224,5 +251,34 @@ impl PlayerRef {
             PermissionValue::Boolean(answer) => Ok(answer),
             _ => Err(PermissionError::WrongType),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wildcard_node_is_a_lone_star_after_a_segment() {
+        for ok in ["citizens.npc.*", "a.*", "a.b-c_d.*", "a.b"] {
+            assert_eq!(check_node_name(ok), Ok(()), "{ok}");
+        }
+        for bad in ["*", "", "a.*.b", "a.b*", "a.**", "*.a", "a..*", ".*", "a.*.", "a.b c"] {
+            assert_eq!(check_node_name(bad), Err(PermissionError::InvalidInput), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_prefix_ends_in_a_dot_after_whole_segments() {
+        for ok in ["jobs.", "jobs.boost.", "a-b.c_d."] {
+            assert_eq!(check_node_prefix(ok), Ok(()), "{ok}");
+        }
+        for bad in ["", ".", "jobs", "jobs.boost", "jobs..", ".jobs.", "jobs.*.", "a b."] {
+            assert_eq!(check_node_prefix(bad), Err(PermissionError::InvalidInput), "{bad}");
+        }
+        assert_eq!(
+            check_node_prefix(&format!("{}.", "a".repeat(MAX_NODE_NAME_LEN))),
+            Err(PermissionError::InvalidInput)
+        );
     }
 }

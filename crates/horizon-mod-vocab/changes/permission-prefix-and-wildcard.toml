@@ -1,0 +1,3 @@
+ids = ["method:prelude::PlayersServerHost::permission_nodes_with_prefix", "method:prelude::PlayersServerHost::permission_query_prefix"]
+why = "Adds PlayersServerHost::permission_nodes_with_prefix and permission_query_prefix (typed permission nodes, #17831): ask every declared Boolean node under a segment prefix (`jobs.boost.`) for a player, for grouped settings. check_node_name also accepts a wildcard node, whose last segment is a lone `*` (`citizens.npc.*`): an ordinary node, not expanded by any handler. A prefix matching more than 1024 nodes is refused."
+migrate = "Additive. Names with a final `*` segment were refused before and are accepted now."

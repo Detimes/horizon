@@ -123,6 +123,36 @@ pub trait PlayersServerHost {
         node: &PermissionNode,
         default: &NodeDefault,
     ) -> Result<(), PermissionError>;
+    /// Side: server.
+    /// The names of the declared Boolean nodes under `prefix` that the selected handler answers
+    /// `true` for `uuid`, sorted by name: the question a numbered or grouped setting asks
+    /// (`jobs.boost.` for every boost a player holds, `quickshop.bypass.` for every bypass). A
+    /// prefix names whole segments and ends in a dot (`jobs.boost.` matches `jobs.boost.miner`,
+    /// not `jobs.boosted`); a wildcard node (`jobs.boost.*`) is counted under it like any other
+    /// node, and no handler is asked to expand it. Every matching node is asked once, in name
+    /// order, with `contexts`, as `permission_query` asks it. Refuses with `InvalidInput` for a
+    /// prefix that breaks the rule or matches more than 1024 Boolean nodes (narrow it), with the
+    /// error of the first node whose query fails (`HandlerFailed` and the others of
+    /// `permission_query`, never a partial list), with `NotInitialized` before gathering and with
+    /// `Recursive` from inside a handler's answer.
+    #[access(WorldOnly)]
+    fn permission_nodes_with_prefix(
+        &mut self,
+        prefix: &str,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<Vec<String>, PermissionError>;
+    /// Side: server.
+    /// Whether the selected handler answers `true` for `uuid` for any declared Boolean node under
+    /// `prefix`: `permission_nodes_with_prefix` is not empty, with the same prefix rule and
+    /// refusals. It stops at the first granted node.
+    #[access(WorldOnly)]
+    fn permission_query_prefix(
+        &mut self,
+        prefix: &str,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<bool, PermissionError>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]

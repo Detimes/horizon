@@ -69,6 +69,8 @@ string and component errors must not be read as a Boolean denial.
 |---|---|
 | `permission_query(node, uuid, contexts)` | Returns `Result<PermissionValue, PermissionError>`: the node's typed value from the selected handler. |
 | `permission_bool(player, &node)` | The same for a Boolean node and a connected player, as `Result<bool, PermissionError>`. |
+| `permission_nodes_with_prefix(prefix, uuid, contexts)` | The names of the declared Boolean nodes under `prefix` that the handler answers `true` for `uuid`, sorted. |
+| `permission_query_prefix(prefix, uuid, contexts)` | Whether any of them is granted: the list is not empty. |
 
 `PermissionError` names each refusal: `NotInitialized` (a query before the service is ready), `Unregistered`
 (an unknown node, never an implicit registration), `DuplicateNode`, `DuplicateHandler`, `WrongType`,
@@ -78,8 +80,23 @@ server and `None` for an offline UUID; ask `host.player(uuid)` for the handle. `
 can answer from it: a `Level` against the player's operator level, a `Value` as it is. A failed query changes nothing and grants nothing.
 
 Queries take no cache and write nothing. A node decision does not fire `permissions_changed`, and that hook
-does not report node decisions. There are no wildcards, no hierarchy and no namespace ownership: a node name
-means exactly what it spells.
+does not report node decisions. There is no hierarchy and no namespace ownership: a node name means exactly what it spells, and no handler is
+asked to expand a wildcard.
+
+## Prefixes and wildcard nodes
+
+A prefix query asks every declared Boolean node whose name starts with the prefix, for settings that come as a
+group (`jobs.boost.` for every boost a player holds, `quickshop.bypass.` for every bypass). A prefix names whole
+segments and ends in a dot: `jobs.boost.` matches `jobs.boost.miner`, not `jobs.boosted`. Each matching node is
+one query, in name order; the first failure is the result and no partial list is returned. A prefix that matches
+more than 1024 Boolean nodes is refused (`InvalidInput`): narrow it. `permission_query_prefix` stops at the first
+granted node.
+
+A wildcard node is an ordinary node whose last segment is `*` (`citizens.npc.*`), declared like any other. It
+answers its own queries; it grants nothing under it by itself, and the built-in handler does not expand it. A
+handler that gives `citizens.npc.*` to a player decides what that means, and a prefix query counts the wildcard
+node under its prefix, so `permission_query_prefix("citizens.npc.", ..)` is true for a player who holds it. `*`
+is accepted only as the last segment, after at least one other segment.
 
 Put the check at the server-side point where the action happens, and refuse the action on any error.
 

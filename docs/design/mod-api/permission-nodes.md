@@ -12,7 +12,7 @@ The existing `permissions_changed` hook is different: the catalog declaration is
 
 ## Nodes and queries
 
-Node identity is its case-sensitive dot-separated name plus value type, not name alone. Built-in value types include Boolean, integer, string and text component. There is no implicit hierarchy, wildcard matching or namespace ownership restriction. Duplicate typed nodes are registration errors, even within one mod; the same name with different types denotes different nodes.
+Node identity is its case-sensitive dot-separated name plus value type, not name alone. Built-in value types include Boolean, integer, string and text component. There is no implicit hierarchy, wildcard matching or namespace ownership restriction. Two explicit additions stay inside that: a node whose last segment is `*` is declared and queried as an ordinary node, and a prefix query asks every declared Boolean node under a segment prefix, one query each; neither makes a handler expand anything. Duplicate typed nodes are registration errors, even within one mod; the same name with different types denotes different nodes.
 
 Each node declares a mod-written default resolver receiving an optional online player, the player's UUID and dynamic contexts. Context keys are typed and have serialization contracts. Undeclared context keys are ignored; not every declared key must be supplied. Defaults are evaluated at query time, not gathering time. Online queries and offline UUID queries return the node's typed value or an explicit error. An unregistered query is an error, never an implicit registration or grant. Clients cannot authorize server actions.
 
