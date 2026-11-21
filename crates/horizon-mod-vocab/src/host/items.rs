@@ -21,6 +21,13 @@ pub trait ItemsHost {
     #[access(Metadata)]
     fn item_key(&self, id: &Identifier) -> Option<ItemKey>;
     /// Side: both.
+    /// Every item id the completed registry holds, in registry order: vanilla's first, mod
+    /// items after them, each id once (`Material.values()`, as Bukkit lists the materials). A
+    /// mod uses it to offer item names, such as tab completion; it reads no stack and changes
+    /// nothing.
+    #[access(Metadata)]
+    fn item_ids(&self) -> Vec<Identifier>;
+    /// Side: both.
     /// Item `item`'s default value of component `component`, in its prototype
     /// (`Item.components().get`): `minecraft:max_damage` on an iron sword is `250`, data
     /// packs' and native mods' changes included. Read from the item report's JSON, so a

@@ -186,3 +186,17 @@ fn item_to_snbt_reads_back_through_item_from_snbt() {
         assert!(host.item_to_snbt(&ItemStack::new(air, 1).unwrap()).is_none());
     });
 }
+
+/// `item_ids` lists every item the registry holds, once each, and finds the vanilla ones.
+#[test]
+#[ignore = "daily"]
+fn item_ids_lists_every_registered_item() {
+    with_guests(|game| {
+        let host: &dyn Host = game;
+        let ids = host.item_ids();
+        assert_eq!(ids.len(), game.item_keys().len());
+        let stone = Identifier::parse("minecraft:stone").unwrap();
+        assert!(ids.contains(&stone));
+        assert!(host.item_key(&stone).is_some());
+    });
+}
