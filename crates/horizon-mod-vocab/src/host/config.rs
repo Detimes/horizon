@@ -16,6 +16,14 @@ pub trait ConfigHost {
     /// game build, not the version of a remote server or an older save.
     #[access(Metadata)]
     fn server_data_version(&self) -> i32;
+    /// The network protocol number of this game build (`SharedConstants.getProtocolVersion()`, 777 for 26.3).
+    /// Constant on both sides, before a world is open.
+    #[access(Metadata)]
+    fn game_protocol_version(&self) -> i32;
+    /// The Minecraft version name of `protocol`, such as "26.3", for this build's own protocol number. None for any
+    /// other number: this build carries no names of older protocols.
+    #[access(Metadata)]
+    fn protocol_name(&self, protocol: i32) -> Option<&'static str>;
     /// Horizon version printed in crash reports.
     #[access(Metadata)]
     fn horizon_version(&self) -> &'static str;
