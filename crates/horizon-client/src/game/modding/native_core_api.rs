@@ -20,7 +20,8 @@ impl Game<'_> {
         required: bool,
         prompt: Option<&str>,
     ) -> bool {
-        let hash_fits = sha1.is_empty() || (sha1.len() == 40 && sha1.bytes().all(|b| b.is_ascii_hexdigit()));
+        let hash_fits =
+            sha1.is_empty() || (sha1.len() == 40 && sha1.bytes().all(|b| b.is_ascii_hexdigit()));
         if url.is_empty() || url.chars().count() > MAX_URL_CHARS || !hash_fits {
             return false;
         }
@@ -35,8 +36,9 @@ impl Game<'_> {
             url: url.to_owned(),
             hash: sha1.to_owned(),
             required,
-            prompt: prompt
-                .map(|text| horizon_client::lan::conn::component_tag(&Json::String(text.to_owned()))),
+            prompt: prompt.map(|text| {
+                horizon_client::lan::conn::component_tag(&Json::String(text.to_owned()))
+            }),
         }));
         true
     }
@@ -78,19 +80,44 @@ impl Game<'_> {
         }
         let mut reader = horizon_client::command::Reader::new(token);
         let selector =
-            horizon_client::command::selector::parse(&mut reader, &self.ui.registries, true).ok()?;
+            horizon_client::command::selector::parse(&mut reader, &self.ui.registries, true)
+                .ok()?;
         if reader.can_read() {
             return None;
         }
+        // A fake player has no command source of its own to select from.
+        use super::native_server::PlayerRead;
+        match self.player_handle_read(player)? {
+            PlayerRead::Acting { .. } if self.lan_acting_fake => return None,
+            PlayerRead::Guest(guest) if guest.is_fake() => return None,
+            _ => {}
+        }
         let mut found = None;
         let reached = self.native_as_player_handle(player, |game| {
+            // The requested player is the source, not a console or `/execute` one this call came
+            // from: no source means the player in place.
+            let outer = game.command_source.take();
             let targets = game.select(&selector);
-            found = Some(
-                targets
-                    .into_iter()
-                    .filter_map(|t| game.selected_entity(t))
-                    .collect(),
-            );
+            let home = game.dim;
+            let dims = game.loaded_dims();
+            let mut entities = Vec::new();
+            for t in targets {
+                // The selector reaches every loaded level: each target is read in its own.
+                let mut entity = game.selected_entity(t);
+                for &dim in dims.iter().filter(|&&d| d != home) {
+                    if entity.is_some() {
+                        break;
+                    }
+                    let back = game.enter_command_level(dim);
+                    entity = game.selected_entity(t);
+                    if let Some(back) = back {
+                        game.enter_command_level(back);
+                    }
+                }
+                entities.extend(entity);
+            }
+            game.command_source = outer;
+            found = Some(entities);
         });
         found.filter(|_| reached)
     }

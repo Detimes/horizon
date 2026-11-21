@@ -22,6 +22,14 @@ impl Game<'_> {
         if self.remote.is_some() {
             return;
         }
+        // A player's effect ids are bare registry paths: the hook reports namespaced ones.
+        let namespaced;
+        let effect = if effect.contains(':') {
+            effect
+        } else {
+            namespaced = format!("minecraft:{effect}");
+            &namespaced
+        };
         self.native_mob_effect_added_detail(mod_api::__private::MobEffectAddedDetailCall {
             effect,
             entity,

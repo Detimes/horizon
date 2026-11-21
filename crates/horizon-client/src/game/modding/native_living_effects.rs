@@ -111,7 +111,7 @@ impl Game<'_> {
         instance.show_icon = effect.show_icon;
         match self.native_living_target(living) {
             Some(t @ (Target::Player | Target::Guest(_))) => self
-                .for_player(t, |g| g.add_player_effect(instance))
+                .for_player(t, |g| g.add_player_effect_by(instance, "plugin"))
                 .unwrap_or(false),
             Some(Target::Mob(id)) => {
                 let Some(m) = self.mobs.iter().find(|m| m.id == id && !m.removed) else {

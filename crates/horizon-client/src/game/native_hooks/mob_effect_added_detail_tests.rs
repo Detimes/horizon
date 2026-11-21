@@ -36,6 +36,8 @@ mod tests {
             crate::game::native_guest_turn_tests::with_guests(|game| {
                 game.effect_added_detail("minecraft:bad_omen", Some(7), 1, 120000, true, "command");
                 game.effect_added_detail("minecraft:speed", None, 0, -1, false, "unknown");
+                // A player's effect id is a bare path: it is reported namespaced.
+                game.effect_added_detail("haste", None, 0, 20, true, "plugin");
                 assert_eq!(
                     *heard.lock().unwrap(),
                     [
@@ -54,6 +56,14 @@ mod tests {
                             -1,
                             false,
                             "unknown".to_owned()
+                        ),
+                        (
+                            "minecraft:haste".to_owned(),
+                            None,
+                            0,
+                            20,
+                            true,
+                            "plugin".to_owned()
                         ),
                     ]
                 );

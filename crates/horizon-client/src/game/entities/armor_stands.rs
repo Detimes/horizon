@@ -951,7 +951,12 @@ impl Game<'_> {
         always_kills: bool,
         by: Option<super::commands::Target>,
     ) -> bool {
-        self.stand_damaged(self.armor_stands[i].id, "minecraft:player_attack", self.own_entity_id() as u32);
+        let id = self.armor_stands[i].id;
+        self.stand_damaged(id, "minecraft:player_attack", self.own_entity_id() as u32);
+        // A damage listener may have removed this or another stand: find it again.
+        let Some(i) = self.armor_stands.iter().position(|a| a.id == id) else {
+            return true;
+        };
         let time = self.world.game_time;
         let at = self.armor_stands[i].position;
         let at = [at.x, at.y, at.z];
@@ -1184,13 +1189,16 @@ impl Game<'_> {
                     )
                 },
             ) {
-                dead.push((i, damage_type));
+                dead.push((id, damage_type));
             }
             let (id, from, to) = section_step;
             self.entity_section_step(id, [from.x, from.y, from.z], [to.x, to.y, to.z]);
         }
-        for (i, damage_type) in dead.into_iter().rev() {
-            self.break_armor_stand_by_anything(i, damage_type, 0);
+        // By id: a damage listener run for an earlier death may have removed a stand.
+        for (id, damage_type) in dead {
+            if let Some(i) = self.armor_stands.iter().position(|a| a.id == id) {
+                self.break_armor_stand_by_anything(i, damage_type, 0);
+            }
         }
         Ok(())
     }
@@ -1422,7 +1430,12 @@ impl Game<'_> {
         damage_type: &str,
         causing: u32,
     ) {
-        self.stand_damaged(self.armor_stands[i].id, damage_type, causing);
+        let id = self.armor_stands[i].id;
+        self.stand_damaged(id, damage_type, causing);
+        // A damage listener may have removed this or another stand: find it again.
+        let Some(i) = self.armor_stands.iter().position(|a| a.id == id) else {
+            return;
+        };
         let a = self.armor_stands.remove(i);
         let at = [a.position.x, a.position.y, a.position.z];
         self.armor_stand_death_drops(&a, damage_type, causing);
