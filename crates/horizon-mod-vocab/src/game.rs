@@ -135,7 +135,6 @@ pub enum NbtUpgradeError {
 }
 /// The saved data kinds `data_fix` upgrades: the same three the upgrade methods take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 #[derive(horizon_mod_api_macros::Wire)]
 pub enum DataKind {
     /// A block state, `{Name, Properties}`, as `upgrade_block_state_nbt` takes it.

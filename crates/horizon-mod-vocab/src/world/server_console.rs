@@ -16,7 +16,6 @@ pub enum PlayerLimitRefusal {
 
 /// Which of the dedicated server's two ban lists a call reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 #[derive(horizon_mod_api_macros::Wire)]
 pub enum BanListKind {
     /// Name bans, `banned-players.json` (Paper's `BanList.Type.PROFILE`).
@@ -27,7 +26,6 @@ pub enum BanListKind {
 
 /// One entry of a ban list (Paper's `BanEntry`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 #[derive(horizon_mod_api_macros::Wire)]
 pub struct BanRecord {
     /// The banned player's UUID; `None` for an address ban.
