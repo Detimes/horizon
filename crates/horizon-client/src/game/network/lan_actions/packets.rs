@@ -552,7 +552,12 @@ impl Game<'_> {
                     (g.uuid, g.name.clone(), item)
                 };
                 let hand_name = if hand == Hand::Off { "offhand" } else { "mainhand" };
-                self.native_player_air_right_click(player, &name, hand_name, &item);
+                self.native_player_air_right_click(mod_api::__private::PlayerAirRightClickCall {
+                    player,
+                    name: &name,
+                    hand: hand_name,
+                    item: &item,
+                });
                 let _ = self.guest_use_item(conn, gi, hand, Some((p.yaw, p.pitch)));
             }
             S::Attack(p) => {

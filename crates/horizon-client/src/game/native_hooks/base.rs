@@ -2213,7 +2213,7 @@ impl Game<'_> {
     pub(in crate::game) fn native_player_death_message(
         &mut self,
         player: u128,
-        message: &mut Option<horizon_client::text::Text>,
+        message: &mut Option<Text>,
     ) {
         self.fire_player_death_message(player, message);
     }
@@ -2294,7 +2294,7 @@ impl Game<'_> {
         entity_id: i32,
         entity: &str,
     ) {
-        let _ = (player, name, entity_id, entity);
+        self.fire_player_milk_entity(player, name, entity_id, entity);
     }
     /// A server player changed a beacon's selected effects, after they were stored. Each selected
     /// effect is its load-owned key; None means no effect. Server-side.
@@ -3215,12 +3215,9 @@ impl Game<'_> {
     /// id (`minecraft:air` for an empty hand). Server-side.
     pub(in crate::game) fn native_player_air_right_click(
         &mut self,
-        player: u128,
-        name: &str,
-        hand: &str,
-        item: &str,
+        call: mod_api::__private::PlayerAirRightClickCall<'_>,
     ) {
-        self.fire_player_air_right_click(player, name, hand, item);
+        self.fire_player_air_right_click(call);
     }
     /// A guest's accepted movement made the server jump them from the ground. Server-side.
     pub(in crate::game) fn native_player_jump(&mut self, player: u128, name: &str) {
