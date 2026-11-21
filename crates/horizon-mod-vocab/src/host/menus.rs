@@ -121,6 +121,12 @@ pub trait MenusBackend {
     #[access(WorldOnly)]
     fn menu_carried(&self, menu: MenuRef) -> Option<Option<ItemStack>>;
     /// Side: server.
+    /// Every slot of `menu` in slot order, `None` for an empty slot, as `menu_slot` reads them one by
+    /// one. Meant for a `menu_closed` listener: the closing menu is still lent there, so its contents
+    /// are read before they are gone (Paper: `InventoryCloseEvent#getInventory`). `None` for a stale
+    /// menu, a client's menu or a read refused by `menu_slot`. Read-only.
+    fn menu_contents(&self, menu: MenuRef) -> Option<Vec<Option<ItemStack>>>;
+    /// Side: server.
     /// The storage menu slot `slot` shows (`Slot.container` and `getContainerSlot`): the
     /// player's inventory by `ENTITY_ITEMS` index (`InventoryMenu`'s armour slots 5..9 go head
     /// to feet), a block entity's or an entity's slot, the ender chest's, the crafting grid's
