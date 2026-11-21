@@ -6293,7 +6293,10 @@ mod tests {
                 .into_iter()
                 .filter_map(|p| match p {
                     play::Clientbound::PlayerInfoUpdate(update) if update.actions == 0x20 => {
-                        Some((update.entries[0].uuid, update.entries[0].display_name.clone()))
+                        Some((
+                            update.entries[0].uuid,
+                            update.entries[0].display_name.clone(),
+                        ))
                     }
                     _ => None,
                 })
