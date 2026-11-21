@@ -589,8 +589,6 @@ mod tests {
     #[test]
     fn entity_set_swimming_writes_a_players_flag_and_refuses_a_mob() {
         fn fake_swimming<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut bool {
-    fn entity_set_fall_distance_writes_a_mob_or_guest_and_refuses_the_rest() {
-        fn fake_fall<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut f64 {
             let host = game.lan.as_mut().unwrap();
             let conn = host.hub.guests.iter().find(|g| g.uuid == 2).unwrap().conn;
             &mut host
@@ -599,7 +597,6 @@ mod tests {
                 .motion_mut(conn)
                 .expect("a fake has a motion")
                 .swimming
-                .fall_distance
         }
         super::super::native_entity_refs::tests::with_game(|game| {
             super::super::bossbars::audience_tests::add_real_and_fake(game);
@@ -621,6 +618,31 @@ mod tests {
             assert!(*fake_swimming(game));
             assert!(game.entity_set_swimming(fake, false));
             assert!(!*fake_swimming(game));
+        });
+    }
+
+    #[test]
+    fn entity_set_fall_distance_writes_a_mob_or_guest_and_refuses_the_rest() {
+        fn fake_fall<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut f64 {
+            let host = game.lan.as_mut().unwrap();
+            let conn = host.hub.guests.iter().find(|g| g.uuid == 2).unwrap().conn;
+            &mut host
+                .hub
+                .guests
+                .motion_mut(conn)
+                .expect("a fake has a motion")
+                .fall_distance
+        }
+        super::super::native_entity_refs::tests::with_game(|game| {
+            super::super::bossbars::audience_tests::add_real_and_fake(game);
+            game.options.dedicated = Some(Vec::new());
+            let kind = game
+                .res
+                .mob_types()
+                .get("minecraft:zombie")
+                .unwrap()
+                .clone();
+            use horizon_client::mobs::Mob;
             game.mobs.push(Mob::new(40, kind, Vec3::ZERO, 0.0));
             let zombie = game.entity(40).unwrap();
             assert!(game.entity_set_fall_distance(zombie, 3.5));
