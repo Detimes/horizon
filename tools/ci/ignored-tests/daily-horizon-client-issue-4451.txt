@@ -1,5 +1,6 @@
 # Prepared-resource/descriptive-ignore inventory migration for arismoko/horizon#4451.
 # PACKAGE TEST TARGET daily REASON; exact logical libtest identities, sorted.
+horizon-client game::advancements::award_cancel_tests::a_canceled_advancement_completion_is_withheld lib daily resources
 horizon-client game::advancements::custom_data_equipment_tests::actual_mob_equipment_projects_typed_custom_data_into_named_predicate_evaluation lib daily resources
 horizon-client game::advancements::inventory_changed_tests::a_changed_inventory_is_heard_once_with_its_41_slots lib daily resources
 horizon-client game::advancements::movement_predicate_tests::actual_registered_movement_predicate_uses_admitted_mob lib daily resources
@@ -543,6 +544,7 @@ horizon-client game::enchant_effects::tests::mob_armour_obeys_negative_cancel_an
 horizon-client game::enchant_effects::tests::thorns_and_boots_wear_break_the_equipped_piece lib daily resources
 horizon-client game::enchant_power_beam_tests::block_parts_answer_the_enchanting_power_and_the_beam_colour lib daily resources
 horizon-client game::enchant_power_beam_tests::enchant_particles_share_native_power_and_rebuild_only_on_parts_reload lib daily resources
+horizon-client game::end::portal_create_detail_tests::an_end_platform_is_told_with_an_empty_block_list lib daily resources
 horizon-client game::end::tests::a_pearl_reads_its_end_gateway_cooldown_and_refuses_the_write lib daily resources
 horizon-client game::end::tests::an_entity_keeps_its_motion_through_a_gateway lib daily resources
 horizon-client game::end::ticking_tests::a_ticking_gateway_counts_its_age_in_its_block_entity lib daily resources
@@ -610,6 +612,7 @@ horizon-client game::explosion::explosion_part_tests::block_parts_xp_and_explosi
 horizon-client game::explosion::shulker_lock_drop_tests::destruction_captures_the_external_shulker_lock_before_removal lib daily resources
 horizon-client game::explosion::tests::explosion_and_mob_breaks_apply_block_drops lib daily resources
 horizon-client game::explosion::tests::rays_reusing_their_last_block_explode_what_each_step_did lib daily resources
+horizon-client game::explosion_detonate::tests::the_detail_event_names_the_exploding_source lib daily resources
 horizon-client game::falling_air_tick_tests::loaded_air_is_discarded_on_first_actual_game_tick lib daily resources
 horizon-client game::falling_blocks::geometry_tests::falling_model_cache_matches_direct_vertices lib daily resources
 horizon-client game::falling_damage::helmet_tests::falling_impacts_wear_the_helmet_before_normal_armor_and_reduction lib daily resources
@@ -630,6 +633,7 @@ horizon-client game::finalize_spawn::tests::halloween_pumpkins_only_undead_on_ha
 horizon-client game::finalize_spawn::tests::runtime_spawns_run_the_mob_finalize_spawn lib daily resources
 horizon-client game::finalize_spawn::tests::runtime_wither_skeletons_hit_for_four lib daily resources
 horizon-client game::finalize_spawn::tests::the_striders_piglin_rider_needs_spawning_monsters lib daily resources
+horizon-client game::fireworks::elytra_boost_cancel_tests::a_canceled_elytra_boost_is_reported_back lib daily resources
 horizon-client game::fireworks::events_tests::a_detonating_rocket_posts_one_explode_from_its_owner lib daily resources
 horizon-client game::fireworks::events_tests::a_falling_rocket_hits_the_ground_and_one_in_water_splashes lib daily resources
 horizon-client game::fireworks::events_tests::a_silent_rocket_bursts_without_blast_or_twinkle lib daily resources
@@ -647,6 +651,7 @@ horizon-client game::fishing::fishing_catch_tests::fishing_catch_empty_keeps_dam
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_invalid_drops_keep_the_earlier_listeners_outputs lib daily child-process
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_noop_listener_preserves_randomness lib daily resources
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_replaces_rolled_stack lib daily resources
+horizon-client game::fishing::fishing_catch_tests::player_fish_reports_the_hooked_entity_on_a_reel_in lib daily resources
 horizon-client game::fishing::incoming_block_hit_tests::a_bobber_powers_a_target_block_and_counts_the_hit lib daily resources
 horizon-client game::fishing::incoming_block_hit_tests::a_bobber_rings_a_floor_bell_on_its_side lib daily resources
 horizon-client game::focused_text_field::tests::a_mod_edits_the_focused_box_before_each_character lib daily resources
@@ -881,8 +886,8 @@ horizon-client game::lan_menus_tests::a_lifted_host_comes_back_after_a_panic_and
 horizon-client game::lan_menus_tests::a_panicking_turn_leaves_play_state_and_menus_restored lib daily resources
 horizon-client game::lan_menus_tests::menu_owners_stay_reachable_through_nested_guest_turns lib daily resources
 horizon-client game::lan_menus_tests::removing_a_fake_player_drops_its_menu_owners lib daily resources
-horizon-client game::lan_mount_menu::tests::horse_inventory_click_keeps_complete_body_stack lib daily resources
 horizon-client game::lan_mount_menu::tests::a_dead_mounts_inventory_takes_no_click lib daily resources
+horizon-client game::lan_mount_menu::tests::horse_inventory_click_keeps_complete_body_stack lib daily resources
 horizon-client game::lan_trading::tests::a_lowered_level_still_levels_up_with_the_next_trade_set lib daily resources
 horizon-client game::lan_trading::tests::a_merchant_edit_reaches_the_guest_trading_with_it lib daily resources
 horizon-client game::lan_trading::tests::a_trade_hook_fired_by_a_real_select_can_write_the_open_trade lib daily resources
@@ -1172,6 +1177,7 @@ horizon-client game::native_damage_tests::unsubscribed_damage_does_not_convert l
 horizon-client game::native_data_bound::tests::a_remote_login_announces_the_client_cause_before_the_tags lib daily resources
 horizon-client game::native_data_bound::tests::defaults_are_announced_bound_before_the_tags lib daily resources
 horizon-client game::native_data_bound::tests::the_first_open_announces_bound_defaults_readable lib daily resources
+horizon-client game::native_datafix::tests::data_fix_names_its_refusals_and_keeps_current_data lib daily resources
 horizon-client game::native_datapack_refs::tests::level_registry_reads_check_world_session_and_generation lib daily resources
 horizon-client game::native_display_refs::tests::display_kinds_keep_their_own_state_and_refuse_the_others lib daily resources
 horizon-client game::native_display_refs::tests::display_writes_reach_entity_data_and_the_saved_entity lib daily resources
@@ -1467,6 +1473,7 @@ horizon-client game::native_hooks::death_source_tests::later_cancelled_player_re
 horizon-client game::native_hooks::death_source_tests::player_bow_death_retains_the_incoming_source_and_full_weapon lib daily resources
 horizon-client game::native_hooks::death_source_tests::skeleton_arrow_death_credits_the_skeleton_not_the_player lib daily resources
 horizon-client game::native_hooks::death_source_tests::zombie_ai_melee_armor_hurt_retains_the_real_source lib daily resources
+horizon-client game::native_hooks::detail_hook_tests::the_cancel_of_each_separate_hook_comes_back lib daily resources
 horizon-client game::native_hooks::enchanted_block_loot::tests::a_listener_sets_the_level_a_block_table_reads lib daily resources
 horizon-client game::native_hooks::entity_inside::entity_inside_tests::landing_writes_apply_at_the_batch_end lib daily resources
 horizon-client game::native_hooks::entity_inside::sweep_tests::a_killing_write_stops_the_flush lib daily resources
@@ -1855,11 +1862,11 @@ horizon-client game::native_player_food::tests::more_points_than_an_int_are_refu
 horizon-client game::native_player_food::tests::points_repair_a_damaged_mending_item_before_experience lib daily resources
 horizon-client game::native_player_modes::tests::item_use_follows_the_mode_the_stack_and_the_clicked_block lib daily resources
 horizon-client game::native_player_modes::tests::one_player_may_harm_another_by_the_pvp_rule_and_their_teams lib daily resources
+horizon-client game::native_player_move_packet_tests::a_packet_is_heard_with_its_flags_and_a_gone_guest_is_not lib daily resources
 horizon-client game::native_player_move_tests::a_veto_corrects_the_player_and_a_pass_commits_the_report lib daily resources
 horizon-client game::native_player_move_tests::a_veto_of_the_first_of_two_reports_in_one_tick_corrects_and_the_second_is_not_heard lib daily resources
 horizon-client game::native_player_move_tests::two_reports_in_one_tick_are_heard_in_order_each_from_the_one_before_when_both_pass lib daily resources
 horizon-client game::native_player_move_tests::two_reports_in_one_tick_with_no_listener_are_committed_in_the_one_pass lib daily resources
-horizon-client game::native_player_move_packet_tests::a_packet_is_heard_with_its_flags_and_a_gone_guest_is_not lib daily resources
 horizon-client game::native_player_spectating_tests::a_guests_camera_is_heard_starting_once_and_stopping lib daily resources
 horizon-client game::native_player_spectating_tests::a_target_that_is_gone_sets_no_camera_and_is_not_heard lib daily resources
 horizon-client game::native_player_spectating_tests::switching_straight_to_another_target_is_one_start_and_no_stop lib daily resources
@@ -1878,6 +1885,7 @@ horizon-client game::native_projectiles::impact_panic_tests::shoot_listener_pani
 horizon-client game::native_projectiles::nested_spawn_tests::impact_exposure_retains_the_existing_spawn_buffer_for_the_next_pass lib daily resources
 horizon-client game::native_projectiles::nested_spawn_tests::impact_handoff_balances_the_active_owner lib daily resources
 horizon-client game::native_projectiles::nested_spawn_tests::impact_handoff_balances_the_parked_owner lib daily resources
+horizon-client game::native_projectiles::pearl_hit_tests::a_damage_listener_can_skip_the_pearl_hurt_call_with_no_damage lib daily resources
 horizon-client game::native_projectiles::pearl_hit_tests::a_listening_mod_hears_the_pearls_hit_and_its_target_comes_back lib daily resources
 horizon-client game::native_projectiles::pearl_hit_tests::a_pearl_names_the_dragon_for_a_part_and_the_local_player_by_its_own_id lib daily resources
 horizon-client game::native_projectiles::pearl_hit_tests::a_pearl_tells_the_block_face_or_the_entity_it_hit lib daily resources
