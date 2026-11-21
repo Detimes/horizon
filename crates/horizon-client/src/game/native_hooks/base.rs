@@ -2600,15 +2600,17 @@ impl Game<'_> {
         self.fire_entity_shoot_bow(player, name, projectile, force);
     }
 
-    /// A guest's fall flying state changed on the server. The change has
-    /// already been applied.
+    /// A guest's fall flying state is about to change on the server, before
+    /// it is applied (Paper `EntityToggleGlideEvent`). `gliding` is the new
+    /// state. Set `cancel` to keep the guest's current state. Server-side.
     pub(in crate::game) fn native_entity_toggle_glide(
         &mut self,
         player: u128,
         name: &str,
         gliding: bool,
+        cancel: &mut bool,
     ) {
-        self.fire_entity_toggle_glide(player, name, gliding);
+        self.fire_entity_toggle_glide(player, name, gliding, cancel);
     }
 
     /// A guest player's synchronized pose changed from `from` to `to`.
