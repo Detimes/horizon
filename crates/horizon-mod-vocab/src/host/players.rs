@@ -1054,6 +1054,7 @@ pub trait PlayersBackendMut {
     /// `player_swap_hands` hook is not heard for it, and it does not stop an item in use.
     #[access(WorldOnly)]
     fn player_swap_hands(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
     /// `Player#dropItem(boolean)` (`Player.drop(true)`, the drop key): throws the player's
     /// selected stack from their eyes along their view, the whole stack when `whole_stack` is
     /// true and one item otherwise. It takes the same path as the drop key: a held item's
