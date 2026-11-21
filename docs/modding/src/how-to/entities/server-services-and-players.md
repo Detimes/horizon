@@ -101,6 +101,8 @@ UTF-16 units, values of 32767 and signatures of 1024. A list past a limit is
 refused and the login's own properties are sent. `player_login` follows later and
 can still refuse the player.
 
+`player.send_resource_pack(host, url, sha1, required, prompt)` (`player_send_resource_pack`) offers one player a resource pack while they play, as Paper's `Player#setResourcePack` does. Its id is the name UUID of the url, so offering the same url again replaces the pack; the answer comes back through `resource_pack_status`. `player.set_view_distance(host, chunks)` (`player_set_view_distance`) sets one player's radius, from 2 up to the server's view distance, until their client sends its settings again. `host.log_file()` is the path of the server log.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
