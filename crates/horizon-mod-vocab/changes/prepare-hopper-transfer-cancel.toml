@@ -1,0 +1,3 @@
+ids = ["hook:prepare_hopper_transfer", "method:Hooks::prepare_hopper_transfer", "type:PrepareHopperTransferEvent"]
+why = "prepare_hopper_transfer moves from listen to cancel so a listener can skip one transfer attempt, and PrepareHopperTransferEvent gains a cancel output to carry that answer. Listeners now receive a cancellable event where they previously only observed the hopper position."
+migrate = "Treat the event as cancellable and set its cancel output only to skip a transfer attempt; rebuild against the new contract."

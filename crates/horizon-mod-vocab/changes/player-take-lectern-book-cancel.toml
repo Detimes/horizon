@@ -1,0 +1,3 @@
+ids = ["hook:player_take_lectern_book", "method:Hooks::player_take_lectern_book"]
+why = "player_take_lectern_book moves from listen to cancel and now fires before the menu and block entity change, with book naming the item the player is about to take. Setting cancel leaves the book on the lectern."
+migrate = "Read book as the item about to be taken rather than one already removed, and rebuild against the new contract if you need to keep the book on the lectern via cancel."

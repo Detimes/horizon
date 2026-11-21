@@ -1,0 +1,3 @@
+ids = ["hook:player_open_sign", "method:Hooks::player_open_sign"]
+why = "player_open_sign moves from listen to cancel and now fires before the sign editor state is made, not after it. A listener can set cancel to keep the editor closed, which a post-open listen hook could not do."
+migrate = "Expect the hook before the editor exists, treat it as cancellable, and rebuild against the new contract if you only observed opened signs."
