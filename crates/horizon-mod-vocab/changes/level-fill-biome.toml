@@ -1,3 +1,0 @@
-ids = ["method:LevelRef::fill_biome", "type:BiomeFillRefusal"]
-why = "Adds a server-level region biome write: every 4x4x4 cell holding a block of a box is set to one biome, as /fillbiome does, with named refusals (BiomeFillRefusal) for a stale handle, a client, a level not in place, an unknown biome, an unloaded column and an oversized box. Reading a biome already exists as LevelRef::biome_at. Together they cover WorldEdit's //setbiome and /biomeinfo and Skript's biome expressions."
-migrate = "Additive. Set the biome of one cell with set_biome as before; use fill_biome for a box. Each changed column is resent to the players watching it. A call sets at most 16,384 cells; split a larger box yourself."

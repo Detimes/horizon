@@ -1,3 +1,0 @@
-ids = ["method:LevelRef::new_map"]
-why = "Adds a server call that makes a new map at a given centre, scale and colours (Paper's Bukkit.createMap)."
-migrate = "Additive. Returns the new map id, or None for a refused call (scale over 4, colours not 128 by 128, a stale handle, a client)."

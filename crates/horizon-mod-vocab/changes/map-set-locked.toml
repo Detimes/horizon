@@ -1,3 +1,0 @@
-ids = ["method:LevelRef::set_map_locked"]
-why = "Adds a server call that sets a map's locked flag, as Paper's MapView#setLocked does."
-migrate = "Additive. Returns true when the map exists (also when the flag already had the value); false for a stale handle, a client or a map nothing made."
