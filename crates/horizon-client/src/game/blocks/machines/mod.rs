@@ -1339,7 +1339,14 @@ impl Game<'_> {
     }
     /// `InventoryMoveItemEvent` for `item` going from `source` to `destination`, where one end
     /// is a capability part: whether a mod canceled the move.
-    fn part_move_canceled(
+    #[allow(dead_code)]
+    fn part_move_canceled(&mut self, source: [i32; 3], destination: [i32; 3], item: &str) -> bool {
+        let mut cancel = false;
+        self.native_inventory_move_item(source, destination, item, &mut cancel);
+        cancel
+    }
+    /// `part_move_canceled` that also names the moved slot for `inventory_move`.
+    fn part_move_canceled_at(
         &mut self,
         source: [i32; 3],
         destination: [i32; 3],
@@ -1348,14 +1355,7 @@ impl Game<'_> {
     ) -> bool {
         let mut cancel = false;
         // A hopper transfer moves one item from one slot.
-        self.native_inventory_move(
-            source,
-            destination,
-            item,
-            Some(slot as u32),
-            1,
-            &mut cancel,
-        );
+        self.native_inventory_move(source, destination, item, Some(slot as u32), 1, &mut cancel);
         cancel
     }
     /// `HopperBlockEntity.ejectItems`: one root attempt across source slots, restoring each
@@ -1386,7 +1386,7 @@ impl Game<'_> {
                 };
                 let resource = ItemResource::of(&snapshot);
                 let item = mod_api::__private::item_key_id(snapshot.item()).unwrap();
-                if game.part_move_canceled(from, at, item, slot) {
+                if game.part_move_canceled_at(from, at, item, slot) {
                     continue;
                 }
                 let (source, index) = hopper.locate(slot).ok_or(())?;
@@ -1427,7 +1427,8 @@ impl Game<'_> {
             let Ok(one) = resource.as_stack().try_into_engine(self.items()) else {
                 continue;
             };
-            if part.amount(self, slot) == 0 || self.part_move_canceled(at, into, &one.item, slot) {
+            if part.amount(self, slot) == 0 || self.part_move_canceled_at(at, into, &one.item, slot)
+            {
                 continue;
             }
             let moved = mod_api::run_transaction(self, |game, tx| {
