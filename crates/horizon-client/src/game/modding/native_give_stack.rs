@@ -60,7 +60,7 @@ impl Game<'_> {
     /// does not read (outside 1 to 99), so `item_from_snbt` reads every text this writes.
     pub(super) fn item_to_snbt(&self, stack: &ItemStack) -> Option<String> {
         if !(1..=99).contains(&stack.count)
-            || self.item_key_id(stack.item) == "minecraft:air"
+            || &*stack.item == "minecraft:air"
             || self.items().get(&stack.item).is_none()
         {
             return None;

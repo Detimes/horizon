@@ -2,7 +2,7 @@
 
 use super::{api_values::TryIntoApi, native_guest_turn_tests::with_guests};
 use horizon_core::nbt::parse_snbt;
-use mod_api::{Host, ItemStack, PlayerDataRefusal, prelude::*};
+use mod_api::{Host, Identifier, ItemStack, PlayerDataRefusal, prelude::*};
 
 fn api_item(game: &super::Game<'_>, snbt: &str) -> Option<ItemStack> {
     let host: &dyn Host = game;

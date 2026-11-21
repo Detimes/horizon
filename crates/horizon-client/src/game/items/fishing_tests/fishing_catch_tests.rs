@@ -254,12 +254,11 @@ impl mod_api::Hooks for CaughtFish {
         &self,
         _host: &mut dyn mod_api::ServerHost,
         event: &mut mod_api::FishCaughtItemEvent<'_>,
-    ) -> mod_api::Flow {
+    ) {
         assert_eq!(event.player, 7);
         assert_eq!(event.name, "catcher");
         let caught = event.caught.expect("a catch");
-        assert_eq!(caught.count, 2);
-        mod_api::Flow::Continue
+        assert_eq!(caught.count(), 2);
     }
 }
 
