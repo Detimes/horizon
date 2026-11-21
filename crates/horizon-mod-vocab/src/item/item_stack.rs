@@ -751,7 +751,7 @@ mod tests {
     struct Shelf;
     impl crate::prelude::ItemsHost for Shelf {
         fn item_key(&self, id: &crate::Identifier) -> Option<ItemKey> {
-            match id.as_str() {
+            match id.to_string().as_str() {
                 "minecraft:stone" => Some(ItemKey(1)),
                 "minecraft:shulker_box" => Some(ItemKey(2)),
                 "minecraft:bundle" => Some(ItemKey(3)),
