@@ -14,6 +14,7 @@ cancelled here yet, because the list is known only after the blocks are written.
 placements do not go through this path yet."#]
     #[hook(
         side = "server",
+        target = "horizon_client::game::native_hooks::structure_grow::GameLevel<'_>::native_structure_grow",
         contract = "listen",
         neoforge = "none (NeoForge has no structure growth event)",
         paper = "StructureGrowEvent (getBlocks gives the placed blocks; Paper's event is cancellable and this one is not)"
