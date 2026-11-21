@@ -2318,18 +2318,16 @@ impl Game<'_> {
     ) {
         self.fire_player_insert_lectern_book(player, name, pos, book);
     }
-    /// A server player is about to take the book from a lectern, before the menu and block entity
-    /// change. `book` is the item id of the book it takes. Set `cancel` to leave the book on the
-    /// lectern. Server-side.
+    /// A server player took the book from a lectern, after the menu and block entity changed. `book`
+    /// is the removed item id. Server-side.
     pub(in crate::game) fn native_player_take_lectern_book(
         &mut self,
         player: u128,
         name: &str,
         pos: [i32; 3],
         book: &str,
-        cancel: &mut bool,
     ) {
-        self.fire_player_take_lectern_book(player, name, pos, book, cancel);
+        self.fire_player_take_lectern_book(player, name, pos, book);
     }
     /// A server player changed the page of a lectern, after its page and redstone pulse changed.
     /// `page` is the zero-based new page. Server-side.
@@ -2429,17 +2427,16 @@ impl Game<'_> {
     ) {
         self.fire_player_name_entity(player, name, entity_id, entity_name);
     }
-    /// A server player is about to open a sign for editing, before the editor state is made. `front`
-    /// selects the front or back side. Set `cancel` to keep the editor closed. Server-side.
+    /// A server player opened a sign for editing, after the editor state was made. `front` selects the
+    /// front or back side. Server-side.
     pub(in crate::game) fn native_player_open_sign(
         &mut self,
         player: u128,
         name: &str,
         pos: [i32; 3],
         front: bool,
-        cancel: &mut bool,
     ) {
-        self.fire_player_open_sign(player, name, pos, front, cancel);
+        self.fire_player_open_sign(player, name, pos, front);
     }
     /// A server player picked up an arrow after it was removed and its pickup was applied. `item` is
     /// the arrow's pickup item id. Server-side.
@@ -3060,15 +3057,10 @@ impl Game<'_> {
         self.fire_block_damage_abort(player, name, pos);
     }
     /// A hopper at `pos` began an item transfer attempt. This runs after its
-    /// cooldown and enabled checks, before pushing or pulling any items. Set
-    /// `cancel` to skip this attempt: nothing is pushed or pulled. Server-side,
-    /// including the single-player server.
-    pub(in crate::game) fn native_prepare_hopper_transfer(
-        &mut self,
-        pos: [i32; 3],
-        cancel: &mut bool,
-    ) {
-        self.fire_prepare_hopper_transfer(pos, cancel);
+    /// cooldown and enabled checks, before pushing or pulling any items.
+    /// Server-side, including the single-player server.
+    pub(in crate::game) fn native_prepare_hopper_transfer(&mut self, pos: [i32; 3]) {
+        self.fire_prepare_hopper_transfer(pos);
     }
     /// A hopper is about to move one item between containers, a composter's
     /// bone meal included. Set `cancel` to leave it in its source slot. A chest
@@ -3887,9 +3879,7 @@ impl Game<'_> {
     /// `EntityJoinLevelEvent`): vanilla's `PersistentEntitySectionManager.addEntity`.
     /// `loaded_from_disk` is true for an entity coming back with its chunk,
     /// false for one added fresh (`addFreshEntity`: a drop, an orb, `/summon`,
-    /// an arrival through a portal). `reason` is the spawn reason of a mob a spawn
-    /// site finalized (`None` for every other kind, and for a mob loaded from disk).
-    /// `entity` is its ID and `kind` its type
+    /// an arrival through a portal). `entity` is its ID and `kind` its type
     /// (`minecraft:item`). It is already in the level's lists, so helpers that
     /// take an entity ID find it. Set `canceled` to keep it out: it is taken
     /// back out as if never added, and a `/summon` of it fails. Tells every
@@ -3905,9 +3895,14 @@ impl Game<'_> {
     /// simulating (displays, markers, interactions). Server-side.
     pub(in crate::game) fn native_entity_join_level(
         &mut self,
-        call: mod_api::__private::EntityJoinLevelCall<'_>,
+        dimension: &str,
+        entity: u32,
+        kind: &str,
+        pos: [f64; 3],
+        loaded_from_disk: bool,
+        canceled: &mut bool,
     ) {
-        self.fire_entity_join_level(call);
+        self.fire_entity_join_level(dimension, entity, kind, pos, loaded_from_disk, canceled);
     }
     /// An entity mounts or dismounts a vehicle (NeoForge's `EntityMountEvent`, posted from
     /// `Entity.startRiding` and `removeVehicle`): `entity` of type `kind` (`minecraft:player`,

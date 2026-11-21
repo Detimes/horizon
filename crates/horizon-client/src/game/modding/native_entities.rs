@@ -242,16 +242,14 @@ impl Game<'_> {
             let mut canceled = false;
             let dimension = self.dim.id();
             self.construct_joining(id, &kind);
-            let reason = self.native_lifecycle.spawn_reasons.remove(&id);
-            self.native_entity_join_level(mod_api::__private::EntityJoinLevelCall {
+            self.native_entity_join_level(
                 dimension,
-                entity: id,
-                kind: &kind,
-                pos: [at.x, at.y, at.z],
+                id,
+                &kind,
+                [at.x, at.y, at.z],
                 loaded_from_disk,
-                reason,
-                canceled: &mut canceled,
-            });
+                &mut canceled,
+            );
             let spawn = self
                 .native_lifecycle
                 .pending_item_spawns

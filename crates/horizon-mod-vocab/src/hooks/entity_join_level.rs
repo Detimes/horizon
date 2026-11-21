@@ -21,11 +21,7 @@ pub trait Hooks {
     /// `EntityJoinLevelEvent`): vanilla's `PersistentEntitySectionManager.addEntity`.
     /// `loaded_from_disk` is true for an entity coming back with its chunk,
     /// false for one added fresh (`addFreshEntity`: a drop, an orb, `/summon`,
-    /// an arrival through a portal). `reason` is the `EntitySpawnReason` a mob
-    /// was spawned with (natural, spawner, command, conversion, ...), `None`
-    /// for every other kind and for a mob coming back from disk: NeoForge's
-    /// `EntityJoinLevelEvent` has no reason, so Horizon adds it here from the
-    /// spawn site that made the mob. `entity` is its ID and `kind` its type
+    /// an arrival through a portal). `entity` is its ID and `kind` its type
     /// (`minecraft:item`). It is already in the level's lists, so helpers that
     /// take an entity ID find it. Set `canceled` to keep it out: it is taken
     /// back out as if never added, and a `/summon` of it fails. Tells every
@@ -54,15 +50,7 @@ pub trait Hooks {
         contract = "cancel",
         out = "canceled",
         neoforge = "EntityJoinLevelEvent",
-        version = 3
+        version = 2
     )]
-    fn entity_join_level(
-        dimension: &str,
-        entity: u32,
-        kind: &str,
-        pos: [f64; 3],
-        loaded_from_disk: bool,
-        reason: Option<mod_api::SpawnReason>,
-        canceled: &mut bool,
-    );
+    fn entity_join_level();
 }

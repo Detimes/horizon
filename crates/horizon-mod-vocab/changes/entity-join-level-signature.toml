@@ -1,3 +1,0 @@
-ids = ["method:Hooks::entity_join_level"]
-why = "The Hooks::entity_join_level declaration changes from a bare hook to one with dimension, entity, kind, pos, loaded_from_disk, reason and canceled arguments, matching hook version 3 and its new reason field. Implementors of the trait must provide the new signature."
-migrate = "Update any Rust Hooks::entity_join_level implementation to the seven-argument signature and read reason as Option<SpawnReason>, or ignore it with an underscore prefix."

@@ -487,14 +487,6 @@ impl Game<'_> {
         if self.fake_blocks(mod_api::FakeEffect::Menu) {
             return;
         }
-        // Native mods, before the editor is made: a canceled open keeps the sign closed.
-        if let (Some(player), Some(name)) = (self.lan_acting_uuid, self.lan_acting_name.clone()) {
-            let mut cancel = false;
-            self.native_player_open_sign(player, &name, [pos.0, pos.1, pos.2], front, &mut cancel);
-            if cancel {
-                return;
-            }
-        }
         self.open_screen_overlay("sign_editor", |game| {
             // Minecraft.setScreen: the editor already open is removed first.
             game.close_sign_editor();
@@ -515,6 +507,9 @@ impl Game<'_> {
             game.right = false;
             game.capture(false);
         });
+        if let (Some(player), Some(name)) = (self.lan_acting_uuid, self.lan_acting_name.clone()) {
+            self.native_player_open_sign(player, &name, [pos.0, pos.1, pos.2], front);
+        }
     }
     /// `AbstractSignEditScreen.tick`: the editor closes (and `removed` sends
     /// the text) once its sign is removed or the player's eyes are further

@@ -1172,11 +1172,7 @@ impl Game<'_> {
         if self.hoppers.get(&pos).is_some_and(|h| h.cooldown > 0) || !enabled {
             return;
         }
-        let mut cancel = false;
-        self.native_prepare_hopper_transfer([pos.0, pos.1, pos.2], &mut cancel);
-        if cancel {
-            return;
-        }
+        self.native_prepare_hopper_transfer([pos.0, pos.1, pos.2]);
         self.unpack_loot(super::container_loot::LootTarget::Block(pos), None);
         let c = self.containers();
         let mut changed = false;
@@ -2166,7 +2162,6 @@ mod brewing_fuel_transfer_tests {
     struct PrepareProbe {
         calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         fill: bool,
-        cancel: bool,
     }
 
     #[mod_api::__subscriptions]
@@ -2175,7 +2170,7 @@ mod brewing_fuel_transfer_tests {
             &self,
             host: &mut dyn mod_api::ServerHost,
             _: &mut mod_api::PrepareHopperTransferEvent,
-        ) -> mod_api::Flow {
+        ) {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if self.fill {
                 let level = host.level("minecraft:overworld").unwrap();
@@ -2194,22 +2189,16 @@ mod brewing_fuel_transfer_tests {
                 })
                 .unwrap();
             }
-            if self.cancel {
-                mod_api::Flow::Cancel
-            } else {
-                mod_api::Flow::Continue
-            }
         }
     }
 
-    fn check_prepare_transfer(fill: bool, cancel: bool) {
+    fn check_prepare_transfer(fill: bool) {
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mods: mod_api::Mods = vec![mod_api::ModEntry::new(
             "prepare_probe",
             Box::new(PrepareProbe {
                 calls: calls.clone(),
                 fill,
-                cancel,
             }),
         )]
         .into();
@@ -2245,13 +2234,6 @@ mod brewing_fuel_transfer_tests {
                 }
                 game.hopper_try_move_items(pos);
                 assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-                if cancel {
-                    // The probe put a stone in the hopper, then canceled: nothing moves.
-                    let containers = game.containers();
-                    assert!(containers.is_empty(&containers.view((8, 63, 8), false).unwrap()));
-                    assert!(!containers.is_empty(&containers.view(pos, false).unwrap()));
-                    return;
-                }
                 if fill {
                     let containers = game.containers();
                     let target = containers.view((8, 63, 8), false).unwrap();
@@ -2270,19 +2252,13 @@ mod brewing_fuel_transfer_tests {
     #[test]
     #[ignore = "daily"]
     fn empty_hopper_dispatches_prepare_transfer() {
-        check_prepare_transfer(false, false);
-    }
-
-    #[test]
-    #[ignore = "daily"]
-    fn canceled_hopper_transfer_moves_nothing() {
-        check_prepare_transfer(true, true);
+        check_prepare_transfer(false);
     }
 
     #[test]
     #[ignore = "daily"]
     fn prepare_transfer_inventory_write_is_ejected() {
-        check_prepare_transfer(true, false);
+        check_prepare_transfer(true);
     }
 
     #[test]
