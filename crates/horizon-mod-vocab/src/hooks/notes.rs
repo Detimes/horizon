@@ -389,6 +389,7 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   player or dispenser. Server-side.
 - **`player_toggle_sneak(player, name, sneaking)`**: a guest's player input changed sneaking, after the hub applied the state. The guest's state is swapped in; only actual changes are reported.
 - **`player_input(player, name, flags)`**: a loaded guest sent a `PlayerInput` packet, after its flags were applied to the hub. `flags` is the packet's bit field, and the guest's state is swapped in.
+- **`player_air_right_click(player, name, hand, item)`**: a guest's `UseItem` packet arrived, a right click on air (no block, no entity). `item` is the held item's id, `minecraft:air` for an empty hand. A notice only: it fires before the server uses the item and cannot cancel it; `use_item` and `right_click_item` still answer a held item.
 - **`player_arm_swing(player, name, hand)`**: a guest's arm swing was handled and their attack strength reset. The packet currently swings `mainhand`; the guest's state is swapped in.
 - **`player_jump(player, name)`**: accepted guest movement made the server player jump from the ground, after movement simulation finishes. The guest's state is swapped in.
 - **`player_kicked(player, name, reason)` (version 2)**: a network or fake guest was kicked after the hub recorded the rendered disconnect reason; a network guest also receives the disconnect packet. The guest's state is swapped in, unless the guest was already removed in the same poll: the hook still fires, without it.
