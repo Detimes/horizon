@@ -3182,7 +3182,14 @@ impl Game<'_> {
                                 let kind = m.kind.id.clone();
                                 let dimension = self.dim.id();
                                 self.native_entity_change_block(
-                                    dimension, mob, &kind, pos, &old_name, name,
+                                    mod_api::__private::EntityChangeBlockCall {
+                                        dimension,
+                                        entity: mob,
+                                        kind: &kind,
+                                        pos,
+                                        from: &old_name,
+                                        to: name,
+                                    },
                                 );
                             }
                         }

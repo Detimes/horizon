@@ -214,7 +214,14 @@ impl Game<'_> {
         self.process_level_events()?;
         if changed {
             let dimension = self.dim.id();
-            self.native_entity_change_block(dimension, mob, &kind, pos, &from, &to);
+            self.native_entity_change_block(mod_api::__private::EntityChangeBlockCall {
+                dimension,
+                entity: mob,
+                kind: &kind,
+                pos,
+                from: &from,
+                to: &to,
+            });
         }
         Ok(())
     }

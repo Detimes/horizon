@@ -2499,7 +2499,14 @@ impl Game<'_> {
         self.level_set(pos, state)?;
         if let Some(kind) = kind {
             let dimension = self.dim.id();
-            self.native_entity_change_block(dimension, mob, &kind, pos, &from, &to);
+            self.native_entity_change_block(mod_api::__private::EntityChangeBlockCall {
+                dimension,
+                entity: mob,
+                kind: &kind,
+                pos,
+                from: &from,
+                to: &to,
+            });
         }
         Ok(())
     }

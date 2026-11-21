@@ -2986,14 +2986,9 @@ impl Game<'_> {
     /// A mob changed a block at `pos` of the level `dimension`, after the new state was applied.
     pub(in crate::game) fn native_entity_change_block(
         &mut self,
-        dimension: &str,
-        entity: u32,
-        kind: &str,
-        pos: [i32; 3],
-        from: &str,
-        to: &str,
+        call: mod_api::__private::EntityChangeBlockCall<'_>,
     ) {
-        self.fire_entity_change_block(dimension, entity, kind, pos, from, to);
+        self.fire_entity_change_block(call);
     }
 
     /// A bee entered the hive at `pos` and was stored there.
