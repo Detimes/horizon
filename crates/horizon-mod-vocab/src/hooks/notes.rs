@@ -1045,6 +1045,10 @@ steers a mob through the engine's own controls, each a momentary wish the mob's 
   mob's own are one flag, not a brain memory a write could miss (which is why `set_target` refuses brain species, and `set_brain_target` writes their `ATTACK_TARGET` memory instead). A
   creaking being looked at, an angry bee and an axolotl playing dead hold their look control, and a held creaking its
   jump control, as in vanilla: the wish waits until the control runs again.
+- `mob.attack(host, target)` is `Mob.doHurtTarget`: the mob's own melee blow on a player or another mob, with the weapon
+  it holds, through the combat path a melee goal's blow takes (a shield or armour can still take it). It runs no swing,
+  cooldown or reach check, as Paper's `LivingEntity#attack` does not either. True means dealt, not landed. A mob naming
+  itself, a dragon, a stale handle and a guest target are refused. Guest targets wait for their own routing.
 - `mob.navigation_speed(host)` / `set_navigation_speed(host, speed)` read and set `PathNavigation.speedModifier`, the
   multiplier the current path is followed at (1.0 is the mob's normal speed; 0 until a path sets one) — not the mob's
   movement-speed attribute. `move_to`'s speed argument sets the same modifier, and the mob's own next `moveTo` (a goal's
