@@ -427,6 +427,13 @@ pub trait PlayersBackend {
     /// None for stale, offline or unavailable players (including displaced outer players).
     #[access(WorldOnly)]
     fn player_game_mode(&self, player: PlayerRef) -> Option<GameMode>;
+    /// Side: server.
+    /// Whether other entities collide with and push the player (Paper's `Player.isCollidable`),
+    /// by the rule `EntitySelector.pushableBy` applies: a spectator never does, and neither does a
+    /// player on a team whose collision rule is `never`. The team's `pushOwnTeam` and
+    /// `pushOtherTeams` rules still count as collidable. `None` for a stale or unavailable player.
+    #[access(WorldOnly)]
+    fn player_is_collidable(&self, player: PlayerRef) -> Option<bool>;
     /// Side: both.
     /// `Player.isCreative`; Paper `HumanEntity#getGameMode`.
     #[access(WorldOnly)]

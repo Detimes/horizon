@@ -8,6 +8,26 @@ impl Game<'_> {
     ) {
         self.fire_player_teleport_cause(call);
     }
+    /// The acting server player was teleported from `from` to where they stand now.
+    pub(in crate::game) fn acting_teleport_cause(&mut self, from: [f64; 3], cause: &str) {
+        let Some(uuid) = self.lan_acting_uuid else {
+            return;
+        };
+        let Some(to) = self.player.as_ref().map(|p| [p.position.x, p.position.y, p.position.z])
+        else {
+            return;
+        };
+        let name = self.acting_player_name().to_owned();
+        let dimension = self.dim.id().to_owned();
+        self.native_player_teleport_cause(mod_api::__private::PlayerTeleportCauseCall {
+            player: uuid,
+            name: &name,
+            from,
+            to,
+            dimension: &dimension,
+            cause,
+        });
+    }
     /// `native_player_teleported`, then `native_player_teleport_cause` with the same teleport.
     pub(in crate::game) fn teleported_because(
         &mut self,

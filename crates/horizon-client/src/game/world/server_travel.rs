@@ -1363,6 +1363,10 @@ impl Game<'_> {
             if !trip.hold {
                 host.play.entry(trip.conn).or_default().portal.cooldown = 10;
             }
+            let (uuid, name, origin) = {
+                let g = &host.hub.guests[i];
+                (g.uuid, g.name.clone(), g.position)
+            };
             host.hub.guests.update(i, |g| {
                 g.yaw = yaw;
                 if let Some(pitch) = pitch {
@@ -1379,6 +1383,27 @@ impl Game<'_> {
                 host.hub.land(i, at);
             } else {
                 host.hub.teleport(i, Some(at));
+            }
+            // PlayerTeleportEvent's cause for a portal or a gateway; a respawn, a command
+            // teleport and the credits are not these.
+            let cause = if trip.gateway.is_some() {
+                Some("end_gateway")
+            } else if trip.respawn.is_some() || trip.world_spawn || trip.placed {
+                None
+            } else if trip.end {
+                Some("end_portal")
+            } else {
+                Some("nether_portal")
+            };
+            if let Some(cause) = cause {
+                self.native_player_teleport_cause(mod_api::__private::PlayerTeleportCauseCall {
+                    player: uuid,
+                    name: &name,
+                    from: origin,
+                    to: at,
+                    dimension: trip.dim.id(),
+                    cause,
+                });
             }
             self.tell_mods_changed_dimension(trip.conn, trip.left, trip.dim);
         }

@@ -109,3 +109,21 @@ impl Game<'_> {
         }
     }
 }
+
+impl Game<'_> {
+    /// `Player.isCollidable` as the entity selector decides who pushes a player
+    /// (`EntitySelector.pushableBy`): a spectator never collides, and neither does a player on a
+    /// team whose collision rule is `never`. None for a player the game cannot read.
+    pub(super) fn player_is_collidable(&self, player: PlayerRef) -> Option<bool> {
+        use super::native_server::PlayerRead;
+        let mode = self.player_game_mode(player)?;
+        let name = match self.player_read_both(player)? {
+            PlayerRead::Acting { .. } => self.acting_player_name().to_owned(),
+            PlayerRead::Guest(guest) => guest.name.clone(),
+        };
+        let never = self.score.board.players_team(&name).is_some_and(|team| {
+            team.collision_rule == horizon_client::scoreboard::CollisionRule::Never
+        });
+        Some(mode != mod_api::GameMode::Spectator && !never)
+    }
+}

@@ -110,3 +110,23 @@ fn a_mod_resolves_a_selector_for_a_player() {
         assert!(game.player_select_entities(a, "").is_none());
     });
 }
+
+/// A player is collidable unless a spectator or on a `never` team.
+#[test]
+#[ignore = "daily"]
+fn a_player_is_collidable_unless_spectator_or_on_a_never_team() {
+    with_guests(|game| {
+        let a = game.player(12).unwrap();
+        assert_eq!(game.player_is_collidable(a), Some(true));
+        game.lan.as_mut().unwrap().hub.guests.update_connection(12, |g| g.game_mode = 3);
+        assert_eq!(game.player_is_collidable(a), Some(false), "a spectator");
+        game.lan.as_mut().unwrap().hub.guests.update_connection(12, |g| g.game_mode = 0);
+        game.score.board.add_team("ghosts").collision_rule =
+            horizon_client::scoreboard::CollisionRule::Never;
+        game.score.board.add_to_team("guest12", "ghosts");
+        assert_eq!(game.player_is_collidable(a), Some(false), "a never team");
+        game.score.board.team_mut("ghosts").unwrap().collision_rule =
+            horizon_client::scoreboard::CollisionRule::Always;
+        assert_eq!(game.player_is_collidable(a), Some(true));
+    });
+}

@@ -36,3 +36,21 @@ fn a_command_teleport_is_told_with_its_cause() {
         });
     });
 }
+
+/// The acting server player's pearl and chorus teleports carry their own causes.
+#[test]
+#[ignore = "daily"]
+fn a_pearl_teleport_is_told_with_its_cause() {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let mods: mod_api::Mods =
+        vec![ModEntry::new("tp-probe", Box::new(Probe(Arc::clone(&heard))))].into();
+    mod_platform::testing::with_mods(mods, || {
+        crate::game::native_entity_refs::tests::with_game(|game| {
+            game.lan_acting_uuid = Some(9);
+            game.acting_teleport_cause([1.0, 2.0, 3.0], "ender_pearl");
+            let heard = heard.lock().unwrap();
+            assert_eq!(heard.len(), 1);
+            assert_eq!((heard[0].0, heard[0].1, heard[0].4.as_str()), (9, [1.0, 2.0, 3.0], "ender_pearl"));
+        });
+    });
+}
