@@ -4,13 +4,9 @@
 pub trait Hooks {
     /// A server player's or mob's ender pearl is about to teleport its `owner`
     /// (`EntityTeleportEvent.EnderPearl`, `ThrownEnderpearl.onHit`), heard after
-    /// `ender_pearl_teleport` from the same place, with the two writes that hook leaves out. The
+    /// `ender_pearl_teleport` from the same place, with the write that hook leaves out. The
     /// other fields are that hook's, as it left them, `cancel` included: a pearl it canceled is
     /// heard here only by a listener that receives cancelled events.
-    /// `damage` is the player owner's fall damage (5, or what `ender_pearl_teleport` set), or
-    /// `None` to skip the hurt call altogether: no damage, hurt sound, animation or
-    /// invulnerability check. The teleport still happens. A mob owner takes none, and its `damage`
-    /// starts at `Some(0.0)`.
     /// `relative` is the position packet's flag set (`Relative`, vanilla's bits), 0 for an
     /// absolute move. The `DELTA_X`, `DELTA_Y` and `DELTA_Z` bits (0x20, 0x40, 0x80) keep that
     /// component of a player owner's motion across the teleport; the others zero it, as vanilla's
@@ -31,7 +27,6 @@ pub trait Hooks {
         pearl: u32,
         from: [f64; 3],
         target: &mut [f64; 3],
-        damage: &mut Option<f32>,
         relative: &mut u32,
         cancel: &mut bool,
         hit_entity: Option<u32>,

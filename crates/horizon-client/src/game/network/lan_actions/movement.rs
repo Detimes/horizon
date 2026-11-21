@@ -54,22 +54,27 @@ impl Game<'_> {
             // Heard before the change is applied: a cancel keeps the state.
             let mut cancel = false;
             if self.native_authoritative()
-                && mod_api::__private::listened(mod_api::HookId::EntityToggleGlide)
+                && mod_api::__private::listened(mod_api::HookId::EntityToggleGlideCancel)
             {
-                self.native_entity_toggle_glide(uuid, &name, gliding, &mut cancel);
+                self.native_entity_toggle_glide_cancel(uuid, &name, gliding, &mut cancel);
             }
             if cancel {
                 return;
             }
         }
+        let mut changed = false;
         if let Some(host) = self.lan.as_mut() {
             let _ = host.hub.update_guest(conn, |g| {
                 if g.fall_flying != gliding {
                     g.fall_flying = gliding;
+                    changed = true;
                 } else if !gliding {
                     g.sent_shared ^= -128;
                 }
             });
+        }
+        if changed {
+            self.native_entity_toggle_glide(uuid, &name, gliding);
         }
     }
 

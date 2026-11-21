@@ -5,8 +5,7 @@ pub trait Hooks {
     /// trampling (farmland to dirt, a turtle egg breaking), before its
     /// neighbour updates and events. `player` is the player whose landing it
     /// was, `entity` and `kind` the mob for a mob's landing (`None` and the
-    /// player's type here). `dimension` is the level the block is in (`minecraft:overworld`,
-    /// `minecraft:the_nether`, ...), as `hanging_break` names it. `from` and `to` are resolved block states. Set `cancel`
+    /// player's type here). `from` and `to` are resolved block states. Set `cancel`
     /// and the block stays as it was and nothing the change would have caused
     /// happens, as Bukkit's `EntityChangeBlockEvent` (@API:entity_change_block_v2@).
     /// The fork names this pre-change veto `entity_change_block_pre`; `entity_change_block` is the separate post-change notice.
@@ -22,7 +21,6 @@ pub trait Hooks {
         player: Option<u128>,
         entity: Option<u32>,
         kind: &str,
-        dimension: &str,
         pos: [i32; 3],
         from: BlockState,
         to: BlockState,

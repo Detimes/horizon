@@ -253,7 +253,7 @@ impl Game<'_> {
     /// `EntityTeleportEvent.EnderPearl` for `owner`'s pearl that hit `hit`:
     /// the listeners' `(target, damage, relative, cancel)`, starting from `to` and `damage`.
     /// `ender_pearl_teleport` hears it first, then `ender_pearl_teleport_detail`, which can also
-    /// make `damage` `None` (no hurt call) and set the position packet's `relative` flags.
+    /// set the position packet's `relative` flags.
     pub(in crate::game) fn native_pearl_teleport(
         &mut self,
         owner: mod_api::EntityRef,
@@ -262,14 +262,14 @@ impl Game<'_> {
         to: Vec3,
         mut damage: f32,
         hit: Hit,
-    ) -> ([f64; 3], Option<f32>, u32, bool) {
+    ) -> ([f64; 3], f32, u32, bool) {
         let mut target = [to.x, to.y, to.z];
         let mut cancel = false;
         let mut relative = 0;
         let old = mod_api::__private::listened(mod_api::HookId::EnderPearlTeleport);
         let detail = mod_api::__private::listened(mod_api::HookId::EnderPearlTeleportDetail);
         if !old && !detail {
-            return (target, Some(damage), relative, cancel);
+            return (target, damage, relative, cancel);
         }
         let (hit_entity, hit_block, hit_face, hit_at) = self.pearl_hit(hit);
         if old {
@@ -286,7 +286,6 @@ impl Game<'_> {
                 hit_at,
             });
         }
-        let mut damage = Some(damage);
         if detail {
             self.native_ender_pearl_teleport_detail(
                 mod_api::__private::EnderPearlTeleportDetailCall {
@@ -294,7 +293,6 @@ impl Game<'_> {
                     pearl,
                     from: [from.x, from.y, from.z],
                     target: &mut target,
-                    damage: &mut damage,
                     relative: &mut relative,
                     cancel: &mut cancel,
                     hit_entity,
@@ -761,19 +759,18 @@ mod pearl_hit_tests {
                 );
                 assert_eq!(
                     (target, damage, relative, cancel),
-                    ([1.0, 2.0, 3.0], Some(0.0), 0, false)
+                    ([1.0, 2.0, 3.0], 0.0, 0, false)
                 );
                 assert_eq!(*heard.lock().unwrap(), [(Some(225009), [1, 64, -1])]);
             });
         });
     }
 
-    /// A listener of `ender_pearl_teleport_detail` sets the fall damage to `None` and the position
-    /// flags to `0x1f8` (rotation and delta): `native_pearl_teleport` hands both back, so the
-    /// player's hurt call is skipped and the teleport keeps the motion. The teleport is not canceled.
+    /// A listener of `ender_pearl_teleport_detail` sets the position flags to `0x1f8`
+    /// (rotation and delta): `native_pearl_teleport` hands them back and the teleport keeps the motion. The teleport is not canceled.
     #[test]
     #[ignore = "daily"]
-    fn a_detail_listener_skips_the_hurt_call_and_sets_the_relative_flags() {
+    fn a_detail_listener_sets_the_relative_flags() {
         use crate::game::dragon::Dragon;
         use mod_api::{EnderPearlTeleportDetailEvent, Flow, Hooks, ModEntry, ServerHost};
         struct Detail;
@@ -784,9 +781,7 @@ mod pearl_hit_tests {
                 _: &mut dyn ServerHost,
                 event: &mut EnderPearlTeleportDetailEvent<'_>,
             ) -> Flow {
-                assert_eq!(event.damage, Some(0.0));
                 assert_eq!(event.relative, 0);
-                event.damage = None;
                 event.relative = 0x1f8;
                 Flow::Continue
             }
@@ -814,7 +809,7 @@ mod pearl_hit_tests {
                 );
                 assert_eq!(
                     (target, damage, relative, cancel),
-                    ([8.0, 70.0, 8.0], None, 0x1f8, false)
+                    ([8.0, 70.0, 8.0], 0.0, 0x1f8, false)
                 );
             });
         });

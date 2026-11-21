@@ -2622,17 +2622,27 @@ impl Game<'_> {
         self.fire_entity_shoot_bow(player, name, projectile, force);
     }
 
+    /// A guest's fall flying state changed on the server. The change has
+    /// already been applied.
+    pub(in crate::game) fn native_entity_toggle_glide(
+        &mut self,
+        player: u128,
+        name: &str,
+        gliding: bool,
+    ) {
+        self.fire_entity_toggle_glide(player, name, gliding);
+    }
     /// A guest's fall flying state is about to change on the server, before
     /// it is applied (Paper `EntityToggleGlideEvent`). `gliding` is the new
     /// state. Set `cancel` to keep the guest's current state. Server-side.
-    pub(in crate::game) fn native_entity_toggle_glide(
+    pub(in crate::game) fn native_entity_toggle_glide_cancel(
         &mut self,
         player: u128,
         name: &str,
         gliding: bool,
         cancel: &mut bool,
     ) {
-        self.fire_entity_toggle_glide(player, name, gliding, cancel);
+        self.fire_entity_toggle_glide_cancel(player, name, gliding, cancel);
     }
 
     /// A guest player's synchronized pose changed from `from` to `to`.
@@ -2993,26 +3003,65 @@ impl Game<'_> {
         self.fire_creeper_power(entity, lightning);
     }
 
+    /// A mob broke the door at `pos`.
+    pub(in crate::game) fn native_entity_break_door(
+        &mut self,
+        entity: u32,
+        kind: &str,
+        pos: [i32; 3],
+    ) {
+        self.fire_entity_break_door(entity, kind, pos);
+    }
     /// A mob is about to break the door at `pos`, before the door is removed.
     /// Set `cancel` and the door stays. Server-side.
-    pub(in crate::game) fn native_entity_break_door(
+    pub(in crate::game) fn native_entity_break_door_cancel(
         &mut self,
         entity: u32,
         kind: &str,
         pos: [i32; 3],
         cancel: &mut bool,
     ) {
-        self.fire_entity_break_door(entity, kind, pos, cancel);
+        self.fire_entity_break_door_cancel(entity, kind, pos, cancel);
     }
 
-    /// A mob changed a block at `pos` of the level `dimension`, after the new state was applied.
+    /// A mob changed a block at `pos`, after the new state was applied.
     pub(in crate::game) fn native_entity_change_block(
         &mut self,
-        call: mod_api::__private::EntityChangeBlockCall<'_>,
+        entity: u32,
+        kind: &str,
+        pos: [i32; 3],
+        from: &str,
+        to: &str,
     ) {
-        self.fire_entity_change_block(call);
+        self.fire_entity_change_block(entity, kind, pos, from, to);
     }
-
+    /// A mob changed a block at `pos` of the level `dimension`, after the new state was applied.
+    pub(in crate::game) fn native_entity_change_block_detail(
+        &mut self,
+        call: mod_api::__private::EntityChangeBlockDetailCall<'_>,
+    ) {
+        self.fire_entity_change_block_detail(call);
+    }
+    /// A mob changed a block: `entity_change_block`, then `entity_change_block_detail`.
+    pub(in crate::game) fn entity_changed_block(
+        &mut self,
+        entity: u32,
+        kind: &str,
+        pos: [i32; 3],
+        from: &str,
+        to: &str,
+    ) {
+        self.native_entity_change_block(entity, kind, pos, from, to);
+        let dimension = self.dim.id().to_owned();
+        self.native_entity_change_block_detail(mod_api::__private::EntityChangeBlockDetailCall {
+            dimension: &dimension,
+            entity,
+            kind,
+            pos,
+            from,
+            to,
+        });
+    }
     /// A bee entered the hive at `pos` and was stored there.
     pub(in crate::game) fn native_entity_enter_block(
         &mut self,

@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::native_entity_refs::tests::with_game;
 use crate::game::native_item_places::tests::{guest, open_to_lan};
-use mod_api::{EntityToggleGlideEvent, Flow, Hooks, ModEntry, ServerHost};
+use mod_api::{EntityToggleGlideCancelEvent, Flow, Hooks, ModEntry, ServerHost};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -14,10 +14,10 @@ struct GlideProbe {
 }
 #[mod_api::__subscriptions]
 impl Hooks for GlideProbe {
-    fn entity_toggle_glide(
+    fn entity_toggle_glide_cancel(
         &self,
         _: &mut dyn ServerHost,
-        event: &mut EntityToggleGlideEvent<'_>,
+        event: &mut EntityToggleGlideCancelEvent<'_>,
     ) -> Flow {
         self.heard
             .lock()
@@ -31,7 +31,7 @@ impl Hooks for GlideProbe {
     }
 }
 
-/// `EntityToggleGlideEvent`: a gliding guest's second start ends the glide. The hook is heard
+/// `EntityToggleGlideCancelEvent`: a gliding guest's second start ends the glide. The hook is heard
 /// before the change with the new state (`false`); a cancel keeps the guest gliding, and without
 /// one the glide ends.
 #[test]

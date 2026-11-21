@@ -321,5 +321,5 @@ contained and the move goes on.
 
 ## Mobs breaking doors
 
-`entity_break_door` can be cancelled. A zombie or another mob that breaks a door is heard before the door is removed:
+`entity_break_door_cancel` can cancel it; `entity_break_door` itself still only listens, after the door goes. A zombie or another mob that breaks a door is heard before the door is removed:
 a cancel leaves the door as it is, with no block change and no level event.

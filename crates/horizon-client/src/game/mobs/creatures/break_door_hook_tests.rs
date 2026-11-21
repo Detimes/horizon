@@ -1,6 +1,6 @@
 use super::*;
 use crate::game::native_entity_refs::tests::with_game;
-use mod_api::{EntityBreakDoorEvent, Flow, Hooks, ModEntry, ServerHost};
+use mod_api::{EntityBreakDoorCancelEvent, Flow, Hooks, ModEntry, ServerHost};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -13,10 +13,10 @@ struct DoorProbe {
 }
 #[mod_api::__subscriptions]
 impl Hooks for DoorProbe {
-    fn entity_break_door(
+    fn entity_break_door_cancel(
         &self,
         _: &mut dyn ServerHost,
-        event: &mut EntityBreakDoorEvent<'_>,
+        event: &mut EntityBreakDoorCancelEvent<'_>,
     ) -> Flow {
         self.heard
             .lock()
@@ -30,7 +30,7 @@ impl Hooks for DoorProbe {
     }
 }
 
-/// `EntityBreakDoorEvent`: a zombie's `BreakDoorGoal` event is heard before the door goes, with the
+/// `EntityBreakDoorCancelEvent`: a zombie's `BreakDoorGoal` event is heard before the door goes, with the
 /// zombie, its type and the door's cell. A cancel keeps the door; without one the door becomes air.
 #[test]
 #[ignore = "daily"]

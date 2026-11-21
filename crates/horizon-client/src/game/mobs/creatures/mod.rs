@@ -3109,7 +3109,7 @@ impl Game<'_> {
                         .unwrap_or_default();
                     // EntityBreakDoorEvent: heard before the door goes; a cancel keeps it.
                     let mut cancel = false;
-                    self.native_entity_break_door(mob, &kind, pos, &mut cancel);
+                    self.native_entity_break_door_cancel(mob, &kind, pos, &mut cancel);
                     if cancel {
                         continue;
                     }
@@ -3120,6 +3120,7 @@ impl Game<'_> {
                     self.level_event_at(1021, pos, 0);
                     let left = self.world.block(pos[0], pos[1], pos[2]);
                     self.level_event_at(2001, pos, left.0 as i32);
+                    self.native_entity_break_door(mob, &kind, pos);
                 }
                 MobEvent::DestroyProgress { mob, pos, progress } => {
                     self.server_destroy_block_progress(mob as i32, pos, progress);
@@ -3166,7 +3167,6 @@ impl Game<'_> {
                                     player: None,
                                     entity: Some(mob),
                                     kind: &kind,
-                                    dimension: self.dim.id(),
                                     pos,
                                     from,
                                     to: state,
@@ -3180,17 +3180,7 @@ impl Game<'_> {
                                 && let Some(m) = self.mobs.iter().find(|m| m.id == mob)
                             {
                                 let kind = m.kind.id.clone();
-                                let dimension = self.dim.id();
-                                self.native_entity_change_block(
-                                    mod_api::__private::EntityChangeBlockCall {
-                                        dimension,
-                                        entity: mob,
-                                        kind: &kind,
-                                        pos,
-                                        from: &old_name,
-                                        to: name,
-                                    },
-                                );
+                                self.entity_changed_block(mob, &kind, pos, &old_name, name);
                             }
                         }
                     }
@@ -5917,7 +5907,7 @@ impl Game<'_> {
                 }
                 // To where the pearl started its last tick (oldPosition).
                 let mut to = p.previous;
-                let mut damage = Some(5.0);
+                let mut damage = 5.0;
                 let mut cancel = false;
                 let mut pearl_relative = 0;
                 // EntityTeleportEvent.EnderPearl: a server player's pearl.
@@ -5964,10 +5954,7 @@ impl Game<'_> {
                     }
                     // ServerPlayer.teleport: removeVehicle before the placement.
                     section_steps::teleport_player_keeping(self, to, pearl_relative);
-                    // `damage` None: a listener skipped the hurt call.
-                    if let Some(damage) = damage {
-                        self.hurt_player_by("minecraft:ender_pearl", damage);
-                    }
+                    self.hurt_player_by("minecraft:ender_pearl", damage);
                     self.audio.play(
                         "minecraft:entity.player.teleport",
                         Some([to.x, to.y, to.z]),
