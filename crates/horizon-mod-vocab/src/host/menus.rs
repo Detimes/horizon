@@ -26,6 +26,31 @@ pub trait MenusServerHost {
         replace: MenuReplace,
     ) -> Result<Option<i32>, StackWriteError>;
     /// Side: server.
+    /// `open_menu` for a hopper's menu (`minecraft:hopper`: five slots in a row, titled
+    /// `title`), which Paper's `InventoryType.HOPPER` opens. `items` are by slot, padded with
+    /// empty ones and cut at five; everything else, the window id, `replace`, the clicks that go
+    /// to `menu_clicked` and the writes through `menu`, is as for `open_menu`.
+    #[access(WorldOnly)]
+    fn open_hopper_menu(
+        &mut self,
+        uuid: u128,
+        title: Text,
+        items: Vec<Option<ItemStack>>,
+        replace: MenuReplace,
+    ) -> Result<Option<i32>, StackWriteError>;
+    /// Side: server.
+    /// `open_menu` for a dispenser's or dropper's menu (`minecraft:generic_3x3`: nine slots in a
+    /// square), which Paper's `InventoryType.DISPENSER` and `DROPPER` open. `items` are by slot,
+    /// padded with empty ones and cut at nine; everything else is as for `open_menu`.
+    #[access(WorldOnly)]
+    fn open_dispenser_menu(
+        &mut self,
+        uuid: u128,
+        title: Text,
+        items: Vec<Option<ItemStack>>,
+        replace: MenuReplace,
+    ) -> Result<Option<i32>, StackWriteError>;
+    /// Side: server.
     /// The menu `open_menu` opened that the player has open as window
     /// `window` (the window id `open_menu`, `menu_clicked` and `menu_closed`
     /// give). Its slots are written as `ItemPlace::MenuSlot` in a
