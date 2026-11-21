@@ -770,8 +770,6 @@ horizon-client game::item_drop_state_tests::the_largest_age_wraps_on_its_first_t
 horizon-client game::item_entities::destroyed_contents_tests::a_damaged_shulker_box_spills_its_stacks_upward lib daily resources
 horizon-client game::item_entities::destroyed_contents_tests::spilled_stacks_rise_from_their_own_randoms lib daily resources
 horizon-client game::item_entities::escape_tests::an_item_escapes_a_block_at_its_own_randoms_speed lib daily resources
-horizon-client game::item_entities::item_despawn_cancel_tests::a_cancelled_item_despawn_keeps_the_item_for_another_lifetime lib daily resources
-horizon-client game::item_entities::item_despawn_cancel_tests::an_uncancelled_item_despawn_removes_the_item lib daily resources
 horizon-client game::item_entities::thrown_items_tests::a_burning_items_sound_is_not_drawn_from_the_levels_random lib daily resources
 horizon-client game::item_entities::thrown_items_tests::a_client_pickup_sound_takes_the_listeners_random lib daily resources
 horizon-client game::item_entities::thrown_items_tests::a_death_scatter_takes_the_throwers_random_not_the_levels lib daily resources
