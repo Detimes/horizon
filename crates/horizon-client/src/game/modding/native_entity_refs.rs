@@ -628,6 +628,64 @@ impl Game<'_> {
         }
         self.set_biome_at(pos, biome)
     }
+    /// Set the biome of every 4x4x4 cell holding a block of `min <= pos < max` to `biome`, cell by
+    /// cell through `set_biome_at` (so each changed column is resent, and a transaction journals
+    /// it). Refusals are checked whole, before any cell changes, and named by [`BiomeFillRefusal`].
+    pub(super) fn level_fill_biome(
+        &mut self,
+        level: LevelRef,
+        min: [i32; 3],
+        max: [i32; 3],
+        biome: &str,
+    ) -> Result<u32, mod_api::BiomeFillRefusal> {
+        use mod_api::BiomeFillRefusal;
+        const MAX_CELLS: u64 = 16_384;
+        if !self.is_logical_server() {
+            return Err(BiomeFillRefusal::Client);
+        }
+        if !self.level_handle_current(level) {
+            return Err(BiomeFillRefusal::Stale);
+        }
+        if self.dim.key() != level.dimension() {
+            return Err(BiomeFillRefusal::NotInPlace);
+        }
+        if !world_biomes!(self).list.iter().any(|b| b.name == biome) {
+            return Err(BiomeFillRefusal::UnknownBiome);
+        }
+        if (0..3).any(|axis| min[axis] >= max[axis]) {
+            return Ok(0);
+        }
+        let (cx0, cx1) = (min[0] >> 2, (max[0] - 1) >> 2);
+        let (cy0, cy1) = (min[1] >> 2, (max[1] - 1) >> 2);
+        let (cz0, cz1) = (min[2] >> 2, (max[2] - 1) >> 2);
+        let cells = u64::from((cx1 - cx0 + 1) as u32)
+            * u64::from((cy1 - cy0 + 1) as u32)
+            * u64::from((cz1 - cz0 + 1) as u32);
+        if cells > MAX_CELLS {
+            return Err(BiomeFillRefusal::TooManyCells {
+                asked: u32::try_from(cells).unwrap_or(u32::MAX),
+                max: MAX_CELLS as u32,
+            });
+        }
+        let in_height = self.world.shape.contains_y(min[1]) && self.world.shape.contains_y(max[1] - 1);
+        let columns_loaded = (min[0] >> 4..=(max[0] - 1) >> 4).all(|cx| {
+            (min[2] >> 4..=(max[2] - 1) >> 4).all(|cz| self.world.chunks.contains_key(&(cx, cz)))
+        });
+        if !in_height || !columns_loaded {
+            return Err(BiomeFillRefusal::NotLoaded);
+        }
+        let mut changed = 0u32;
+        for cy in cy0..=cy1 {
+            for cz in cz0..=cz1 {
+                for cx in cx0..=cx1 {
+                    if self.set_biome_at([cx * 4, cy * 4, cz * 4], biome) {
+                        changed += 1;
+                    }
+                }
+            }
+        }
+        Ok(changed)
+    }
     /// One residency boundary for state-bearing block writes; position refusal is vanilla.
     fn native_level_write_position(
         &self,
@@ -1591,6 +1649,53 @@ pub(super) mod tests {
             let level = game.level(game.dim.id()).unwrap();
             assert_eq!(level.best_neighbor_signal(game, [4, 64, 5]), Some(0));
             assert_eq!(level.signal(game, [5, 64, 5], West), Some(0));
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_level_fills_a_box_of_biome_cells_and_refuses_whole() {
+        use horizon_client::chunk::Chunk;
+        use mod_api::BiomeFillRefusal;
+        use std::sync::Arc;
+
+        with_game(|game| {
+            game.options.dedicated = Some(Vec::new());
+            game.world
+                .chunks
+                .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+            let level = game.level(game.dim.id()).unwrap();
+            let target = usize::from(game.world.chunks[&(0, 0)].biome(0, 64, 0) == 0);
+            let name = world_biomes!(game).list[target].name.clone();
+            // Two cells in x, one in y (64..68), two in z: four 4x4x4 cells.
+            assert_eq!(
+                game.level_fill_biome(level, [0, 64, 0], [8, 68, 8], &name),
+                Ok(4)
+            );
+            assert_eq!(
+                usize::from(game.world.chunks[&(0, 0)].biome(7, 67, 7)),
+                target,
+                "the last cell of the box changed"
+            );
+            assert_eq!(
+                game.level_fill_biome(level, [0, 64, 0], [8, 68, 8], &name),
+                Ok(0),
+                "already set"
+            );
+            assert_eq!(
+                game.level_fill_biome(level, [0, 64, 0], [8, 68, 8], "minecraft:nope"),
+                Err(BiomeFillRefusal::UnknownBiome)
+            );
+            assert_eq!(
+                game.level_fill_biome(level, [100_000, 64, 0], [100_008, 68, 8], &name),
+                Err(BiomeFillRefusal::NotLoaded),
+                "unloaded columns refuse the whole box"
+            );
+            assert_eq!(
+                game.level_fill_biome(level, [4, 64, 4], [4, 68, 8], &name),
+                Ok(0),
+                "an empty box"
+            );
         });
     }
 
