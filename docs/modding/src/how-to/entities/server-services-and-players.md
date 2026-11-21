@@ -105,6 +105,8 @@ can still refuse the player.
 
 `entity.detonate(host)` (`entity_detonate`) explodes an entity now: a primed TNT explodes where it stands with its power, as `PrimedTnt.explode` does, and a creeper is lit and explodes at once, as `Creeper.explodeCreeper` does. The entity is gone after its explosion. It returns `false`, changing nothing, for a stale handle, a kind that does not explode, or when the explosion itself fails.
 
+`entity.set_fall_distance(host, distance)` (`entity_set_fall_distance`) sets the blocks a server player, a guest or a mob has fallen, as Paper's `Entity#setFallDistance` does, so the next landing hurts by that much. It returns `false` for another kind, a client, a stale handle or a value that is not finite; `entity_reset_fall_distance` is the zero.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
