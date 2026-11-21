@@ -610,7 +610,6 @@ horizon-client game::explosion::explosion_part_tests::block_parts_xp_and_explosi
 horizon-client game::explosion::shulker_lock_drop_tests::destruction_captures_the_external_shulker_lock_before_removal lib daily resources
 horizon-client game::explosion::tests::explosion_and_mob_breaks_apply_block_drops lib daily resources
 horizon-client game::explosion::tests::rays_reusing_their_last_block_explode_what_each_step_did lib daily resources
-horizon-client game::explosion_detonate::tests::the_event_names_the_exploding_source lib daily resources
 horizon-client game::falling_air_tick_tests::loaded_air_is_discarded_on_first_actual_game_tick lib daily resources
 horizon-client game::falling_blocks::geometry_tests::falling_model_cache_matches_direct_vertices lib daily resources
 horizon-client game::falling_damage::helmet_tests::falling_impacts_wear_the_helmet_before_normal_armor_and_reduction lib daily resources
