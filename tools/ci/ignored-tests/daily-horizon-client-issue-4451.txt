@@ -934,7 +934,6 @@ horizon-client game::load_conditions::tests::load_conditions_recipe_reload_count
 horizon-client game::loot_kill_guest_tests::an_empty_handed_guest_is_the_killer_and_a_missing_one_is_not lib daily resources
 horizon-client game::loot_kill_guest_tests::loot_kill_as_a_guest_is_killed_by_that_player lib daily resources
 horizon-client game::mace::tests::a_damage_item_part_changes_the_wear_of_a_weapon_hit lib daily resources
-horizon-client game::machines::brewing_fuel_transfer_tests::canceled_hopper_transfer_moves_nothing lib daily resources
 horizon-client game::machines::brewing_fuel_transfer_tests::empty_hopper_dispatches_prepare_transfer lib daily resources
 horizon-client game::machines::brewing_fuel_transfer_tests::hopper_brewing_fuel_transfer_respects_stack_components lib daily resources
 horizon-client game::machines::brewing_fuel_transfer_tests::prepare_transfer_inventory_write_is_ejected lib daily resources
@@ -2434,7 +2433,6 @@ horizon-client game::sniffers::sniffers_tests::the_egg_push_comes_from_the_items
 horizon-client game::spawn_save_tests::spawn_batches_refuse_saves_until_all_rows_are_published lib daily resources
 horizon-client game::spawn_yaw_tests::a_dispensed_mob_takes_the_wrapped_draw_too lib daily resources
 horizon-client game::spawn_yaw_tests::a_spawn_eggs_yaw_is_the_wrapped_level_draw lib daily resources
-horizon-client game::spawn_yaw_tests::a_spawned_mob_keeps_its_reason_until_it_joins_or_is_forgotten lib daily resources
 horizon-client game::spawn_yaw_tests::a_summoned_mob_without_nbt_faces_south lib daily resources
 horizon-client game::spawner::tests::a_running_delay_counts_down_without_drawing lib daily resources
 horizon-client game::spill::crafter_drop_name_tests::actual_crafter_destruction_keeps_source_name_off_the_dropped_item lib daily resources
