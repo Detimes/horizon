@@ -11,7 +11,8 @@ pub trait Hooks {
     /// is thrown; on a bite the fish gets away and the wait starts over; on
     /// a reel-in (2 to 4) nothing happens, the bobber stays out and the rod
     /// takes no wear. The bobber ending by itself (too far, the rod put
-    /// away, the owner dying), nor the host of a LAN world's rod. The
+    /// away, the owner dying), nor the host of a LAN world's rod. `caught` is the entity id the
+    /// bobber holds on a state-4 reel-in (`None` in every other state). The
     /// player's state is swapped in, so `host.players().acting_player()`, `PlayerRef::tell`
     /// and the item helpers reach them. Once for each cast, bite and reel-in,
     /// on a server.
