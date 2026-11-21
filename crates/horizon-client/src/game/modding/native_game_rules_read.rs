@@ -26,6 +26,7 @@ mod tests {
     use horizon_client_core::gamerules::Value;
 
     #[test]
+    #[ignore = "daily"]
     fn game_rule_default_is_vanilla_and_ignores_the_current_value() {
         super::super::native_entity_refs::tests::with_game(|game| {
             // Vanilla: keep_inventory defaults to false.
