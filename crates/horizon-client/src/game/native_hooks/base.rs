@@ -23,10 +23,9 @@ impl GameLevel<'_> {
         pos: BlockPos,
         item: &str,
         count: u32,
-        entity: u32,
         cancel: &mut bool,
     ) {
-        self.fire_hopper_pickup_item(dimension, pos, item, count, entity, cancel);
+        self.fire_hopper_pickup_item(dimension, pos, item, count, cancel);
     }
     /// An authoritative server committed a changed state through `Level.setBlock`.
     /// The world contains `new`; block side effects and neighbour updates follow.
@@ -3094,11 +3093,9 @@ impl Game<'_> {
         source: [i32; 3],
         destination: [i32; 3],
         item: &str,
-        source_slot: Option<u32>,
-        amount: u32,
         cancel: &mut bool,
     ) {
-        self.fire_inventory_move_item(source, destination, item, source_slot, amount, cancel);
+        self.fire_inventory_move_item(source, destination, item, cancel);
     }
     /// A hopper selected a container while searching for items to push or
     /// pull. Exactly one of `container` and `entity` identifies the target.
@@ -3138,16 +3135,15 @@ impl Game<'_> {
         self.fire_explosion_prime(center, radius);
     }
     /// A dropped item entity reached its 6000-tick lifetime and is about to be
-    /// removed (Bukkit's `ItemDespawnEvent`). Set `cancel` to keep it.
+    /// removed (Bukkit's `ItemDespawnEvent`).
     pub(in crate::game) fn native_item_despawn(
         &mut self,
         entity: u32,
         item: &str,
         count: i32,
         pos: [f64; 3],
-        cancel: &mut bool,
     ) {
-        self.fire_item_despawn(entity, item, count, pos, cancel);
+        self.fire_item_despawn(entity, item, count, pos);
     }
     /// A mob is about to drop `count` of `item` at `pos` (Bukkit's
     /// `EntityDropItemEvent`).
