@@ -60,6 +60,11 @@ removes the lore. A refused text returns `TextFormError` and changes nothing. Va
 custom name in italics unless its style sets `italic: false`.
 
 A canceled item toss loses the stack unless the listener asks for it back: during `item_toss`, `item.return_on_cancel(host)` makes a cancel give the stack to the thrower. Asked outside that call, it is `false` and changes nothing.
+The enchantments a stack carries are its `minecraft:enchantments` component, a map from registry id to
+level. `ItemStack::enchantments()` returns them as `(id, level)` pairs in id order, and
+`ItemStack::stored_enchantments()` returns an enchanted book's `minecraft:stored_enchantments` the same way.
+Only the stack's own patch is read: a prototype's enchantments are not reported, and an entry whose level is
+negative or not an integer is left out.
 
 ## Game boundaries
 
