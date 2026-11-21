@@ -103,6 +103,8 @@ can still refuse the player.
 
 `entity.set_swimming(host, swimming)` (`entity_set_swimming`) sets the swimming flag of a server player or a guest, the one the next water update reads, as Paper's `Entity#setSwimming` does. It returns `false` for a mob, which keeps its own swim, and for a stale handle.
 
+`entity.detonate(host)` (`entity_detonate`) explodes an entity now: a primed TNT explodes where it stands with its power, as `PrimedTnt.explode` does, and a creeper is lit and explodes at once, as `Creeper.explodeCreeper` does. The entity is gone after its explosion. It returns `false`, changing nothing, for a stale handle, a kind that does not explode, or when the explosion itself fails.
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
