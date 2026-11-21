@@ -115,6 +115,10 @@ struct Mixer {
     voices: Vec<(ChannelId, [f32; 3], f64)>,
     /// Mods' audio sources (`push_voice`), each with its queue.
     mod_audio: Vec<ModAudioSource>,
+    /// Whether an output stream is open: false while the device is lost and not yet reopened,
+    /// and after the game's audio is dropped, so a mod's audio is refused rather than queued
+    /// for nothing.
+    output_open: bool,
     /// A mod's muffle of the sounds it does not exempt.
     muffle: Muffle,
     limiter_peak: f32,
@@ -318,7 +322,6 @@ pub enum VoiceRefusal {
 #[derive(Clone)]
 pub struct VoiceHandle {
     mixer: Arc<Mutex<Mixer>>,
-    live: bool,
 }
 impl VoiceHandle {
     /// As [`Audio::push_voice`].
@@ -330,13 +333,11 @@ impl VoiceHandle {
         rate: u32,
         at: Option<[f64; 3]>,
     ) -> std::result::Result<(), VoiceRefusal> {
-        if !self.live {
+        let mut mixer = self.mixer.lock().map_err(|_| VoiceRefusal::NoOutput)?;
+        if !mixer.output_open {
             return Err(VoiceRefusal::NoOutput);
         }
-        self.mixer
-            .lock()
-            .map_err(|_| VoiceRefusal::NoOutput)?
-            .push_mod_audio(mod_id, source, samples, rate, at)
+        mixer.push_mod_audio(mod_id, source, samples, rate, at)
     }
 }
 impl Mixer {
@@ -459,7 +460,6 @@ impl MixerBackend {
     pub fn voice_handle(&self) -> VoiceHandle {
         VoiceHandle {
             mixer: self.mixer.clone(),
-            live: self.live,
         }
     }
 }
@@ -482,6 +482,10 @@ pub struct MixerBackend {
 impl Drop for MixerBackend {
     fn drop(&mut self) {
         if self.owner == 0 {
+            // The game's own backend going away (shutdown): mods' voice handles see no output.
+            if let Ok(mut m) = self.mixer.lock() {
+                m.output_open = false;
+            }
             return;
         }
         self.shares
@@ -602,6 +606,15 @@ impl Audio {
     /// decodes it.
     pub fn voice_handle(&self) -> VoiceHandle {
         self.backend.voice_handle()
+    }
+}
+
+impl Audio {
+    /// Tells the mixer, and so every mod's `VoiceHandle`, whether an output stream is open.
+    fn set_output_open(&self, open: bool) {
+        if let Ok(mut m) = self.backend.mixer.lock() {
+            m.output_open = open;
+        }
     }
 }
 
@@ -1599,6 +1612,9 @@ impl Audio {
                 (None, false)
             }
         };
+        if let Ok(mut m) = mixer.lock() {
+            m.output_open = live;
+        }
         let mut engine = SoundEngine::new(registry);
         engine.loaded = live;
         #[cfg(feature = "audio")]
@@ -1698,6 +1714,7 @@ impl Audio {
             return Ok(());
         }
         self._stream = Some(Self::open_named(self.backend.mixer.clone(), name)?);
+        self.set_output_open(true);
         self.device_name = name.to_owned();
         self.backend.live = true;
         self.engine.loaded = true;
@@ -1934,6 +1951,7 @@ impl Audio {
     fn reopen_output(&mut self, retrying: bool) -> bool {
         // The old stream lets go of the device first: a dead one may still hold it.
         self._stream = None;
+        self.set_output_open(false);
         let device = self.device_name.clone();
         match self.set_device(&device) {
             Ok(()) => {
@@ -2436,6 +2454,7 @@ impl Audio {
     #[doc(hidden)]
     pub fn backend_live_for_bench(&mut self) {
         self.backend.live = true;
+        self.set_output_open(true);
     }
 }
 impl Sounds for Audio {
@@ -3520,23 +3539,26 @@ mod tests {
         assert_eq!(m.push_mod_audio("a", 63, &[0.1], 48_000, None), Ok(()));
         // A share of the mixer pushes from another thread; without an output it names that.
         let shared = Arc::new(Mutex::new(Mixer::default()));
+        shared.lock().unwrap().output_open = true;
         let handle = VoiceHandle {
             mixer: shared.clone(),
-            live: true,
         };
         let sent = std::thread::spawn(move || handle.push("net", 7, &[0.1; 4], 48_000, None))
             .join()
             .unwrap();
         assert_eq!(sent, Ok(()));
         assert_eq!(shared.lock().unwrap().mod_audio.len(), 1);
+        // The output going away (a lost device not reopened, or shutdown) is seen by handles already out.
         let silent = VoiceHandle {
-            mixer: shared,
-            live: false,
+            mixer: shared.clone(),
         };
+        shared.lock().unwrap().output_open = false;
         assert_eq!(
             silent.push("net", 7, &[0.1], 48_000, None),
             Err(VoiceRefusal::NoOutput)
         );
+        shared.lock().unwrap().output_open = true;
+        assert_eq!(silent.push("net", 7, &[0.1], 48_000, None), Ok(()));
     }
 
     #[test]
