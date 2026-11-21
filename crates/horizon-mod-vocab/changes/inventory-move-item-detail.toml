@@ -1,0 +1,3 @@
+ids = ["hook:inventory_move_item", "type:InventoryMoveItemEvent.source_slot", "type:InventoryMoveItemEvent.amount"]
+why = "inventory_move_item reports the source slot the item leaves and how many leave, so hopper logs can record the stack moved, as Paper's InventoryMoveItemEvent allows."
+migrate = "Rebuild listeners against hook version 2. source_slot is an Option: None for a capability with no slot number. amount is 1 for every hopper transfer."
