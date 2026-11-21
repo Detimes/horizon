@@ -2496,13 +2496,21 @@ impl Hub {
         let mut credits = Vec::new();
         let mut inbox = inbox.into_iter();
         while let Some(entry) = inbox.next() {
-            let InboxItem::Packet(packet, credit) = entry else {
-                // Never filter or acknowledge past a raw callback boundary.
-                self.guests.update(i, |g| {
-                    g.inbox.push_back(entry);
-                    g.inbox.extend(inbox);
-                });
-                break;
+            let (packet, credit) = match entry {
+                InboxItem::Packet(packet, credit) => (packet, credit),
+                InboxItem::Kept(packet, credit) => {
+                    self.guests
+                        .update(i, |g| g.inbox.push_back(InboxItem::Kept(packet, credit)));
+                    continue;
+                }
+                entry @ InboxItem::Raw(..) => {
+                    // Never filter or acknowledge past a raw callback boundary.
+                    self.guests.update(i, |g| {
+                        g.inbox.push_back(entry);
+                        g.inbox.extend(inbox);
+                    });
+                    break;
+                }
             };
             match &packet {
                 S::Chat(c) => {
@@ -2521,7 +2529,7 @@ impl Hub {
                 | S::PingRequest(_)
                 | S::Pong(_) => {
                     self.guests
-                        .update(i, |g| g.inbox.push_back(InboxItem::Packet(packet, credit)));
+                        .update(i, |g| g.inbox.push_back(InboxItem::Kept(packet, credit)));
                     continue;
                 }
                 _ => {}
@@ -4223,6 +4231,10 @@ impl Hub {
                         return true;
                     }
                     continue;
+                }
+                InboxItem::Kept(packet, credit) => {
+                    credits.extend(credit);
+                    packet
                 }
                 InboxItem::Packet(packet, credit) => {
                     let heard_conn = self.guests[i].conn;

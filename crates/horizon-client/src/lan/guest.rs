@@ -148,6 +148,12 @@ pub enum InboxItem {
         Box<crate::raw_payloads::Delivery>,
         crate::net::ingress::ReceiveLease<super::NetEvent>,
     ),
+    /// An acknowledgement retained while the player was frozen in a handover: the engine
+    /// handles it without asking the `serverbound_packet` listeners, which never hear it.
+    Kept(
+        play::Serverbound,
+        Option<crate::net::ingress::ReceiveLease<super::NetEvent>>,
+    ),
 }
 #[cfg(test)]
 impl InboxItem {

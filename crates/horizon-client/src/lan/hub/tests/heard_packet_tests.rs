@@ -95,3 +95,20 @@ fn a_packet_held_for_a_guest_who_left_is_dropped_with_its_ruling() {
     assert!(hub.guests.is_empty());
     assert!(hub.heard.is_none(), "the slot is free again");
 }
+
+#[test]
+fn an_acknowledgement_kept_through_a_freeze_is_not_asked_of_the_listeners() {
+    let mut hub = listening(vec![tick_end(), walking(1.0)]);
+    let conn = hub.guests[0].conn;
+    hub.keep_acknowledgements(0, &mut Vec::new());
+    assert_eq!(hub.guests[0].inbox.len(), 1, "only the tick end is kept");
+    // Kept again on the next frozen tick, it stays exempt.
+    hub.keep_acknowledgements(0, &mut Vec::new());
+    assert_eq!(hub.guests[0].inbox.len(), 1);
+    assert!(
+        heard(&drain(&mut hub)).is_empty(),
+        "the kept packet is not held"
+    );
+    assert!(hub.heard_packet(conn).is_none());
+    assert!(hub.guests[0].inbox.is_empty());
+}

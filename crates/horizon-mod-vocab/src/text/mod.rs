@@ -249,9 +249,24 @@ impl Text {
     /// path and an inline object give nothing, as they need the game's context to resolve.
     /// Styles, click and hover events are left out.
     pub fn plain(&self) -> String {
+        // Translation arguments and children share one explicit work stack, so nesting depth
+        // never grows the call stack.
+        enum Work<'a> {
+            Text(&'a Text),
+            Str(&'a str),
+        }
         let mut out = String::new();
-        let mut pending = vec![self];
-        while let Some(text) = pending.pop() {
+        let mut pending = vec![Work::Text(self)];
+        while let Some(work) = pending.pop() {
+            let text = match work {
+                Work::Str(piece) => {
+                    out.push_str(piece);
+                    continue;
+                }
+                Work::Text(text) => text,
+            };
+            // Pushed last-first: the content's own parts, then the children, pop in order.
+            let mut ahead = Vec::new();
             match &text.content {
                 TextContent::Literal(value) => out.push_str(value),
                 TextContent::Translatable {
@@ -260,14 +275,16 @@ impl Text {
                     arguments,
                 } => match fallback {
                     Some(template) => {
-                        let mut arguments = arguments.iter().map(Text::plain);
+                        let mut arguments = arguments.iter();
                         let mut rest = template.as_str();
                         while let Some(at) = rest.find("%s") {
-                            out.push_str(&rest[..at]);
-                            out.extend(arguments.next());
+                            ahead.push(Work::Str(&rest[..at]));
+                            if let Some(argument) = arguments.next() {
+                                ahead.push(Work::Text(argument));
+                            }
                             rest = &rest[at + 2..];
                         }
-                        out.push_str(rest);
+                        ahead.push(Work::Str(rest));
                     }
                     None => out.push_str(key),
                 },
@@ -275,7 +292,8 @@ impl Text {
                 TextContent::Selector { pattern, .. } => out.push_str(pattern),
                 TextContent::Score { .. } | TextContent::Nbt { .. } | TextContent::Object(_) => {}
             }
-            pending.extend(text.children.iter().rev());
+            pending.extend(text.children.iter().rev().map(Work::Text));
+            pending.extend(ahead.into_iter().rev());
         }
         out
     }
@@ -1091,6 +1109,33 @@ mod tests {
         });
         assert_eq!(filled.plain(), "Hello Ada, you have 3.");
         assert_eq!(Text::literal("a").append(Text::literal("b")).plain(), "ab");
+    }
+
+    #[test]
+    fn plain_text_of_deeply_nested_arguments_does_not_recurse() {
+        let mut inner = Text::literal("core");
+        for _ in 0..100_000 {
+            inner = Text::new(TextContent::Translatable {
+                key: "wrap".into(),
+                fallback: Some("<%s>".into()),
+                arguments: vec![inner],
+            });
+        }
+        let plain = inner.plain();
+        assert_eq!(plain.len(), 4 + 2 * 100_000);
+        assert!(plain.starts_with("<<") && plain.ends_with(">>"));
+        // Drop iteratively: a recursive drop of this depth would overflow the test's own stack.
+        std::mem::forget(inner);
+        let mixed = Text::new(TextContent::Translatable {
+            key: "k".into(),
+            fallback: Some("a%sb%sc".into()),
+            arguments: vec![
+                Text::literal("1").append(Text::literal("2")),
+                Text::literal("3"),
+            ],
+        })
+        .append(Text::literal("!"));
+        assert_eq!(mixed.plain(), "a12b3c!");
     }
 
     fn named(name: &str) -> TextProfile {
