@@ -133,3 +133,8 @@ riding relationships are unlinked even when a listener cancels. Each mob keeps i
 resident or off-level classification, and descendant state remains frozen.
 Cancellation can prevent ejection while the vehicle remains live, including
 underwater or activator ejection.
+
+## Gliding boosts
+
+`player_elytra_boost` can be cancelled. It runs before a firework rocket used while gliding is launched or consumed:
+a cancel launches nothing, awards no stat and leaves the rocket in the player's hand.
