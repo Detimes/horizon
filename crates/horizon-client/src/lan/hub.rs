@@ -8829,7 +8829,6 @@ mod tests {
         assert_eq!(hub.guests[0].ticket_chunk(), left);
     }
 
-
     /// A display score reaches only the viewer's client: the objective comes once per slot, then one
     /// score packet; a removal is a reset. Uuid 1 is Bob, uuid 2 is Alice.
     #[test]
@@ -8840,16 +8839,24 @@ mod tests {
         sent(&bob);
         assert!(hub.set_display_score(2, 0, 1, Some(5)));
         let got = sent(&alice);
-        assert!(matches!(&got[0], play::Clientbound::SetObjective(o) if o.method == 0 && o.name == "horizon_slot_0"));
-        assert!(matches!(&got[1], play::Clientbound::SetDisplayObjective(d) if d.slot == 0 && d.objective == "horizon_slot_0"));
-        assert!(matches!(&got[2], play::Clientbound::SetScore(s) if s.score == 5 && s.objective == "horizon_slot_0"));
+        assert!(
+            matches!(&got[0], play::Clientbound::SetObjective(o) if o.method == 0 && o.name == "horizon_slot_0")
+        );
+        assert!(
+            matches!(&got[1], play::Clientbound::SetDisplayObjective(d) if d.slot == 0 && d.objective == "horizon_slot_0")
+        );
+        assert!(
+            matches!(&got[2], play::Clientbound::SetScore(s) if s.score == 5 && s.objective == "horizon_slot_0")
+        );
         assert_eq!(got.len(), 3);
         assert!(sent(&bob).is_empty(), "the target's own client is not told");
         // The objective is made once per slot: the next number is one packet.
         assert!(hub.set_display_score(2, 0, 1, Some(6)));
         assert_eq!(sent(&alice).len(), 1);
         assert!(hub.set_display_score(2, 0, 1, None));
-        assert!(matches!(&sent(&alice)[0], play::Clientbound::ResetScore(r) if r.objective.as_deref() == Some("horizon_slot_0")));
+        assert!(
+            matches!(&sent(&alice)[0], play::Clientbound::ResetScore(r) if r.objective.as_deref() == Some("horizon_slot_0"))
+        );
         // Only the Tab list and below-name slots; a player who is not on is refused.
         assert!(!hub.set_display_score(2, 1, 1, Some(1)));
         assert!(!hub.set_display_score(2, 0, 7, Some(1)));
