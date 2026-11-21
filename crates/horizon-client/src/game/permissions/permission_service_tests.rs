@@ -2,7 +2,8 @@
 //! contexts, online and offline UUIDs, initialization, handler selection and failures.
 
 use super::permission_service::{
-    DEFAULT_HANDLER_ID, HandlerFactory, LevelSource, MAX_LATE_NODES, ModAnswers, NodePolicy,
+    DEFAULT_HANDLER_ID, HandlerFactory, LevelSource, MAX_GRANTS, MAX_LATE_NODES, ModAnswers,
+    NodePolicy,
     PermissionHandler, PermissionService,
 };
 use mod_api::MAX_PREFIX_MATCHES;
@@ -364,6 +365,65 @@ fn a_late_declaration_is_refused_for_each_rule_and_keeps_nothing() {
 }
 
 #[test]
+fn a_grant_answers_true_for_that_player_and_node_until_its_source_revokes_it() {
+    let mut service = ready(vec![
+        (boolean("jobs.fly"), NodeDefault::Level(PermissionLevel::Owners)),
+        (boolean("jobs.dig"), NodeDefault::Level(PermissionLevel::Owners)),
+    ]);
+    let fly = boolean("jobs.fly");
+    // Nobody holds the nodes: ALICE is an administrator, below the level they ask for.
+    assert_eq!(service.query_bool(&fly, Some(ALICE), ALICE), Ok(false));
+    assert_eq!(service.grant(CAROL, &fly, "job:miner"), Ok(()));
+    assert_eq!(service.query_bool(&fly, None, CAROL), Ok(true));
+    // Another player, another node and an unrelated source are unaffected.
+    assert_eq!(service.query_bool(&fly, Some(ALICE), ALICE), Ok(false));
+    assert_eq!(service.query_bool(&boolean("jobs.dig"), None, CAROL), Ok(false));
+    // Two sources grant the same node; revoking one keeps the other's.
+    assert_eq!(service.grant(CAROL, &fly, "job:farmer"), Ok(()));
+    assert_eq!(service.revoke(CAROL, "job:miner"), Ok(1));
+    assert_eq!(service.query_bool(&fly, None, CAROL), Ok(true));
+    assert_eq!(service.revoke(CAROL, "job:farmer"), Ok(1));
+    assert_eq!(service.query_bool(&fly, None, CAROL), Ok(false));
+    assert_eq!(service.revoke(CAROL, "job:farmer"), Ok(0));
+}
+
+#[test]
+fn granting_twice_counts_once_and_revoke_counts_what_the_source_granted() {
+    let mut service = ready(vec![
+        (boolean("a.one"), NodeDefault::Level(PermissionLevel::Owners)),
+        (boolean("a.two"), NodeDefault::Level(PermissionLevel::Owners)),
+    ]);
+    for _ in 0..2 {
+        assert_eq!(service.grant(BOB, &boolean("a.one"), "s"), Ok(()));
+    }
+    assert_eq!(service.grant(BOB, &boolean("a.two"), "s"), Ok(()));
+    assert_eq!(service.revoke(BOB, "s"), Ok(2));
+    assert_eq!(service.query_bool(&boolean("a.one"), None, BOB), Ok(false));
+}
+
+#[test]
+fn a_grant_never_turns_a_handler_error_into_a_grant_and_a_deny_of_another_node_stays() {
+    let calls = Arc::new(AtomicU32::new(0));
+    let mut service = PermissionService::new();
+    service.set_level_source(levels());
+    service
+        .register_node(boolean("a.flag"), NodeDefault::Level(PermissionLevel::All))
+        .unwrap();
+    service
+        .register_handler_factory(
+            "fixed",
+            fixed(Err(PermissionError::HandlerFailed), calls.clone()),
+        )
+        .unwrap();
+    service.finish_gathering(Some("fixed"));
+    assert_eq!(service.grant(CAROL, &boolean("a.flag"), "s"), Ok(()));
+    assert_eq!(
+        service.query_bool(&boolean("a.flag"), None, CAROL),
+        Err(PermissionError::HandlerFailed)
+    );
+}
+
+#[test]
 fn late_nodes_stop_at_the_limit() {
     let mut service = ready(Vec::new());
     for n in 0..MAX_LATE_NODES {
@@ -527,6 +587,58 @@ fn the_default_answer_is_the_operator_level_check_and_ignores_the_handler() {
         Err(PermissionError::WrongType)
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0, "the handler is never asked");
+}
+
+#[test]
+fn a_grant_is_refused_for_each_rule_and_keeps_nothing() {
+    let mut early = PermissionService::new();
+    assert_eq!(
+        early.grant(BOB, &boolean("a.flag"), "s"),
+        Err(PermissionError::NotInitialized)
+    );
+    assert_eq!(early.revoke(BOB, "s"), Err(PermissionError::NotInitialized));
+    let mut service = ready(vec![
+        (boolean("a.flag"), NodeDefault::Level(PermissionLevel::Owners)),
+        (integer("a.count"), NodeDefault::Value(PermissionValue::Integer(1))),
+    ]);
+    assert_eq!(
+        service.grant(BOB, &boolean("a.none"), "s"),
+        Err(PermissionError::Unregistered)
+    );
+    assert_eq!(
+        service.grant(BOB, &integer("a.count"), "s"),
+        Err(PermissionError::WrongType)
+    );
+    assert_eq!(
+        service.grant(BOB, &boolean("a.flag"), ""),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(
+        service.grant(BOB, &boolean("a.flag"), &"s".repeat(129)),
+        Err(PermissionError::InvalidInput)
+    );
+    assert_eq!(service.revoke(BOB, ""), Err(PermissionError::InvalidInput));
+    assert_eq!(service.query_bool(&boolean("a.flag"), None, BOB), Ok(false));
+}
+
+#[test]
+fn grants_stop_at_the_limit_and_revoking_frees_room() {
+    let mut service = ready(vec![(
+        boolean("a.flag"),
+        NodeDefault::Level(PermissionLevel::Owners),
+    )]);
+    for uuid in 0..MAX_GRANTS as u128 {
+        service.grant(uuid, &boolean("a.flag"), "s").unwrap();
+    }
+    assert_eq!(MAX_GRANTS, 65536);
+    assert_eq!(
+        service.grant(u128::MAX, &boolean("a.flag"), "s"),
+        Err(PermissionError::InvalidInput)
+    );
+    // A grant already held is not a new one.
+    assert_eq!(service.grant(0, &boolean("a.flag"), "s"), Ok(()));
+    assert_eq!(service.revoke(0, "s"), Ok(1));
+    assert_eq!(service.grant(u128::MAX, &boolean("a.flag"), "s"), Ok(()));
 }
 
 #[test]

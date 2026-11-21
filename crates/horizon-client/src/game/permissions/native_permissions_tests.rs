@@ -3,8 +3,8 @@
 
 use super::handler::gather_handlers;
 use super::native_permissions::{
-    PermissionHost, QueryState, gathered_nodes, run_declare, run_nodes_with_prefix, run_query,
-    run_query_bool, run_query_tristate, run_snapshot,
+    PermissionHost, QueryState, gathered_nodes, run_declare, run_grant, run_nodes_with_prefix,
+    run_query, run_query_bool, run_query_tristate, run_revoke, run_snapshot,
 };
 use super::permission_service::{ModAnswer, ModAnswers, PermissionService};
 use mod_api::{
@@ -31,6 +31,9 @@ struct FakeHost {
     asked: Vec<Asked>,
     /// Whether the mod handler asks the same query again from inside its answer.
     reenter: bool,
+    /// Whether the mod handler grants `a.flag` from inside its answer, and what that said.
+    grant_inside: bool,
+    granted: Option<Result<(), PermissionError>>,
     /// What that inner query answered.
     inner: Option<Result<PermissionValue, PermissionError>>,
     /// Whether the mod handler declares a late node from inside its answer, and what that said.
@@ -64,6 +67,10 @@ impl ModAnswers for FakeHost {
                 &boolean("a.inside"),
                 &NodeDefault::Level(PermissionLevel::All),
             ));
+        }
+        if self.grant_inside {
+            self.grant_inside = false;
+            self.granted = Some(run_grant(self, uuid, node, "inside"));
         }
         Some(ModAnswer {
             mod_id: "garden".to_owned(),
@@ -104,6 +111,8 @@ fn host(configured: &str) -> FakeHost {
         alice_level: 0,
         asked: Vec::new(),
         reenter: false,
+        grant_inside: false,
+        granted: None,
         inner: None,
         declare_inside: false,
         declared: None,
@@ -486,4 +495,21 @@ fn the_built_in_handler_never_decides_and_refusals_are_the_querys_own() {
         run_query_tristate(&mut host, &boolean("a.staff"), BOB, &[]),
         Err(PermissionError::HandlerFailed)
     );
+}
+
+#[test]
+fn a_grant_changes_a_mod_providers_deny_and_a_grant_from_inside_a_handler_is_recursive() {
+    let mut host = host("garden.policy");
+    host.reply = Ok(PermissionValue::Boolean(false));
+    assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), CAROL), Ok(false));
+    assert_eq!(run_grant(&mut host, CAROL, &boolean("a.flag"), "job"), Ok(()));
+    assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), CAROL), Ok(true));
+    assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), BOB), Ok(false));
+    assert_eq!(run_revoke(&mut host, CAROL, "job"), Ok(1));
+    assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), CAROL), Ok(false));
+    // From inside the provider's answer the service is out of the host: refused, nothing granted.
+    host.grant_inside = true;
+    assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), CAROL), Ok(false));
+    assert_eq!(host.granted, Some(Err(PermissionError::Recursive)));
+    assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), CAROL), Ok(false));
 }

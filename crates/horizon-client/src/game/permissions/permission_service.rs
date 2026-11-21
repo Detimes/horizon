@@ -8,7 +8,7 @@ use mod_api::{
     check_contexts, check_node_name, check_node_prefix,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
 };
@@ -26,6 +26,11 @@ const MAX_CHILD_DEPTH: usize = 8;
 /// The most nodes a server accepts after gathering (`declare_late`), so a mod that declares a node
 /// per world, per player or per item can not grow the service without bound.
 pub(crate) const MAX_LATE_NODES: usize = 4096;
+/// The longest accepted grant source, in bytes.
+pub(crate) const MAX_GRANT_SOURCE_LEN: usize = 128;
+
+/// The most grants a server holds at once, over all players and sources.
+pub(crate) const MAX_GRANTS: usize = 65536;
 
 /// The operator level of a player, asked by UUID. `online` is the UUID when the player is on this
 /// server. The game supplies it when the server starts; it reads an online player's live level.
@@ -118,6 +123,10 @@ pub(crate) struct PermissionService {
     custom_handler: bool,
     /// How many nodes `declare_late` added since gathering ended.
     late_nodes: usize,
+    /// Temporary grants by player, then source: the Boolean nodes a mod granted (`grant`).
+    player_grants: BTreeMap<u128, BTreeMap<String, BTreeSet<String>>>,
+    /// How many (player, source, node) grants `player_grants` holds.
+    grant_count: usize,
     /// A duplicate node or handler failed the setup: the service stays uninitialized.
     setup_failed: bool,
     /// `permission-handler` named a handler no mod gathered: a custom handler was configured,
@@ -142,6 +151,8 @@ impl PermissionService {
             handler: None,
             custom_handler: false,
             late_nodes: 0,
+            player_grants: BTreeMap::new(),
+            grant_count: 0,
             setup_failed: false,
             handler_missing: false,
         }
@@ -460,6 +471,11 @@ impl PermissionService {
         if value != PermissionValue::Boolean(false) {
             return Ok(value);
         }
+        // A grant turns the handler's `false` into `true`; an error was returned above and is
+        // never turned into a grant.
+        if self.is_granted(uuid, &node.name) {
+            return Ok(PermissionValue::Boolean(true));
+        }
         let parents = self
             .grants
             .get(&(node.name.clone(), node.value_type))
@@ -478,6 +494,79 @@ impl PermissionService {
             }
         }
         Ok(value)
+    }
+
+    /// Whether any source granted the Boolean node `name` to `uuid`.
+    fn is_granted(&self, uuid: u128, name: &str) -> bool {
+        self.player_grants
+            .get(&uuid)
+            .is_some_and(|sources| sources.values().any(|nodes| nodes.contains(name)))
+    }
+
+    /// Grants the declared Boolean node `node` to `uuid` for as long as `source` holds it: a query
+    /// of that node for that player answers `true` where the handler answers `false` (a handler's
+    /// error stays an error). Granting the same node again for one source changes nothing. Refused
+    /// with `NotInitialized`, `Unregistered`, `WrongType` for a node that is not Boolean,
+    /// `InvalidInput` for an empty or over-long source or past [`MAX_GRANTS`] grants. Grants
+    /// are kept in memory, by UUID (an offline player's too), and dropped with the server.
+    /// Side: server.
+    pub(crate) fn grant(
+        &mut self,
+        uuid: u128,
+        node: &PermissionNode,
+        source: &str,
+    ) -> Result<(), PermissionError> {
+        check_grant_source(source)?;
+        if !self.is_initialized() {
+            return Err(PermissionError::NotInitialized);
+        }
+        if !self
+            .nodes
+            .contains_key(&(node.name.clone(), node.value_type))
+        {
+            return Err(PermissionError::Unregistered);
+        }
+        if node.value_type != PermissionValueType::Boolean {
+            return Err(PermissionError::WrongType);
+        }
+        let held = self
+            .player_grants
+            .get(&uuid)
+            .and_then(|sources| sources.get(source))
+            .is_some_and(|nodes| nodes.contains(&node.name));
+        if held {
+            return Ok(());
+        }
+        if self.grant_count >= MAX_GRANTS {
+            return Err(PermissionError::InvalidInput);
+        }
+        self.player_grants
+            .entry(uuid)
+            .or_default()
+            .entry(source.to_owned())
+            .or_default()
+            .insert(node.name.clone());
+        self.grant_count += 1;
+        Ok(())
+    }
+
+    /// Takes back every grant `source` made to `uuid` and returns how many that were. Grants of
+    /// other sources for the same player stay. Refused with `NotInitialized` and `InvalidInput`
+    /// for an empty or over-long source. Side: server.
+    pub(crate) fn revoke(&mut self, uuid: u128, source: &str) -> Result<u32, PermissionError> {
+        check_grant_source(source)?;
+        if !self.is_initialized() {
+            return Err(PermissionError::NotInitialized);
+        }
+        let Some(sources) = self.player_grants.get_mut(&uuid) else {
+            return Ok(0);
+        };
+        let removed = sources.remove(source).map_or(0, |nodes| nodes.len());
+        if sources.is_empty() {
+            self.player_grants.remove(&uuid);
+        }
+        self.grant_count -= removed;
+        Ok(removed as u32)
     }
 
     /// `query_with` for a service whose handler asks no mod, as in the tests.
@@ -544,6 +633,14 @@ impl PermissionNodes for PermissionService {
     ) -> Result<(), PermissionError> {
         self.register_node_with_children(node, default, children)
     }
+}
+
+/// A grant source is a non-empty name of at most [`MAX_GRANT_SOURCE_LEN`] bytes.
+fn check_grant_source(source: &str) -> Result<(), PermissionError> {
+    if source.is_empty() || source.len() > MAX_GRANT_SOURCE_LEN {
+        return Err(PermissionError::InvalidInput);
+    }
+    Ok(())
 }
 
 /// A Boolean node takes a level default or `Nobody`, any other node a value of its own type.
