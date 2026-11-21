@@ -72,6 +72,12 @@ Three item-meta setters write one component each, with no host call in the write
 with no key is removed. `ItemStack::set_leather_color(host, Some(rgb))` sets `rgb` in `minecraft:dyed_color` (only
 the low 24 bits are kept) and `None` returns the stack to the item's colour. Clearing any of them records a removal
 when the item's prototype supplies that component, so its default does not come back.
+A stack that holds stacks, a shulker box or chest item (`minecraft:container`) or a bundle
+(`minecraft:bundle_contents`), is read one level down with `stack.contained_stacks(host)`: the entries in the order
+stored, container first, with an entry left out when its item is unknown to the host, its count is zero or it is
+malformed, and at most 256 entries read of each. `stack.nesting_depth(host)` counts how many containers deep the
+stack goes (0 for none, 1 for a box of plain items, 2 for a box with a bundle inside) and stops at 64, so an item
+built to be deep cannot make the walk long: a scan for hostile items asks it once per stack.
 
 ## Game boundaries
 

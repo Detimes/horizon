@@ -153,6 +153,11 @@ pub struct StackSplit {
 
 /// The most lore lines the item packet reader takes.
 const MAX_LORE_LINES: usize = 256;
+/// The most entries of a container or bundle `contained_stacks` reads.
+const MAX_CONTAINED: usize = 256;
+/// How deep `nesting_depth` looks, and how many stacks it visits.
+const MAX_NESTING: u32 = 64;
+const MAX_NESTING_VISITS: usize = 65_536;
 
 impl ItemStack {
     /// Construct a nonempty stack. Registry maxima are validated by the game on writes.
@@ -556,6 +561,65 @@ impl ItemStack {
             }
         }
     }
+
+    /// The stacks inside this stack, one level down: its `minecraft:container` (a shulker box, a
+    /// chest or barrel item) in the order stored, then its `minecraft:bundle_contents` (a bundle).
+    /// Read from the stack's own components, as `from_nbt` reads an item: an entry whose item the
+    /// host does not know, whose count is zero or that is malformed is left out, and at most
+    /// 256 entries of each are read. Empty for a stack with neither component. Call it again on
+    /// a result to go further down, or use `nesting_depth`.
+    pub fn contained_stacks(&self, host: &dyn crate::Host) -> Vec<ItemStack> {
+        let mut stacks = Vec::new();
+        if let Some(Tag::List(entries)) = self.component_value("minecraft:container") {
+            for entry in entries.iter().take(MAX_CONTAINED) {
+                let Tag::Compound(entry) = entry else {
+                    continue;
+                };
+                if let Some(Tag::Compound(item)) = entry.get(&JavaString::from("item"))
+                    && let Some(stack) = Self::from_nbt(host, item)
+                {
+                    stacks.push(stack);
+                }
+            }
+        }
+        if let Some(Tag::List(entries)) = self.component_value("minecraft:bundle_contents") {
+            for entry in entries.iter().take(MAX_CONTAINED) {
+                if let Tag::Compound(item) = entry
+                    && let Some(stack) = Self::from_nbt(host, item)
+                {
+                    stacks.push(stack);
+                }
+            }
+        }
+        stacks
+    }
+    /// How many containers deep this stack nests: 0 for a stack that holds no stack, 1 for a
+    /// shulker box of plain items, 2 for one with a bundle inside, and so on. The walk stops at
+    /// 64 levels and answers 64, so a hostile item cannot make it deep or slow; with at most
+    /// 256 entries per level it also stops after 65,536 stacks in all.
+    pub fn nesting_depth(&self, host: &dyn crate::Host) -> u32 {
+        let mut budget = MAX_NESTING_VISITS;
+        self.nesting_depth_within(host, MAX_NESTING, &mut budget)
+            .min(MAX_NESTING)
+    }
+    fn nesting_depth_within(&self, host: &dyn crate::Host, levels: u32, budget: &mut usize) -> u32 {
+        if levels == 0 {
+            return 0;
+        }
+        let mut deepest = 0;
+        for inner in self.contained_stacks(host) {
+            if *budget == 0 {
+                return MAX_NESTING;
+            }
+            *budget -= 1;
+            deepest = deepest.max(1 + inner.nesting_depth_within(host, levels - 1, budget));
+        }
+        deepest
+    }
+    /// This stack's own value of component `id` as raw NBT, None when its patch has none.
+    fn component_value(&self, id: &str) -> Option<&Tag> {
+        self.components()?.as_nbt().get(&JavaString::from(id))
+    }
     /// Encode the item NBT escape using this host's canonical id, never a process-local key.
     /// Returns None when id metadata is unavailable. Only components present on the
     /// stack are written; effective defaults and maxima belong to the items host area.
@@ -681,6 +745,102 @@ mod tests {
         assert_eq!(stack, before);
         stack.set_display(&TextNbt, None, &[]).unwrap();
         assert!(stack.components().is_none(), "both components removed");
+    }
+
+    /// A host that knows three items by id.
+    struct Shelf;
+    impl crate::prelude::ItemsHost for Shelf {
+        fn item_key(&self, id: &crate::Identifier) -> Option<ItemKey> {
+            match id.as_str() {
+                "minecraft:stone" => Some(ItemKey(1)),
+                "minecraft:shulker_box" => Some(ItemKey(2)),
+                "minecraft:bundle" => Some(ItemKey(3)),
+                _ => None,
+            }
+        }
+        fn item_default_component(&self, _: ItemKey, _: &str) -> Option<Tag> {
+            None
+        }
+    }
+    impl crate::Host for Shelf {
+        fn backend(&self) -> Option<crate::BackendRef<'_>> {
+            None
+        }
+    }
+    crate::impl_host_areas!(Shelf, except(items));
+
+    fn item_tag(id: &str, count: i32, components: Option<(&str, Tag)>) -> Compound {
+        let mut item = Compound::new();
+        item.insert(JavaString::from("id"), Tag::String(id.into()));
+        item.insert(JavaString::from("count"), Tag::Int(count));
+        if let Some((name, value)) = components {
+            let mut patch = Compound::new();
+            patch.insert(JavaString::from(name), value);
+            item.insert(JavaString::from("components"), Tag::Compound(patch));
+        }
+        item
+    }
+
+    /// A shulker box's `container` entries and a bundle's `bundle_contents` read in order, an
+    /// unknown item or a zero count is left out, and the depth counts the boxes inside boxes.
+    #[test]
+    fn contained_stacks_and_nesting_depth_read_containers_and_bundles() {
+        let plain = ItemStack::of(ItemKey(0));
+        assert!(plain.contained_stacks(&Shelf).is_empty());
+        assert_eq!(plain.nesting_depth(&Shelf), 0);
+        let slot = |n: i32, item: Compound| {
+            let mut entry = Compound::new();
+            entry.insert(JavaString::from("slot"), Tag::Int(n));
+            entry.insert(JavaString::from("item"), Tag::Compound(item));
+            Tag::Compound(entry)
+        };
+        let bundle = item_tag(
+            "minecraft:bundle",
+            1,
+            Some((
+                "minecraft:bundle_contents",
+                Tag::List(vec![Tag::Compound(item_tag("minecraft:stone", 7, None))]),
+            )),
+        );
+        let shulker = item_tag(
+            "minecraft:shulker_box",
+            1,
+            Some((
+                "minecraft:container",
+                Tag::List(vec![
+                    slot(0, item_tag("minecraft:stone", 3, None)),
+                    slot(1, item_tag("minecraft:unknown", 1, None)),
+                    slot(2, item_tag("minecraft:stone", 0, None)),
+                    slot(4, bundle),
+                ]),
+            )),
+        );
+        let outer = ItemStack::from_nbt(&Shelf, &shulker).unwrap();
+        let inside = outer.contained_stacks(&Shelf);
+        assert_eq!(inside.len(), 2);
+        assert_eq!((inside[0].item(), inside[0].count()), (ItemKey(1), 3));
+        assert_eq!((inside[1].item(), inside[1].count()), (ItemKey(3), 1));
+        let in_bundle = inside[1].contained_stacks(&Shelf);
+        assert_eq!((in_bundle[0].item(), in_bundle[0].count()), (ItemKey(1), 7));
+        assert_eq!(inside[0].nesting_depth(&Shelf), 0);
+        assert_eq!(inside[1].nesting_depth(&Shelf), 1);
+        assert_eq!(outer.nesting_depth(&Shelf), 2);
+        // A chain of 100 bundles stops at the 64 levels the walk takes.
+        let mut chain = item_tag("minecraft:stone", 1, None);
+        for _ in 0..100 {
+            chain = item_tag(
+                "minecraft:bundle",
+                1,
+                Some((
+                    "minecraft:bundle_contents",
+                    Tag::List(vec![Tag::Compound(chain)]),
+                )),
+            );
+        }
+        assert_eq!(
+            ItemStack::from_nbt(&Shelf, &chain).unwrap().nesting_depth(&Shelf),
+            64
+        );
     }
 
     /// [`TextNbt`] over an item whose prototype supplies a name and a lore.
