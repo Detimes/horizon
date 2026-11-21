@@ -2001,14 +2001,16 @@ impl Game<'_> {
     ) {
         self.fire_player_shear_entity(player, name, entity_id, off_hand, cancel);
     }
-    /// A server player completed an advancement, after progress was recorded.
+    /// A server player completed an advancement, after progress was recorded. Set `cancel` to
+    /// withhold its toast, announcement and rewards; the advancement stays done in the progress.
     pub(in crate::game) fn native_player_advancement_done(
         &mut self,
         player: u128,
         name: &str,
         advancement: &str,
+        cancel: &mut bool,
     ) {
-        self.fire_player_advancement_done(player, name, advancement);
+        self.fire_player_advancement_done(player, name, advancement, cancel);
     }
     /// A criterion of a server player's advancement was granted or revoked, after its progress changed
     /// and before any completion rewards. A grant or revoke that changes nothing is not heard.
