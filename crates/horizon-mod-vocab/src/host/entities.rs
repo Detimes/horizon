@@ -238,6 +238,12 @@ pub trait EntitiesBackend {
     /// 379.
     #[access(WorldOnly)]
     fn entity_on_ground(&self, entity: EntityRef) -> Option<bool>;
+    /// Side: server.
+    /// The blocks the entity has fallen since it last landed or was reset (`Entity.fallDistance`,
+    /// saved as `fall_distance`); negative after a rise. Server players, guests and mobs. None
+    /// for another kind, a client or a stale handle.
+    #[access(WorldOnly)]
+    fn entity_fall_distance(&self, entity: EntityRef) -> Option<f64>;
     /// Side: both.
     /// The entity's box (`Entity.getBoundingBox`): its lowest and highest
     /// corner. None for the kinds whose box Horizon doesn't keep (displays,
@@ -621,12 +627,6 @@ pub trait EntitiesBackendMut {
     /// the level in place; true for a kind that keeps no fall distance, which has none to forget.
     #[access(WorldOnly)]
     fn entity_reset_fall_distance(&mut self, entity: EntityRef) -> bool;
-    /// Side: server.
-    /// The blocks the entity has fallen since it last landed or was reset (`Entity.fallDistance`,
-    /// saved as `fall_distance`); negative after a rise. Server players, guests and mobs. None
-    /// for another kind, a client or a stale handle.
-    #[access(WorldOnly)]
-    fn entity_fall_distance(&self, entity: EntityRef) -> Option<f64>;
     /// Side: server.
     /// The entity's UUID (`Entity.getUUID`), the one it is saved with; an
     /// entity that has none yet gets it now, as a new vanilla entity does.
