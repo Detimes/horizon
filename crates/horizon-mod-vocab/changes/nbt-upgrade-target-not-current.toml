@@ -1,0 +1,3 @@
+ids = ["call:ServerHost::upgrade_block_entity_nbt", "call:ServerHost::upgrade_entity_nbt", "type:NbtUpgradeError"]
+why = "NbtUpgradeError gains a TargetNotCurrent(i32) variant, refused by the new data_fix call when the target version is not the game's DataVersion. The two upgrade calls keep their signatures but return this error type, which now has the extra variant; the enum is non_exhaustive."
+migrate = "Add a wildcard arm to any match on NbtUpgradeError and handle TargetNotCurrent(version) if you match it explicitly, then rebuild native and WebAssembly mods against the new vocab."
