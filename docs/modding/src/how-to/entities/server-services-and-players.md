@@ -107,6 +107,8 @@ can still refuse the player.
 
 `entity.set_fall_distance(host, distance)` (`entity_set_fall_distance`) sets the blocks a server player, a guest or a mob has fallen, as Paper's `Entity#setFallDistance` does, so the next landing hurts by that much. It returns `false` for another kind, a client, a stale handle or a value that is not finite; `entity_reset_fall_distance` is the zero.
 
+`entity.set_fuse(host, ticks)` (`entity_set_fuse`) sets the ticks left before a primed TNT explodes, as vanilla's `PrimedTnt.setFuse` and Paper's `TNTPrimed#setFuseTicks` do. A fuse of `0` or less explodes it on its next tick. It returns `false`, changing nothing, for a negative count, a stale handle or an entity that is not primed TNT (a creeper's fuse is its swell, not this).
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
