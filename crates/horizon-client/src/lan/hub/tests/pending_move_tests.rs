@@ -416,3 +416,32 @@ fn the_queue_of_packets_over_the_budget_is_bounded_and_drops_the_oldest() {
     let want = (MOVE_PACKET_BUDGET + 5).is_multiple_of(3);
     assert_eq!(hub.guests[0].move_packet_queue[0].on_ground, want);
 }
+
+#[test]
+fn waiting_packets_are_dropped_when_the_guest_is_frozen_for_a_transfer() {
+    let total = MOVE_PACKET_BUDGET + 3;
+    let mut hub = standing(false, (0..total).map(status).collect());
+    hub.move_packets_listened = true;
+    assert_eq!(packets(&drain(&mut hub)).len(), MOVE_PACKET_BUDGET);
+    assert_eq!(hub.guests[0].move_packet_queue.len(), 3);
+    hub.guests.update(0, |g| g.held = true);
+    hub.ticks += 1;
+    assert!(
+        packets(&drain(&mut hub)).is_empty(),
+        "a frozen guest is not heard"
+    );
+    assert!(hub.guests[0].move_packet_queue.is_empty());
+}
+
+#[test]
+fn waiting_packets_from_before_a_level_change_are_dropped() {
+    let total = MOVE_PACKET_BUDGET + 3;
+    let mut hub = standing(false, (0..total).map(status).collect());
+    hub.move_packets_listened = true;
+    assert_eq!(packets(&drain(&mut hub)).len(), MOVE_PACKET_BUDGET);
+    let entered = hub.ticks;
+    hub.guests.update(0, |g| g.level_entered = entered);
+    hub.ticks += 1;
+    assert!(packets(&drain(&mut hub)).is_empty());
+    assert!(hub.guests[0].move_packet_queue.is_empty());
+}

@@ -14,7 +14,9 @@ pub trait Hooks {
     /// same packet. Not cancellable (`player_move` vetoes). With no listener nothing is queued.
     /// Each guest is heard at most 8 packets per tick; the packets over that wait, in order, for
     /// the next ticks (at most 256 wait, the oldest are dropped past that). Only the hook is
-    /// budgeted, the movement itself is processed as it arrives.
+    /// budgeted, the movement itself is processed as it arrives, so a packet that waited can be
+    /// heard after `player_move` already heard or vetoed the same move. Waiting packets are dropped
+    /// when the player changes level, is frozen for a transfer or leaves.
     /// Server-side.
     #[notes = r#"## Player move packet
 

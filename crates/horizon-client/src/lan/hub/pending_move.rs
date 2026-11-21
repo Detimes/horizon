@@ -53,6 +53,9 @@ pub struct MovePacket {
     pub on_ground: bool,
     pub has_position: bool,
     pub has_rotation: bool,
+    /// The guest's `level_entered` when the packet was queued: a packet from before a later level
+    /// change is dropped, not told in the new level.
+    pub entered: u64,
 }
 
 /// A movement report that passed the server's own checks (`handlePlayerPositionChange`).
@@ -119,6 +122,7 @@ impl Hub {
                 on_ground: m.on_ground,
                 has_position: m.has_position,
                 has_rotation: m.has_rotation,
+                entered: self.guests[i].level_entered,
             };
             self.guests.update(i, |g| {
                 if g.move_packet_queue.len() >= MOVE_PACKET_QUEUE {
@@ -170,7 +174,9 @@ impl Hub {
     }
 
     /// Tells `player_move_packet` the waiting packets of guest `i`, oldest first, up to the
-    /// guest's budget for this tick; the rest wait for the next tick.
+    /// guest's budget for this tick; the rest wait for the next tick. A packet queued before the
+    /// guest's last level change is dropped. The caller runs this only for an open, unfrozen guest
+    /// in its own level's pass.
     pub(super) fn tell_move_packets(&mut self, i: usize, events: &mut Vec<HostEvent>) {
         let ticks = self.ticks;
         let conn = self.guests[i].conn;
@@ -184,6 +190,9 @@ impl Hub {
                 let Some(p) = g.move_packet_queue.pop_front() else {
                     break;
                 };
+                if p.entered != g.level_entered {
+                    continue;
+                }
                 sent.push(p);
                 told += 1;
             }
