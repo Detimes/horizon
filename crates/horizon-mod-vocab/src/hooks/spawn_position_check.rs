@@ -9,6 +9,7 @@ pub trait Hooks {
     #[hook(
         side = "server",
         contract = "cancel",
+        host = "read",
         out = "canceled",
         neoforge = "none (NeoForge has no such event)"
     )]
