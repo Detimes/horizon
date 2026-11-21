@@ -74,4 +74,11 @@ pub trait ScoreboardServerHost {
     /// no team. False for a stale team and on a client.
     #[access(WorldOnly)]
     fn team_remove(&mut self, team: TeamRef) -> bool;
+    /// Side: server.
+    /// The name of the team the entity is on (`Entity.getTeam`, Paper's
+    /// `Scoreboard#getEntryTeam`), None when it is on no team. The scoreboard keys an entity
+    /// by its UUID, so this reads the entry `team_join` writes for it. Reads only: a stale
+    /// entity, a client, or an entity whose UUID the server cannot give gives None.
+    #[access(WorldOnly)]
+    fn entity_team(&mut self, entity: EntityRef) -> Option<String>;
 }

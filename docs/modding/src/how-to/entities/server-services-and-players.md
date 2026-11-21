@@ -334,3 +334,10 @@ team already, `Err(UnknownHolder)` for a holder the scoreboard cannot key and `E
 deletes a team and leaves its members with none. Teams are kept in the world's scoreboard, which the server saves, and
 members take the color in every client from the next tick's sync. A team handle resolves again on each call and goes
 stale when its team is removed or the world is opened again. Server only: a refused call changes nothing.
+
+## Team of an entity
+
+`ScoreboardServerHost::entity_team(entity)` (server side) reads the scoreboard team an entity is on, as
+Paper's `Entity#getScoreboardTeam` does. It returns the team's name, `None` when the entity is on no team.
+The scoreboard keys an entity by its UUID, so the answer follows the team the entity's UUID joined. A stale
+entity, a client, or an entity without a UUID gives `None`.
