@@ -687,31 +687,59 @@ impl Game<'_> {
         let (cx0, cx1) = (min[0] >> 2, (max[0] - 1) >> 2);
         let (cy0, cy1) = (min[1] >> 2, (max[1] - 1) >> 2);
         let (cz0, cz1) = (min[2] >> 2, (max[2] - 1) >> 2);
-        let cells = u64::from((cx1 - cx0 + 1) as u32)
-            * u64::from((cy1 - cy0 + 1) as u32)
-            * u64::from((cz1 - cz0 + 1) as u32);
+        // Widened and checked: the three spans can each reach 2^30 cells.
+        let span = |lo: i32, hi: i32| (i64::from(hi) - i64::from(lo) + 1) as u64;
+        let cells = span(cx0, cx1)
+            .checked_mul(span(cy0, cy1))
+            .and_then(|n| n.checked_mul(span(cz0, cz1)))
+            .unwrap_or(u64::MAX);
         if cells > MAX_CELLS {
             return Err(BiomeFillRefusal::TooManyCells {
                 asked: u32::try_from(cells).unwrap_or(u32::MAX),
                 max: MAX_CELLS as u32,
             });
         }
-        let in_height = self.world.shape.contains_y(min[1]) && self.world.shape.contains_y(max[1] - 1);
+        let in_height =
+            self.world.shape.contains_y(min[1]) && self.world.shape.contains_y(max[1] - 1);
         let columns_loaded = (min[0] >> 4..=(max[0] - 1) >> 4).all(|cx| {
             (min[2] >> 4..=(max[2] - 1) >> 4).all(|cz| self.world.chunks.contains_key(&(cx, cz)))
         });
         if !in_height || !columns_loaded {
             return Err(BiomeFillRefusal::NotLoaded);
         }
-        let mut changed = 0u32;
+        // A carrier transfer fence on any block of a cell refuses the whole box, before any write.
         for cy in cy0..=cy1 {
             for cz in cz0..=cz1 {
                 for cx in cx0..=cx1 {
-                    if self.set_biome_at([cx * 4, cy * 4, cz * 4], biome) {
-                        changed += 1;
+                    for (dx, dy, dz) in (0..64).map(|i| (i & 3, (i >> 2) & 3, i >> 4)) {
+                        if self.world.carrier_fences.locks_cell(&[
+                            cx * 4 + dx,
+                            cy * 4 + dy,
+                            cz * 4 + dz,
+                        ]) {
+                            return Err(BiomeFillRefusal::NotLoaded);
+                        }
                     }
                 }
             }
+        }
+        let mut changed = 0u32;
+        let mut columns: Vec<(i32, i32)> = Vec::new();
+        for cy in cy0..=cy1 {
+            for cz in cz0..=cz1 {
+                for cx in cx0..=cx1 {
+                    if let Some(key) = self.write_biome_at([cx * 4, cy * 4, cz * 4], biome) {
+                        changed += 1;
+                        if !columns.contains(&key) {
+                            columns.push(key);
+                        }
+                    }
+                }
+            }
+        }
+        // One resend for each changed column, however many of its cells changed.
+        for key in columns {
+            self.after_commit(crate::game::transactions::After::Biome(key));
         }
         Ok(changed)
     }
