@@ -176,17 +176,12 @@ impl Game<'_> {
         pos: [i32; 3],
         biome: &str,
     ) -> Option<(i32, i32)> {
-        let Some(target) = world_biomes!(self)
+        let target = world_biomes!(self)
             .list
             .iter()
-            .position(|b| b.name == biome)
-        else {
-            return None;
-        };
+            .position(|b| b.name == biome)?;
         let key = (pos[0] >> 4, pos[2] >> 4);
-        let Some(chunk) = self.world.chunks.get(&key) else {
-            return None;
-        };
+        let chunk = self.world.chunks.get(&key)?;
         if !self.world.shape.contains_y(pos[1])
             || usize::from(chunk.biome(pos[0], pos[1], pos[2])) == target
         {
