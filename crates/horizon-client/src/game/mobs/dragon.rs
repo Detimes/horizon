@@ -904,7 +904,7 @@ impl Dragon {
         // The last of `LivingEntity.hurtServer` (`reallyHurt`'s `super.hurtServer`):
         // `LivingDamageEvent.Post`, health taken or not.
         let hurting = horizon_client::health::Hurting::Dragon(self.id as i32, source);
-        level.damage_post(hurting, &container, false);
+        level.damage_post(hurting, &container);
         if self.phase.sitting() {
             self.sitting_damage += before - self.health.max(0.0);
             if self.sitting_damage > 0.25 * MAX_HEALTH {

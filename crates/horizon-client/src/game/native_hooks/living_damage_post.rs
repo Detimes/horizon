@@ -7,8 +7,7 @@ impl HitLevel<'_> {
     /// `hurtServer`'s fresh-hit decision). It only listens, and fires once per hit at the end of
     /// `hurtServer`, after `native_living_damage_pre`. The death hooks follow it (Horizon's order,
     /// not NeoForge's): a player's `die` is only a death request here, and a mob's `living_death`
-    /// is settled after its hurt returns. `cancelled` is set for a hit the incoming check canceled,
-    /// which fires at the cancel with no health damage. It can't write the
+    /// is settled after its hurt returns. It can't write the
     /// entity or the world's blocks: the level host gives the hit's random and level attachments.
     pub(in crate::game) fn native_living_damage_post(
         &mut self,
@@ -16,8 +15,7 @@ impl HitLevel<'_> {
         kind: &str,
         source: &HurtSource<'_>,
         container: &mod_api::DamageContainer,
-        cancelled: bool,
     ) {
-        self.fire_living_damage_post(entity, kind, source, container, cancelled);
+        self.fire_living_damage_post(entity, kind, source, container);
     }
 }

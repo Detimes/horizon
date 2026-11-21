@@ -64,9 +64,8 @@ pub struct DamageHooks {
     pub pre: Option<fn(DamageLevel<'_>, Hurting<'_>, &mut DamageContainer)>,
     /// `native_living_damage_post`: the end of `hurtServer` for a hit that passed the incoming
     /// check and the cooldown, with the health damage it took, 0 included
-    /// (`LivingDamageEvent.Post`). The last argument is `cancelled`: true for a hit the incoming
-    /// check canceled, which fires here at the cancel with no health damage.
-    pub post: Option<fn(DamageLevel<'_>, Hurting<'_>, &DamageContainer, bool)>,
+    /// (`LivingDamageEvent.Post`).
+    pub post: Option<fn(DamageLevel<'_>, Hurting<'_>, &DamageContainer)>,
     /// `native_living_knockback`: `LivingEntity.knockback`, at its start
     /// (`LivingKnockBackEvent`), on the raw strength and before the knockback resistance and
     /// the motion change. It may change the [`Knock`]; true cancels it.
@@ -328,15 +327,9 @@ impl<'a> DamageLevel<'a> {
         }
     }
     /// `LivingDamageEvent.Post` of the hit on `hurting` ([`DamageHooks::post`]; nothing without it).
-    /// `cancelled` is true for a hit the incoming check canceled.
-    pub fn damage_post(
-        &mut self,
-        hurting: Hurting<'_>,
-        container: &DamageContainer,
-        cancelled: bool,
-    ) {
+    pub fn damage_post(&mut self, hurting: Hurting<'_>, container: &DamageContainer) {
         if let Some(hook) = self.hooks.post {
-            hook(self.reborrow(), hurting, container, cancelled);
+            hook(self.reborrow(), hurting, container);
         }
     }
 }
@@ -1726,15 +1719,6 @@ impl HurtWorld for Environment<'_> {
             container,
         );
         self.canceled |= canceled;
-        if canceled {
-            // LivingDamageEvent.Post hears a hit the incoming check canceled, with `cancelled` set.
-            let source = self
-                .level
-                .attack()
-                .player_source(&self.source.definition().name, self.causing);
-            self.level
-                .damage_post(Hurting::Player(self.entity, source), container, true);
-        }
         Ok(canceled)
     }
     fn sleeping(&mut self, _: &mut State) -> io::Result<bool> {
@@ -1941,7 +1925,7 @@ impl HurtWorld for Environment<'_> {
             position: None,
         };
         self.level
-            .damage_post(Hurting::Player(self.entity, source), container, false);
+            .damage_post(Hurting::Player(self.entity, source), container);
         Ok(())
     }
 }
@@ -2138,9 +2122,7 @@ mod tests {
             _: super::DamageLevel<'_>,
             _: super::Hurting<'_>,
             container: &super::DamageContainer,
-            cancelled: bool,
         ) {
-            assert!(!cancelled, "a hit that reached the health is not canceled");
             // The plain values used by wasm must preserve the decision in both directions.
             let values = DamageValues::from(container);
             assert_eq!(
@@ -2393,8 +2375,6 @@ mod tests {
     /// What the hook of these tests saw: entity, damage type (a mob's kind)
     /// and causing entity, amount.
     static SEEN: std::sync::Mutex<Vec<(i32, String, f32)>> = std::sync::Mutex::new(Vec::new());
-    /// `(mob id, cancelled)` of each `living_damage_post` the mob hits made.
-    static POSTED: std::sync::Mutex<Vec<(i32, bool)>> = std::sync::Mutex::new(Vec::new());
     /// Sets the native damage hook of these tests (global: it stays set for
     /// the process): for entities 9001 to 9004 and 9011 to 9013 it records the
     /// hit, cancels x1's, doubles x2's, makes 9003's -5 and 9004's NaN, and gives 9005's hit an
@@ -2434,19 +2414,8 @@ mod tests {
             }
             entity % 10 == 1
         }
-        fn post_hook(
-            _: DamageLevel<'_>,
-            hurting: Hurting<'_>,
-            _: &DamageContainer,
-            cancelled: bool,
-        ) {
-            if let Hurting::Mob(mob, _) = hurting {
-                POSTED.lock().unwrap().push((mob.id as i32, cancelled));
-            }
-        }
         let hooks = super::DamageHooks {
             incoming: Some(hook),
-            post: Some(post_hook),
             ..super::DamageHooks::NONE
         };
         (hooks, |entity| {
@@ -2485,21 +2454,9 @@ mod tests {
         );
         assert!(kept.outbox.is_empty() && kept.velocity == Default::default());
         assert_eq!(seen(9001), [("PlayerAttack".to_owned(), 2.0)]);
-        // The canceled hit still reaches the post hook, once, flagged as canceled.
-        let posted = |id| -> Vec<bool> {
-            POSTED
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|p| p.0 == id)
-                .map(|p| p.1)
-                .collect()
-        };
-        assert_eq!(posted(9001), [true]);
         let mut doubled = mob(9002);
         assert!(doubled.damage(level, 2.0, hit));
         assert_eq!(doubled.health, 6.0);
-        assert_eq!(posted(9002), [false]);
         // LivingEntity.hurtServer: a negative amount hurts by 0, a NaN by
         // Float.MAX_VALUE.
         let (mut negative, mut nan) = (mob(9003), mob(9004));
