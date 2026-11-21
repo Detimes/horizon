@@ -993,6 +993,22 @@ pub trait PlayersBackendMut {
         player: PlayerRef,
         location: Option<GlobalPos>,
     ) -> bool;
+
+    /// Side: server.
+    /// `Player.playSound(Location, String, SoundCategory, float, float)`: plays sound event `sound` at
+    /// `at` for that player alone, whatever their distance, under `source`'s volume slider. The name,
+    /// source and volume checks of `level_play_sound` apply, and a refused sound sends nothing. False
+    /// when the sound is refused or the player is not on here.
+    #[access(WorldOnly)]
+    fn player_play_sound_at(
+        &mut self,
+        player: PlayerRef,
+        sound: &str,
+        source: SoundSource,
+        at: [f64; 3],
+        volume: f32,
+        pitch: f32,
+    ) -> bool;
     /// Side: server.
     /// `FoodData.eat(nutrition, saturationModifier)`: adds `nutrition` to
     /// the food level (0 to 20) and `nutrition * modifier * 2` to the
