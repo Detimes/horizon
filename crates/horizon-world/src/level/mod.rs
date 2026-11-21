@@ -542,6 +542,12 @@ pub trait LevelAccess: BlockEntityNeighbors {
     ) -> Option<std::borrow::Cow<'a, str>> {
         feature.map(std::borrow::Cow::Borrowed)
     }
+    /// Whether the block at `pos`, in state `from`, may grow into `to` by natural growth
+    /// (sculk growth above a charged sculk block so far). A native mod may refuse; `pos` stays
+    /// as it is. The default allows.
+    fn allow_block_grow(&self, _pos: BlockPos, _from: BlockStateId, _to: BlockStateId) -> bool {
+        true
+    }
     /// Whether a crop-like block grows on this random tick (NeoForge's
     /// `CommonHooks.canCropGrow`). `vanilla` is the game's own answer, its
     /// random roll already drawn.

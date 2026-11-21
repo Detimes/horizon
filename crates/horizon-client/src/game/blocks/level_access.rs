@@ -195,6 +195,14 @@ impl LevelAccess for GameLevel<'_> {
         self.native_block_grow_feature(self.dimension, pos, &mut feature, &mut cancel);
         feature.filter(|_| !cancel).map(std::borrow::Cow::Owned)
     }
+    fn allow_block_grow(&self, pos: BlockPos, from: BlockStateId, to: BlockStateId) -> bool {
+        let mut canceled = false;
+        if self.native_authoritative && mod_api::__private::listened(mod_api::HookId::BlockGrow)
+        {
+            self.native_block_grow(self.dimension, pos, from, to, &mut canceled);
+        }
+        !canceled
+    }
     fn crop_grow_pre(&mut self, pos: BlockPos, state: BlockStateId, vanilla: bool) -> bool {
         if !self.native_authoritative || !mod_api::__private::listened(mod_api::HookId::CropGrowPre)
         {
