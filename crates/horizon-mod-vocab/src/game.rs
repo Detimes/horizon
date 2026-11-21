@@ -61,6 +61,8 @@ pub enum PhantomSpawnResult {
 }
 /// The outcome of `tool_break_block`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
 pub enum BlockBreakResult {
     /// The block was removed, with its drops and tool damage.
     Broken,
