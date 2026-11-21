@@ -88,16 +88,16 @@ pub trait ConfigServerHost {
     #[access(Metadata)]
     fn game_tests_enabled(&self) -> bool;
     /// Side: server.
-    /// The server's tick rate (20 unless `/tick rate` changed it) and the
-    /// milliseconds its ticks took on average lately, as `/tick query`
-    /// reports them. The ticks a second it keeps up is the rate, or
-    /// 1000 / milliseconds when that is lower.
-    /// Side: server.
     /// The entity broadcast range the server hosts with, in percent of vanilla's range
     /// (`entity-broadcast-range-percentage` of server.properties, `/serversettings`). 100 when
     /// no server is hosting a world, as vanilla's default is.
     #[access(WorldOnly)]
     fn entity_range_percent(&self) -> i32;
+    /// Side: server.
+    /// The server's tick rate (20 unless `/tick rate` changed it) and the
+    /// milliseconds its ticks took on average lately, as `/tick query`
+    /// reports them. The ticks a second it keeps up is the rate, or
+    /// 1000 / milliseconds when that is lower.
     #[access(WorldOnly)]
     fn tick_stats(&self) -> (f32, f64);
     /// Side: server.
