@@ -26,14 +26,6 @@ impl Game<'_> {
         } else {
             self.as_guest(conn, hook);
         }
-        if !cancel
-            && let Some(p) = pos.filter(|p| {
-                &*self.res.facts().get(self.world.block(p[0], p[1], p[2])).name
-                    == "minecraft:ender_chest"
-            })
-        {
-            self.native_ender_chest_opened(uuid, p);
-        }
         !cancel
     }
 
@@ -280,6 +272,10 @@ impl Game<'_> {
         // `startOpen` does nothing, so its close must have nothing to decrement.
         if counts_openers && !spectator && self.container_openers_changed(pos, true) {
             self.container_edge_sound(pos, true);
+        }
+        // The menu is installed: only now does the guest hold the ender chest.
+        if matches!(slots, Slots::Ender) {
+            self.native_ender_chest_opened(uuid, [pos.0, pos.1, pos.2]);
         }
         self.player_menu_opening(conn);
         MenuOpen::Opened
