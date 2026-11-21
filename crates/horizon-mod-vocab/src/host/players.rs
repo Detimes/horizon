@@ -996,6 +996,14 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_set_game_mode(&mut self, player: PlayerRef, mode: GameMode) -> bool;
     /// Side: server.
+    /// Breaks the block at `pos` as `player`, with the item they hold: the vanilla break
+    /// (`ServerPlayerGameMode.destroyBlock`), with its drops, its tool damage and the `break_block`
+    /// listeners (which can still cancel it). `Broken` when the block went, `Kept` when the game or a
+    /// listener refused it, and `NotThisPlayer` for a stale player or one this handle does not act for
+    /// (only the local guest is served by this build). Paper: `Player#breakBlock`.
+    #[access(WorldOnly)]
+    fn tool_break_block(&mut self, player: PlayerRef, pos: [i32; 3]) -> BlockBreakResult;
+    /// Side: server.
     /// `Inventory.setSelectedSlot`: makes `slot` (0 to 8) the hotbar slot the player holds and
     /// tells their client (`ClientboundSetHeldSlot`), as `/clear`-style server code does. A new
     /// slot ends a main-hand use in progress, as the client's own switch does, and asks no
@@ -1338,4 +1346,15 @@ pub trait PlayersBackendMut {
     /// that is not finite.
     #[access(WorldOnly)]
     fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
+}
+
+/// The outcome of `tool_break_block`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockBreakResult {
+    /// The block was removed, with its drops and tool damage.
+    Broken,
+    /// The game or a `break_block` listener refused the break; the block stays.
+    Kept,
+    /// The handle is stale, or it names a player this build does not act for.
+    NotThisPlayer,
 }
