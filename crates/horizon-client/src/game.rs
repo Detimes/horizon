@@ -1690,7 +1690,7 @@ struct Game<'a> {
     /// This play session's frame and tick times, for opt-in performance statistics.
     perf: horizon_client::telemetry::Session,
     /// Control replies waiting for a rendered frame or a benchmark deadline.
-    pending_screenshot: Option<std::sync::mpsc::Sender<String>>,
+    pending_screenshot: Option<pending_screenshot::Pending>,
     /// `screenshot-sequence` while it runs.
     screenshot_sequence: Option<screenshot_sequence::Sequence>,
     /// `render-capture DIR`: replied once the renderer wrote the scene.
@@ -9058,6 +9058,7 @@ impl Game<'_> {
                 if event.state == ElementState::Pressed
                     && event.physical_key == PhysicalKey::Code(KeyCode::Escape))
         {
+            self.displace_pending_replay(mod_api::ReplayError::Unavailable);
             self.pending_entry = None;
             self.perf.cancel_world_opening();
             return;
@@ -9395,8 +9396,6 @@ impl Game<'_> {
                         }
                     }
                 }
-                WindowEvent::MouseWheel { .. }
-                    if self.screen == Screen::Playing && self.replay.driver.is_some() => {}
                 WindowEvent::MouseWheel { delta, .. } => {
                     let (raw_x, raw_y) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (f64::from(x), f64::from(y)),
@@ -10282,9 +10281,9 @@ impl Game<'_> {
                             }
                         });
                     if let Some(result) = &finished
-                        && let Some(reply) = self.pending_screenshot.take()
+                        && let Some(pending) = self.pending_screenshot.take()
                     {
-                        let _ = reply.send(
+                        let _ = pending.reply.send(
                             match result {
                                 Ok([w, h]) => {
                                     serde_json::json!({ "ok": true, "width": w, "height": h })
