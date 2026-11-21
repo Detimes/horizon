@@ -56,5 +56,13 @@ pub trait Hooks {
         neoforge = "EntityJoinLevelEvent",
         version = 3
     )]
-    fn entity_join_level();
+    fn entity_join_level(
+        dimension: &str,
+        entity: u32,
+        kind: &str,
+        pos: [f64; 3],
+        loaded_from_disk: bool,
+        reason: Option<mod_api::SpawnReason>,
+        canceled: &mut bool,
+    );
 }

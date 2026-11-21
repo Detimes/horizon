@@ -3905,15 +3905,9 @@ impl Game<'_> {
     /// simulating (displays, markers, interactions). Server-side.
     pub(in crate::game) fn native_entity_join_level(
         &mut self,
-        dimension: &str,
-        entity: u32,
-        kind: &str,
-        pos: [f64; 3],
-        loaded_from_disk: bool,
-        reason: Option<mod_api::SpawnReason>,
-        canceled: &mut bool,
+        call: mod_api::__private::EntityJoinLevelCall<'_>,
     ) {
-        self.fire_entity_join_level(dimension, entity, kind, pos, loaded_from_disk, reason, canceled);
+        self.fire_entity_join_level(call);
     }
     /// An entity mounts or dismounts a vehicle (NeoForge's `EntityMountEvent`, posted from
     /// `Entity.startRiding` and `removeVehicle`): `entity` of type `kind` (`minecraft:player`,
