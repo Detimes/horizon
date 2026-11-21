@@ -1223,6 +1223,7 @@ horizon-client game::native_entity_layers_tests::a_player_draws_the_layers_of_it
 horizon-client game::native_entity_layers_tests::this_windows_player_is_told_its_own_entity_id lib daily child-process
 horizon-client game::native_entity_motion::tests::on_block_picks_the_support_nearest_the_entity_and_pick_clips_blocks lib daily resources
 horizon-client game::native_entity_motion::tests::only_a_mount_its_rider_controls_takes_the_riders_speed lib daily resources
+horizon-client game::native_entity_motion::tests::player_set_sneaking_sets_a_guests_shift_key lib daily resources
 horizon-client game::native_entity_motion::tests::reset_fall_distance_forgets_a_fall_for_mobs_carts_and_players lib daily resources
 horizon-client game::native_entity_moves::tests::moves_and_pushes_a_live_mob lib daily resources
 horizon-client game::native_entity_refs::dragon_query::tests::a_client_lists_the_dragon_and_its_parts_in_a_box lib daily resources
@@ -1846,6 +1847,8 @@ horizon-client game::native_player_disconnect_tests::a_second_disconnect_while_p
 horizon-client game::native_player_disconnect_tests::disconnect_reaches_acting_and_displaced_players lib daily resources
 horizon-client game::native_player_disconnect_tests::disconnect_refuses_the_owner_stale_and_offline_players lib daily resources
 horizon-client game::native_player_disconnect_tests::disconnect_sends_the_reason_to_that_guest_only lib daily resources
+horizon-client game::native_player_disconnect_tests::leaving::a_disconnect_inside_player_leaving_is_refused lib daily resources
+horizon-client game::native_player_disconnect_tests::leaving::a_released_guest_does_not_fire_player_leaving lib daily resources
 horizon-client game::native_player_disconnect_tests::wasm_disconnect_crosses_the_generated_forwarder lib daily resources
 horizon-client game::native_player_food::tests::a_stale_handle_gives_nothing lib daily resources
 horizon-client game::native_player_food::tests::levels_are_added_taken_and_clamped_at_zero lib daily resources
@@ -1853,6 +1856,7 @@ horizon-client game::native_player_food::tests::more_points_than_an_int_are_refu
 horizon-client game::native_player_food::tests::points_repair_a_damaged_mending_item_before_experience lib daily resources
 horizon-client game::native_player_modes::tests::item_use_follows_the_mode_the_stack_and_the_clicked_block lib daily resources
 horizon-client game::native_player_modes::tests::one_player_may_harm_another_by_the_pvp_rule_and_their_teams lib daily resources
+horizon-client game::native_player_move_packet_tests::a_packet_is_heard_with_its_flags_and_a_gone_guest_is_not lib daily resources
 horizon-client game::native_player_move_tests::a_veto_corrects_the_player_and_a_pass_commits_the_report lib daily resources
 horizon-client game::native_player_move_tests::a_veto_of_the_first_of_two_reports_in_one_tick_corrects_and_the_second_is_not_heard lib daily resources
 horizon-client game::native_player_move_tests::two_reports_in_one_tick_are_heard_in_order_each_from_the_one_before_when_both_pass lib daily resources

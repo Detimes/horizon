@@ -532,6 +532,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "daily"]
     fn player_set_sneaking_sets_a_guests_shift_key() {
         fn fake_shift<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut bool {
             let host = game.lan.as_mut().unwrap();
