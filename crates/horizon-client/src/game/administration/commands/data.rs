@@ -764,10 +764,10 @@ impl Game<'_> {
                 // Entity.load reads portalCooldown and leaves the portal
                 // process as it is.
                 if let Some(portal) = self.portals.entities.get_mut(&id) {
-                    portal.cooldown = match tag.get("PortalCooldown") {
-                        Some(Tag::Int(cooldown)) => *cooldown,
-                        _ => 0,
-                    };
+                    portal.cooldown = tag
+                        .get("PortalCooldown")
+                        .and_then(horizon_client::nbt_path::int_value)
+                        .unwrap_or(0);
                 } else {
                     self.restore_portal_cooldown(id, &tag);
                 }
@@ -864,10 +864,10 @@ impl Game<'_> {
                 // Entity.load reads portalCooldown and leaves the portal
                 // process as it is; the read path writes the live value back.
                 if let Some(portal) = self.portals.entities.get_mut(&id) {
-                    portal.cooldown = match tag.get("PortalCooldown") {
-                        Some(Tag::Int(cooldown)) => *cooldown,
-                        _ => 0,
-                    };
+                    portal.cooldown = tag
+                        .get("PortalCooldown")
+                        .and_then(horizon_client::nbt_path::int_value)
+                        .unwrap_or(0);
                 } else {
                     self.restore_portal_cooldown(id, &tag);
                 }
