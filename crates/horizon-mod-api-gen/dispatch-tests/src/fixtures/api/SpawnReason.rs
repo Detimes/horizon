@@ -1,0 +1,22 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpawnReason {
+    Natural,
+    ChunkGeneration,
+    Spawner,
+    TrialSpawner,
+    Reinforcement,
+    Patrol,
+    Structure,
+    Event,
+    Command,
+    SpawnItemUse,
+    MobSummoned,
+    Conversion,
+    Breeding,
+    Triggered,
+    Jockey,
+    Dispenser,
+    Bucket,
+    Load,
+    DimensionTravel,
+}
