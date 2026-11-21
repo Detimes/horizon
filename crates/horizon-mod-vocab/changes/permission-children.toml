@@ -1,0 +1,3 @@
+ids = ["method:prelude::PermissionNodes::add_with_children"]
+why = "Adds PermissionNodes::add_with_children (Bukkit plugin.yml children): a Boolean node that grants Boolean child nodes to a player who holds it. Refused with named errors (WrongType, InvalidInput, DuplicateNode) and keeps nothing on refusal; cycles answer Recursive."
+migrate = "Additive. None."

@@ -3,7 +3,7 @@
 //! explicit refusal, and no refusal falls back to a grant.
 
 use mod_api::{
-    NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
+    MAX_CHILDREN, NodeDefault, PermissionContext, PermissionError, PermissionLevel, PermissionNode,
     PermissionNodes, PermissionValue, PermissionValueType, check_contexts, check_node_name,
 };
 use std::{
@@ -18,6 +18,10 @@ pub(crate) const DEFAULT_HANDLER_ID: &str = "default";
 
 /// The longest accepted handler id, in bytes.
 const MAX_HANDLER_ID_LEN: usize = 128;
+
+/// How many parents deep a child grant is followed. A cycle of grants reaches this depth and is
+/// refused with `Recursive`, never granted.
+const MAX_CHILD_DEPTH: usize = 8;
 
 /// The operator level of a player, asked by UUID. `online` is the UUID when the player is on this
 /// server. The game supplies it when the server starts; it reads an online player's live level.
@@ -97,6 +101,8 @@ pub(crate) enum NodePolicy {
 /// owns one, created when it starts and dropped when it closes.
 pub(crate) struct PermissionService {
     nodes: BTreeMap<NodeKey, (PermissionNode, NodeDefault)>,
+    /// For each child node, the parent Boolean nodes that grant it (`add_with_children`).
+    grants: BTreeMap<NodeKey, Vec<PermissionNode>>,
     factories: BTreeMap<String, HandlerFactory>,
     levels: Option<LevelSource>,
     handler: Option<Box<dyn PermissionHandler>>,
@@ -119,6 +125,7 @@ impl PermissionService {
     pub(crate) fn new() -> Self {
         Self {
             nodes: BTreeMap::new(),
+            grants: BTreeMap::new(),
             factories: BTreeMap::new(),
             levels: None,
             handler: None,
@@ -170,6 +177,47 @@ impl PermissionService {
             return Err(PermissionError::DuplicateNode);
         }
         self.nodes.insert(key, (node, default));
+        Ok(())
+    }
+
+    /// Declares the Boolean `node` with `default`, and the Boolean `children` it grants: a player
+    /// who holds `node` holds each child too. Refused after gathering has finished, for a
+    /// non-Boolean node or child, for more than `MAX_CHILDREN` children, for a child that is the
+    /// node itself or listed twice, and for a node already declared. A refusal keeps nothing,
+    /// neither the node nor its grants. Side: server.
+    pub(crate) fn register_node_with_children(
+        &mut self,
+        node: PermissionNode,
+        default: NodeDefault,
+        children: &[PermissionNode],
+    ) -> Result<(), PermissionError> {
+        if self.is_initialized() {
+            return Err(PermissionError::InvalidInput);
+        }
+        if node.value_type != PermissionValueType::Boolean {
+            return Err(PermissionError::WrongType);
+        }
+        if children.len() > MAX_CHILDREN {
+            return Err(PermissionError::InvalidInput);
+        }
+        for (index, child) in children.iter().enumerate() {
+            if child.value_type != PermissionValueType::Boolean {
+                return Err(PermissionError::WrongType);
+            }
+            check_node_name(&child.name)?;
+            if child.name == node.name
+                || children[..index].iter().any(|earlier| earlier.name == child.name)
+            {
+                return Err(PermissionError::InvalidInput);
+            }
+        }
+        self.register_node(node.clone(), default)?;
+        for child in children {
+            self.grants
+                .entry((child.name.clone(), child.value_type))
+                .or_default()
+                .push(node.clone());
+        }
         Ok(())
     }
 
@@ -262,6 +310,21 @@ impl PermissionService {
         contexts: &[PermissionContext],
         answers: &mut dyn ModAnswers,
     ) -> Result<PermissionValue, PermissionError> {
+        self.query_at(node, online, uuid, contexts, answers, 0)
+    }
+
+    /// `query_with` at a grant depth. A `false` from the handler is not final for a child node:
+    /// when a parent node holds for the player (`true`), the child is granted too. The parents'
+    /// own answers are asked the same way, so their errors are the child's errors.
+    fn query_at(
+        &mut self,
+        node: &PermissionNode,
+        online: Option<u128>,
+        uuid: u128,
+        contexts: &[PermissionContext],
+        answers: &mut dyn ModAnswers,
+        depth: usize,
+    ) -> Result<PermissionValue, PermissionError> {
         if !self.is_initialized() {
             return Err(PermissionError::NotInitialized);
         }
@@ -294,6 +357,26 @@ impl PermissionService {
                 handler.id()
             );
             return Err(PermissionError::WrongType);
+        }
+        if value != PermissionValue::Boolean(false) {
+            return Ok(value);
+        }
+        let parents = self
+            .grants
+            .get(&(node.name.clone(), node.value_type))
+            .cloned()
+            .unwrap_or_default();
+        if parents.is_empty() {
+            return Ok(value);
+        }
+        if depth >= MAX_CHILD_DEPTH {
+            return Err(PermissionError::Recursive);
+        }
+        for parent in &parents {
+            let granted = self.query_at(parent, online, uuid, contexts, answers, depth + 1)?;
+            if granted == PermissionValue::Boolean(true) {
+                return Ok(PermissionValue::Boolean(true));
+            }
         }
         Ok(value)
     }
@@ -352,6 +435,15 @@ impl ModAnswers for NoMods {
 impl PermissionNodes for PermissionService {
     fn add(&mut self, node: PermissionNode, default: NodeDefault) -> Result<(), PermissionError> {
         self.register_node(node, default)
+    }
+
+    fn add_with_children(
+        &mut self,
+        node: PermissionNode,
+        default: NodeDefault,
+        children: &[PermissionNode],
+    ) -> Result<(), PermissionError> {
+        self.register_node_with_children(node, default, children)
     }
 }
 

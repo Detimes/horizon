@@ -139,6 +139,21 @@ impl PermissionNodes for NodeCollector {
         }
         result
     }
+
+    fn add_with_children(
+        &mut self,
+        node: PermissionNode,
+        default: NodeDefault,
+        children: &[PermissionNode],
+    ) -> Result<(), PermissionError> {
+        let result = self
+            .service
+            .register_node_with_children(node, default, children);
+        if result == Err(PermissionError::DuplicateNode) {
+            self.duplicate = true;
+        }
+        result
+    }
 }
 
 /// Runs `gather` (the mods' hook) over `service` and returns the service with the declared

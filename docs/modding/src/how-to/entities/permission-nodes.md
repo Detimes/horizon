@@ -23,6 +23,12 @@ no late registration: a node added after that is refused.
 - The built-in handler reads the player's operator level when the query runs: an online player's live level, else
   the dedicated server's operator list by UUID, else level 0. It ignores the contexts. A caller may leave out
   any context key; the service refuses only too many contexts or an empty or over-long key.
+- `PermissionNodes::add_with_children(node, default, children)` declares a Boolean node that grants Boolean child
+  nodes (Bukkit's `plugin.yml` `children`). A child answers `true` when its own answer is `true` or a parent answers
+  `true` for the player; a child's own `true` is never taken back by a parent. Parents are followed up to 8 levels
+  deep, and a cycle of grants is refused with `Recursive`, never granted. At most 256 children per declaration, none
+  the node itself, none listed twice. A child may be declared later; until then its query is `Unregistered`. A refused
+  declaration keeps neither the node nor its grants. There are no wildcards: `jobs.boost.*` is not a node.
 
 ## Handlers
 
