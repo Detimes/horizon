@@ -5,7 +5,9 @@
 //! view's clip plane is its projection's near plane; a mirrored view's projection flips x, and
 //! it draws through pipelines that cull the front faces instead (`Flipped`).
 
-use super::{EntityPipelineOptions, Frame, Globals, Renderer, SolidPipeline, native_render};
+use super::{
+    EntityPipelineOptions, Frame, Globals, Renderer, SolidPipeline, native_render, prepared_model,
+};
 use glam::{DVec3, Mat4, Vec3, Vec4};
 use std::collections::HashMap;
 
@@ -338,14 +340,31 @@ impl Renderer {
             }
         }
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
-        if lists.entity_quads > 0 {
-            pass.set_pipeline(match view.clip_plane {
+        if lists.entity_quads > 0 || !self.prepared_draws.is_empty() {
+            let pipeline = match view.clip_plane {
                 Some(_) => &self.world_views.clipped_entities,
                 None => &self.entity_pipeline,
-            });
+            };
+            pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &self.entity_group, &[]);
             pass.set_vertex_buffer(0, self.entity_buffer.slice(..));
-            pass.draw_indexed(0..lists.entity_quads * 6, 0, 0..1);
+            if self.prepared_draws.is_empty() {
+                pass.draw_indexed(0..lists.entity_quads * 6, 0, 0..1);
+            } else {
+                // the prepared block-entity models the world pass draws, in the same stream order
+                prepared_model::draw_ordered(
+                    &mut pass,
+                    &prepared_model::EntityRangePass {
+                        pipeline,
+                        vertices: &self.entity_buffer,
+                        indices: &self.indices,
+                    },
+                    self.prepared_models.as_ref(),
+                    &self.prepared_instance_buffer,
+                    &self.prepared_draws,
+                    &self.prepared_ranges,
+                );
+            }
         }
         pass.set_bind_group(0, &self.group, &[]);
         match flat {
