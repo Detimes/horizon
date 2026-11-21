@@ -330,7 +330,7 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
 - **`prepare_smithing(player, name, pos, result)`**: a smithing result was prepared for a player at `pos`; change it before it is sent to their menu. Guest state is not swapped in.
 - **`prepare_item_craft(player, name, pos, result)`**: a crafting-grid result was prepared; `pos` is the crafting table, or None for the player's inventory grid. Change it before it is sent to the menu. Guest state is not swapped in.
 - **`trade_select(player, name, villager, index)`**: a player selected offer `index` in a villager's trading menu; `villager` is its entity id when known. The menu has updated and the player's state is not swapped in.
-- **`hopper_pickup_item(dimension, pos, item, count, cancel)`**: a hopper at `pos` is about to pick up a dropped stack; set `cancel` to leave it in the world.
+- **`hopper_pickup_item(dimension, pos, item, count, entity, cancel)`**: a hopper at `pos` is about to pick up a dropped stack; set `cancel` to leave it in the world.
 - **`weather_change(dimension, raining, thundering, cancel)`**: the server's `/weather` command is about to set
   its final rain and thunder states in `dimension`. Set `cancel` to keep the previous weather parameters, including
   their timers.
@@ -2509,7 +2509,7 @@ registration path.
 
 - A furnace begins cooking `item` at `pos` when its cooking timer first advances (`furnace_start_smelt`).
 
-- A hopper is about to pick up a dropped stack: `hopper_pickup_item(dimension, pos, item, count, cancel)` names its position and stack. Set `cancel` to leave the item in the world.
+- A hopper is about to pick up a dropped stack: `hopper_pickup_item(dimension, pos, item, count, entity, cancel)` names its position and stack. Set `cancel` to leave the item in the world.
 
 - `inventory_block_start(player, name, pos, cancel)` runs before a guest opens an inventory supplied by a block at `pos`. Set `cancel` to leave it closed; the guest's state is not swapped in.
 
