@@ -258,9 +258,9 @@ impl Game<'_> {
         pearl: u32,
         from: Vec3,
         to: Vec3,
-        mut damage: Option<f32>,
+        mut damage: f32,
         hit: Hit,
-    ) -> ([f64; 3], Option<f32>, bool) {
+    ) -> ([f64; 3], f32, bool) {
         let mut target = [to.x, to.y, to.z];
         let mut cancel = false;
         if !mod_api::__private::listened(mod_api::HookId::EnderPearlTeleport) {
@@ -731,60 +731,11 @@ mod pearl_hit_tests {
                     9,
                     Vec3::ZERO,
                     Vec3::new(8.0, 70.0, 8.0),
-                    Some(0.0),
+                    0.0,
                     hit,
                 );
-                assert_eq!(
-                    (target, damage, cancel),
-                    ([1.0, 2.0, 3.0], Some(0.0), false)
-                );
+                assert_eq!((target, damage, cancel), ([1.0, 2.0, 3.0], 0.0, false));
                 assert_eq!(*heard.lock().unwrap(), [(Some(225009), [1, 64, -1])]);
-            });
-        });
-    }
-
-    /// A listener sets the pearl's fall damage to `None`: `native_pearl_teleport` hands that back, so
-    /// the player's hurt call is skipped (the teleport itself is not cancelled here).
-    #[test]
-    #[ignore = "daily"]
-    fn a_listener_can_skip_the_pearl_hurt_call_with_no_damage() {
-        use crate::game::dragon::Dragon;
-        use mod_api::{EnderPearlTeleportEvent, Flow, Hooks, ModEntry, ServerHost};
-        struct SkipHurt;
-        #[mod_api::__subscriptions]
-        impl Hooks for SkipHurt {
-            fn ender_pearl_teleport(
-                &self,
-                _: &mut dyn ServerHost,
-                event: &mut EnderPearlTeleportEvent<'_>,
-            ) -> Flow {
-                assert_eq!(*event.damage, Some(0.0));
-                *event.damage = None;
-                Flow::Continue
-            }
-        }
-        let mods: mod_api::Mods = vec![ModEntry::new("skip", Box::new(SkipHurt))].into();
-        mod_platform::testing::with_mods(mods, || {
-            crate::game::native_entity_refs::tests::with_game(|game| {
-                let _phase =
-                    mod_api::__private::PhaseOwner::scope(mod_api::__private::ModPhase::World);
-                let mut dragon = Dragon::new(Vec3::ZERO, 0.0, 0);
-                dragon.id = 225010;
-                game.dragon.replace(dragon);
-                let owner = mod_api::EntityRef::new(mod_api::WorldEpoch::new(1), 7);
-                let hit = Hit::Entity {
-                    who: Who::Mob(SPECIAL + 2),
-                    at: Vec3::new(1.5, 64.5, -0.5),
-                };
-                let (target, damage, cancel) = game.native_pearl_teleport(
-                    owner,
-                    9,
-                    Vec3::ZERO,
-                    Vec3::new(8.0, 70.0, 8.0),
-                    Some(0.0),
-                    hit,
-                );
-                assert_eq!((target, damage, cancel), ([8.0, 70.0, 8.0], None, false));
             });
         });
     }

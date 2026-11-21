@@ -1,3 +1,0 @@
-ids = ["hook:ender_pearl_teleport.damage", "method:Hooks::ender_pearl_teleport", "type:EnderPearlTeleportEvent.damage"]
-why = "ender_pearl_teleport's damage becomes an Option (hook version 4). Setting it to None skips the hurt call altogether: no damage, hurt sound, animation or invulnerability check, while the teleport still happens."
-migrate = "Rebuild listeners against hook version 4; damage is now an Option<f32>, so wrap a set value in Some and set None to skip the hurt."

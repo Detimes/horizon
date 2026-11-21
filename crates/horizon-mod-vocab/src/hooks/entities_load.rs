@@ -11,9 +11,7 @@ pub trait Hooks {
     /// used up. Player owners keep their acting-player context and mutable fall
     /// `damage` (5; nonpositive causes no health loss, but zero remains a hit
     /// attempt that asks the invulnerability predicate). Mob owners take no fall damage and
-    /// make no endermite draw; their `damage` starts at zero and is player-only. `damage` is
-    /// `None` to skip the hurt call altogether: no damage, hurt sound, animation or invulnerability
-    /// check. The teleport still happens.
+    /// make no endermite draw; their `damage` starts at zero and is player-only.
     /// An owner moved, removed, killed or put to sleep by a listener is not moved
     /// again using the old decision. The impact hook still hears the hit.
     /// What the pearl hit (`getHitResult`), in `projectile_impact`'s shape:
@@ -24,7 +22,7 @@ pub trait Hooks {
     #[hook(
         side = "server",
         contract = "cancel",
-        version = 4,
+        version = 3,
         out = "cancel",
         neoforge = "EntityTeleportEvent.EnderPearl",
         cancellable = true
@@ -34,7 +32,7 @@ pub trait Hooks {
         pearl: u32,
         from: [f64; 3],
         target: &mut [f64; 3],
-        damage: &mut Option<f32>,
+        damage: &mut f32,
         cancel: &mut bool,
         hit_entity: Option<u32>,
         hit_block: [i32; 3],

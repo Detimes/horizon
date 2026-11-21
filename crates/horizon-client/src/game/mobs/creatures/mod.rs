@@ -5228,7 +5228,7 @@ impl Game<'_> {
         let dimension = self.dim;
         let _: std::result::Result<(), ()> = mod_api::run_transaction(self, |game, _| {
             let (mut target, _, cancel) =
-                game.native_pearl_teleport(owner, pearl.id, from, pearl.previous, Some(0.0), hit);
+                game.native_pearl_teleport(owner, pearl.id, from, pearl.previous, 0.0, hit);
             // Listener writes stay in the transaction; never overwrite a changed,
             // dead, sleeping or removed owner using the old decision.
             if cancel
@@ -5901,7 +5901,7 @@ impl Game<'_> {
                 }
                 // To where the pearl started its last tick (oldPosition).
                 let mut to = p.previous;
-                let mut damage = Some(5.0);
+                let mut damage = 5.0;
                 let mut cancel = false;
                 // EntityTeleportEvent.EnderPearl: a server player's pearl.
                 if p.owner == Some(Who::Player)
@@ -5945,10 +5945,7 @@ impl Game<'_> {
                     }
                     // ServerPlayer.teleport: removeVehicle before the placement.
                     section_steps::teleport_player(self, to);
-                    // `damage` None: the listener skipped the hurt call.
-                    if let Some(damage) = damage {
-                        self.hurt_player_by("minecraft:ender_pearl", damage);
-                    }
+                    self.hurt_player_by("minecraft:ender_pearl", damage);
                     self.audio.play(
                         "minecraft:entity.player.teleport",
                         Some([to.x, to.y, to.z]),
