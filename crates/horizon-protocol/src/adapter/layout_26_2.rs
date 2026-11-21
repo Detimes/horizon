@@ -114,7 +114,7 @@ fn respawn(payload: &[u8]) -> Result<Vec<u8>> {
 
 /// 26.3 sends an advancement's tab position after the whole advancement; 26.2 inside its display, after
 /// the background (an advancement without a display has none). The icon takes the client's item ids.
-fn advancements(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
+pub(super) fn advancements(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
     let mut r = Reader::new(payload);
     let mut w = Writer::new();
     w.bool(r.bool()?);

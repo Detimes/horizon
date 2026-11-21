@@ -784,6 +784,13 @@ fn layout_then_ids(
     {
         return Ok(Sent::Rewritten(update_recipes(ids, payload)?));
     }
+    // An advancement's icon is an item id in the client's numbering, whatever `enabled` says.
+    if state == State::Play
+        && id == packet_ids::play::clientbound::UPDATE_ADVANCEMENTS
+        && version.at_most(ServerVersion::V26_2)
+    {
+        return Ok(Sent::Rewritten(layout_26_2::advancements(ids, payload)?));
+    }
     if version.at_most(ServerVersion::V26_2) && layout_26_2::enabled() {
         match layout_26_2::clientbound(ids, state, id, payload)? {
             layout_26_2::Out::Untouched => {}
@@ -1557,6 +1564,51 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["minecraft:badlands", "minecraft:the_void"]
         );
+    }
+
+    /// An old client's advancements reach the icon renumbering through the session, with the layout switch off.
+    #[test]
+    fn an_old_clients_advancement_icon_is_renumbered_through_the_session() {
+        assert!(!layout_26_2::enabled());
+        let s = ClientSession::new(ServerVersion::V1_21_1);
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        let mut w = Writer::new();
+        w.bool(true);
+        w.varint(1);
+        w.string("minecraft:a");
+        w.bool(false);
+        w.bool(true);
+        w.nbt(&horizon_core::nbt::Tag::String("T".into()));
+        w.nbt(&horizon_core::nbt::Tag::String("D".into()));
+        // Cinnabar (pinned 40) has no 1.21.1 counterpart: a barrier.
+        crate::item::Template::write(&crate::item::Stack::new(40, 1), &mut w);
+        w.varint(0);
+        w.i32(0);
+        w.varint(0);
+        w.bool(false);
+        w.f32(0.0);
+        w.f32(0.0);
+        w.varint(0);
+        w.varint(0);
+        w.bool(true);
+        let out = s
+            .clientbound(&body(
+                packet_ids::play::clientbound::UPDATE_ADVANCEMENTS,
+                &w.data,
+            ))
+            .unwrap()
+            .unwrap();
+        let mut r = Reader::new(&out);
+        r.varint().unwrap();
+        r.bool().unwrap();
+        r.varint().unwrap();
+        r.string(64).unwrap();
+        r.bool().unwrap();
+        r.bool().unwrap();
+        r.nbt().unwrap();
+        r.nbt().unwrap();
+        let icon = [(); 2].map(|_| r.varint().unwrap());
+        assert_eq!(icon, [1, 443]);
     }
 
     #[test]
