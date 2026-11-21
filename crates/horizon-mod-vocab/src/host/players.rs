@@ -252,6 +252,8 @@ pub trait PlayersBackend {
     /// the menu's slots and cursor, as `menu_slot` and `menu_carried` do. `None` for a stale or
     /// unavailable player, a client, and a player with no menu open. Read-only; the handle is valid
     /// for the moment of the call only.
+    #[access(WorldOnly)]
+    fn player_open_menu_slots(&self, player: PlayerRef) -> Option<MenuRef>;
     /// Side: server.
     /// Every group the player waits on and its ticks left, ordered by
     /// group.
