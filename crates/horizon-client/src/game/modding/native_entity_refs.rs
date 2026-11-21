@@ -1750,7 +1750,7 @@ pub(super) mod tests {
             );
             let trunk = game.world.block(0, 64, 0);
             assert_eq!(
-                game.res.facts().get(trunk).name,
+                &*game.res.facts().get(trunk).name,
                 "minecraft:oak_log",
                 "the trunk starts at the given position"
             );
