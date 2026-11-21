@@ -214,6 +214,9 @@ impl LevelAccess for GameLevel<'_> {
     fn allow_block_burn(&self, pos: BlockPos) -> bool {
         self.block_burn_allowed(pos)
     }
+    fn allow_plate_signal(&self, pos: BlockPos, state: BlockStateId, from: i32, to: i32) -> bool {
+        self.plate_signal_allowed(pos, state, from, to)
+    }
     fn allow_leaves_decay(&self, pos: BlockPos) -> bool {
         let mut cancel = false;
         if self.native_authoritative {
