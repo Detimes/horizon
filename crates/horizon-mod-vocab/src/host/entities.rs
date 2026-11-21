@@ -37,6 +37,12 @@ pub trait EntitiesHost {
     /// dimension the server hasn't loaded. API 373.
     #[access(WorldOnly)]
     fn level(&self, dimension: &str) -> Option<LevelRef>;
+    /// Side: server.
+    /// Whether the entity is still in the world and not removed (`Entity.isValid`): a mob queued for
+    /// removal, a frame or painting broken, and a stale handle are not valid. Only the handle's
+    /// entity is asked about; the answer changes nothing.
+    #[access(WorldOnly)]
+    fn entity_is_valid(&self, entity: EntityRef) -> bool;
 }
 /// The server host's methods of the `entities` area, implemented by the game and reached through [`ServerHost`].
 #[horizon_mod_api_macros::host_area]

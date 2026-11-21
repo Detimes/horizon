@@ -115,6 +115,17 @@ impl Game<'_> {
             Body::Other(_) => None,
         }
     }
+    /// `Entity.isValid`: the entity is in the level and not removed. A stale handle, a mob queued for
+    /// removal and a frame or painting that is gone are not valid.
+    pub(super) fn entity_is_valid(&self, entity: EntityRef) -> bool {
+        match self.native_entity_target(entity) {
+            Some(super::commands::Target::Mob(id)) => self.mobs.iter().any(|m| m.id == id && !m.removed),
+            Some(super::commands::Target::Frame(id)) => self.item_frames.iter().any(|f| f.id == id),
+            Some(super::commands::Target::Painting(id)) => self.paintings.iter().any(|p| p.id == id),
+            Some(_) => true,
+            None => false,
+        }
+    }
     /// Whether the entity is in lava (`Entity.isInLava`): players and mobs.
     pub(super) fn entity_is_in_lava(&self, entity: EntityRef) -> Option<bool> {
         match self.native_entity_body(entity)? {
