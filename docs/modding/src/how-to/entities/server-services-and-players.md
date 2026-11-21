@@ -314,3 +314,8 @@ goes back to 0, scoreboard criteria follow the changed values, and the client se
 `player_stat_award` is not heard.
 
 Measuring a client's transaction round trip (a lag-compensating anticheat): send the player a `ping` with `player_send_packet` and hear the answer in `player_pong(player, name, id)`, which carries the number the ping had; the time between the two is finer than the keep-alive average `player_latency` reads. The engine's own pings (a recording's end-of-tick ping, whose id is the server tick) are answered here too, so pick ids that tell apart from small tick numbers. The hook is heard only for a pong that answers a ping the server sent on that connection, once per ping (an unsolicited or repeated pong, or an answer to a ping older than 30 seconds, is dropped), in order with the guest's other packets, with their state swapped in, and cannot cancel; with no listener nothing is queued.
+## Online mode of the server
+
+`ConfigServerHost::server_online_mode()` (server side) returns the dedicated server's `online-mode` setting, as
+Paper's `Bukkit.getOnlineMode` does. It is `Option<bool>`: `None` off a dedicated server and before it listens,
+where a client or an integrated game has no such setting.
