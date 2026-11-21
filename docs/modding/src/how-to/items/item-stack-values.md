@@ -59,6 +59,8 @@ to component NBT by `host.text_to_nbt(&text)`; `None` removes the name and an em
 removes the lore. A refused text returns `TextFormError` and changes nothing. Vanilla draws a
 custom name in italics unless its style sets `italic: false`.
 
+A canceled item toss loses the stack unless the listener asks for it back: during `item_toss`, `item.return_on_cancel(host)` makes a cancel give the stack to the thrower. Asked outside that call, it is `false` and changes nothing.
+
 ## Game boundaries
 
 A consume or death-protection override whose opaque native effect payload cannot be decoded
