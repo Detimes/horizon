@@ -122,7 +122,7 @@ fn host(configured: &str) -> FakeHost {
 
 #[test]
 fn a_query_asked_again_from_a_handler_fails_both_queries_as_recursive() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.reenter = true;
     assert_eq!(
         run_query(&mut host, &boolean("a.flag"), ALICE, &[]),
@@ -135,7 +135,7 @@ fn a_query_asked_again_from_a_handler_fails_both_queries_as_recursive() {
 
 #[test]
 fn the_service_and_the_guard_are_back_after_a_recursive_query() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.reenter = true;
     let _ = run_query(&mut host, &boolean("a.flag"), ALICE, &[]);
     assert!(host.service.is_initialized());
@@ -147,7 +147,7 @@ fn the_service_and_the_guard_are_back_after_a_recursive_query() {
 
 #[test]
 fn a_refused_query_leaves_the_guard_open() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     assert_eq!(
         run_query(&mut host, &boolean("a.unknown"), ALICE, &[]),
         Err(PermissionError::Unregistered)
@@ -160,7 +160,7 @@ fn a_refused_query_leaves_the_guard_open() {
 
 #[test]
 fn the_mod_handler_is_asked_with_the_uuid_the_online_flag_and_the_contexts() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     let contexts = [PermissionContext {
         key: "region".to_owned(),
         value: PermissionValue::Integer(7),
@@ -178,7 +178,7 @@ fn the_mod_handler_is_asked_with_the_uuid_the_online_flag_and_the_contexts() {
 
 #[test]
 fn a_mod_handlers_error_is_the_query_error_and_never_a_grant() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.reply = Err(PermissionError::UnknownPlayer);
     assert_eq!(
         run_query_bool(&mut host, &boolean("a.flag"), ALICE),
@@ -188,7 +188,7 @@ fn a_mod_handlers_error_is_the_query_error_and_never_a_grant() {
 
 #[test]
 fn a_non_boolean_node_is_refused_before_any_handler_runs() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     let count = PermissionNode::new("a.count", PermissionValueType::Integer);
     assert_eq!(
         run_query_bool(&mut host, &count, ALICE),
@@ -199,7 +199,7 @@ fn a_non_boolean_node_is_refused_before_any_handler_runs() {
 
 #[test]
 fn the_built_in_handler_reads_an_online_players_live_level() {
-    let mut host = host("");
+    let mut host = self::host("");
     host.alice_level = 2;
     assert_eq!(
         run_query_bool(&mut host, &boolean("a.staff"), ALICE),
@@ -215,7 +215,7 @@ fn the_built_in_handler_reads_an_online_players_live_level() {
 
 #[test]
 fn an_offline_uuid_is_answered_from_the_operator_list_or_as_level_zero() {
-    let mut host = host("");
+    let mut host = self::host("");
     assert_eq!(
         run_query_bool(&mut host, &boolean("a.staff"), BOB),
         Ok(true)
@@ -303,7 +303,7 @@ fn distinct_nodes_gather_into_an_uninitialized_service() {
 
 #[test]
 fn a_node_declared_late_is_answered_and_a_declaration_from_inside_a_handler_is_recursive() {
-    let mut host = host("");
+    let mut host = self::host("");
     assert_eq!(
         run_declare(
             &mut host,
@@ -337,7 +337,7 @@ fn a_node_declared_late_is_answered_and_a_declaration_from_inside_a_handler_is_r
 
 #[test]
 fn a_prefix_query_lists_the_nodes_the_player_holds_in_name_order() {
-    let mut host = host("");
+    let mut host = self::host("");
     // BOB is level 3 in the operator list: both nodes. CAROL is not listed: `a.flag` only.
     assert_eq!(
         run_nodes_with_prefix(&mut host, "a.", BOB, &[], usize::MAX),
@@ -360,7 +360,7 @@ fn a_prefix_query_lists_the_nodes_the_player_holds_in_name_order() {
 
 #[test]
 fn a_prefix_query_asks_the_mod_handler_per_node_and_a_failure_fails_the_whole_query() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     assert_eq!(
         run_nodes_with_prefix(&mut host, "a.", CAROL, &[], usize::MAX),
         Ok(vec!["a.flag".to_owned(), "a.staff".to_owned()])
@@ -375,7 +375,7 @@ fn a_prefix_query_asks_the_mod_handler_per_node_and_a_failure_fails_the_whole_qu
 
 #[test]
 fn a_snapshot_holds_each_distinct_node_once_with_its_own_answer_or_refusal() {
-    let mut host = host("");
+    let mut host = self::host("");
     let nodes = [
         boolean("a.staff"),
         boolean("a.flag"),
@@ -399,7 +399,7 @@ fn a_snapshot_holds_each_distinct_node_once_with_its_own_answer_or_refusal() {
 
 #[test]
 fn a_snapshot_carries_the_providers_answers_and_its_failures() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.reply = Ok(PermissionValue::Boolean(false));
     let snapshot = run_snapshot(&mut host, BOB, &[boolean("a.flag")], &[]).unwrap();
     assert_eq!(
@@ -417,7 +417,7 @@ fn a_snapshot_carries_the_providers_answers_and_its_failures() {
 
 #[test]
 fn a_snapshot_is_refused_as_a_whole_for_too_many_nodes_bad_contexts_and_recursion() {
-    let mut host = host("");
+    let mut host = self::host("");
     let many: Vec<PermissionNode> = (0..257).map(|n| boolean(&format!("a.n{n}"))).collect();
     assert_eq!(
         run_snapshot(&mut host, BOB, &many, &[]),
@@ -446,7 +446,7 @@ fn a_snapshot_is_refused_as_a_whole_for_too_many_nodes_bad_contexts_and_recursio
 fn a_decision_that_differs_from_the_default_is_explicit_and_one_that_matches_is_not() {
     // `a.staff` is granted by default from level 2: ALICE (live level 3) holds it by default,
     // CAROL (not listed, level 0) does not.
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.alice_level = 3;
     let staff = boolean("a.staff");
     host.reply = Ok(PermissionValue::Boolean(false));
@@ -474,7 +474,7 @@ fn a_decision_that_differs_from_the_default_is_explicit_and_one_that_matches_is_
 
 #[test]
 fn the_built_in_handler_never_decides_and_refusals_are_the_querys_own() {
-    let mut host = host("");
+    let mut host = self::host("");
     assert_eq!(
         run_query_tristate(&mut host, &boolean("a.staff"), BOB, &[]),
         Ok(TriState::Default)
@@ -493,7 +493,7 @@ fn the_built_in_handler_never_decides_and_refusals_are_the_querys_own() {
         Err(PermissionError::WrongType)
     );
     // A failing handler is its own error, never a decision.
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.reply = Err(PermissionError::HandlerFailed);
     assert_eq!(
         run_query_tristate(&mut host, &boolean("a.staff"), BOB, &[]),
@@ -503,7 +503,7 @@ fn the_built_in_handler_never_decides_and_refusals_are_the_querys_own() {
 
 #[test]
 fn a_grant_changes_a_mod_providers_deny_and_a_grant_from_inside_a_handler_is_recursive() {
-    let mut host = host("garden.policy");
+    let mut host = self::host("garden.policy");
     host.reply = Ok(PermissionValue::Boolean(false));
     assert_eq!(run_query_bool(&mut host, &boolean("a.flag"), CAROL), Ok(false));
     assert_eq!(run_grant(&mut host, CAROL, &boolean("a.flag"), "job"), Ok(()));
