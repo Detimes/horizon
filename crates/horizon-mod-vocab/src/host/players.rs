@@ -99,6 +99,13 @@ pub trait PlayersServerHost {
     /// kicked and the whitelist's on or off state is not changed.
     #[access(WorldOnly)]
     fn whitelist_add(&mut self, uuid: u128, name: &str) -> bool;
+    /// Side: server.
+    /// The entries of the dedicated server's whitelist (`whitelist.json`), in the list's order, each as a
+    /// profile with its UUID and name and no properties (the file keeps none). Read only, live: Paper's
+    /// `Bukkit.getWhitelistedPlayers()`. Empty on a client, on an integrated server and where no server list
+    /// is loaded.
+    #[access(WorldOnly)]
+    fn server_whitelist(&self) -> Vec<GameProfile>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
