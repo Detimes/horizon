@@ -172,6 +172,22 @@ pub trait PlayersServerHost {
         nodes: &[PermissionNode],
         contexts: &[PermissionContext],
     ) -> Result<PermissionSnapshot, PermissionError>;
+    /// Side: server.
+    /// Asks the Boolean node `node` for `uuid` and tells an explicit decision from "no policy
+    /// decided": `TriState::True` or `False` when the selected handler's answer differs from
+    /// what the node's default alone gives this player (the operator level the node asks for),
+    /// `TriState::Default` when it matches, because then the default and the handler agree and
+    /// the answer changes nothing. A mod that must let an explicit deny override an operator
+    /// level asks this instead of `permission_query`, whose `false` can mean either. The
+    /// built-in handler answers the default, so it is always `Default`. Refuses as
+    /// `permission_query` does, and with `WrongType` for a node that is not Boolean.
+    #[access(WorldOnly)]
+    fn permission_query_tristate(
+        &mut self,
+        node: &PermissionNode,
+        uuid: u128,
+        contexts: &[PermissionContext],
+    ) -> Result<TriState, PermissionError>;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]

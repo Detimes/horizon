@@ -72,6 +72,7 @@ string and component errors must not be read as a Boolean denial.
 | `permission_nodes_with_prefix(prefix, uuid, contexts)` | The names of the declared Boolean nodes under `prefix` that the handler answers `true` for `uuid`, sorted. |
 | `permission_query_prefix(prefix, uuid, contexts)` | Whether any of them is granted: the list is not empty. |
 | `permission_snapshot(uuid, &nodes, contexts)` | One player's answers to up to 256 nodes as plain data, readable without a host. |
+| `permission_query_tristate(&node, uuid, contexts)` | For a Boolean node: `TriState::True` or `False` when the handler's answer differs from what the node's default alone gives, `Default` when it matches. |
 
 `PermissionError` names each refusal: `NotInitialized` (a query before the service is ready), `Unregistered`
 (an unknown node, never an implicit registration), `DuplicateNode`, `DuplicateHandler`, `WrongType`,
@@ -98,6 +99,13 @@ changed (a grant, a rank change, `player_resend_command_tree`). Each node is one
 keeps its own refusal in its entry: `bool` returns that error, `Unregistered` for a node that was not asked for,
 and `WrongType` for a node that is not Boolean, so a refusal never reads as a grant or a denial. The call itself is
 refused with `InvalidInput` (more than 256 nodes, bad contexts), `NotInitialized` and `Recursive`.
+
+A `false` from `permission_query` can mean "a policy denied this" or "nothing granted it". A mod that has to let
+an explicit deny override an operator level (an editor that denies a player its permission node while they hold
+level 2) asks `permission_query_tristate`: it compares the handler's answer with the node's default for that player
+(the operator level the node asks for) and reports `False` or `True` only where they differ. A deny of someone the
+default denies anyway, and a grant of someone the default grants anyway, are `Default`, because they change
+nothing. The built-in handler answers the default, so it is always `Default`.
 
 Queries take no cache and write nothing. A node decision does not fire `permissions_changed`, and that hook
 does not report node decisions. There is no hierarchy and no namespace ownership: a node name means exactly what it spells, and no handler is
