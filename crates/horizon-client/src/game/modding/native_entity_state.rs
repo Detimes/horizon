@@ -1457,13 +1457,6 @@ mod detonate_tests {
     #[test]
     #[ignore = "daily"]
     fn entity_detonate_explodes_primed_tnt_and_refuses_a_zombie() {
-mod fuse_tests {
-    use super::super::native_entity_refs::tests::with_game;
-    use horizon_core::geometry::Vec3;
-
-    #[test]
-    #[ignore = "daily"]
-    fn entity_set_fuse_writes_primed_tnt_and_refuses_a_negative_count() {
         with_game(|game| {
             game.options.dedicated = Some(Vec::new());
             game.tnts.push(super::super::tnt::PrimedTnt {
@@ -1501,6 +1494,39 @@ mod fuse_tests {
     }
 }
 
+mod fuse_tests {
+    use super::super::native_entity_refs::tests::with_game;
+    use horizon_core::geometry::Vec3;
+
+    #[test]
+    #[ignore = "daily"]
+    fn entity_set_fuse_writes_primed_tnt_and_refuses_a_negative_count() {
+        with_game(|game| {
+            game.options.dedicated = Some(Vec::new());
+            game.tnts.push(super::super::tnt::PrimedTnt {
+                attachment_lifetime: Default::default(),
+                rotation: [0.0, 0.0],
+                join: Default::default(),
+                id: 0,
+                position: Vec3::ZERO,
+                previous: Vec3::ZERO,
+                velocity: Vec3::ZERO,
+                fuse: 80,
+                on_ground: false,
+                in_water: false,
+                stuck: Vec3::ZERO,
+                fall_distance: 0.0,
+                owner: None,
+                guest: None,
+                no_gravity: false,
+                power: 4.0,
+                used_portal: false,
+                block_state: None,
+            });
+            game.native_joins_flush(false, 0);
+            game.native_joins_flush(false, 0);
+            let id = game.tnts.last().unwrap().id;
+            let entity = game.entity(id).unwrap();
             assert!(game.entity_set_fuse(entity, 37));
             assert_eq!(game.tnts.last().unwrap().fuse, 37);
             assert!(!game.entity_set_fuse(entity, -1));
