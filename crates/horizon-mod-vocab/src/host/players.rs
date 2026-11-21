@@ -91,6 +91,14 @@ pub trait PlayersServerHost {
     /// server and where no server list is loaded.
     #[access(WorldOnly)]
     fn server_ban_list(&self, kind: BanListKind) -> Vec<BanRecord>;
+    /// Side: server.
+    /// Adds a player to the dedicated server's whitelist (`whitelist.json`, saved at once), by UUID and name
+    /// (Paper's `OfflinePlayer.setWhitelisted(true)`). Returns true when the entry was added. Returns false,
+    /// changing nothing, when the UUID is already listed, when the name is not 1 to 16 ASCII letters, digits or
+    /// underscores, and where no server list is loaded (a client, an integrated server). An online player is not
+    /// kicked and the whitelist's on or off state is not changed.
+    #[access(WorldOnly)]
+    fn whitelist_add(&mut self, uuid: u128, name: &str) -> bool;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
