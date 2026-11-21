@@ -114,6 +114,13 @@ pub trait PlayersServerHost {
     /// is loaded.
     #[access(WorldOnly)]
     fn server_whitelist(&self) -> Vec<GameProfile>;
+    /// Side: server.
+    /// Removes a player from the dedicated server's whitelist by UUID (`whitelist.json`, saved at once), as
+    /// Paper's `OfflinePlayer.setWhitelisted(false)` does. Returns true when an entry was removed; false when
+    /// the UUID was not listed or no server list is loaded (a client, an integrated server). An online player
+    /// is not kicked and the whitelist's on or off state is not changed.
+    #[access(WorldOnly)]
+    fn whitelist_remove(&mut self, uuid: u128) -> bool;
 }
 /// The client host's methods of the `players` area, implemented by the game and reached through [`crate::ClientHost`].
 #[horizon_mod_api_macros::host_area]
