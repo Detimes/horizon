@@ -26,7 +26,11 @@ fn a_packet_waits_for_the_ruling_and_the_next_is_asked_only_after_it() {
     let conn = hub.guests[0].conn;
     assert_eq!(heard(&drain(&mut hub)), [conn], "the first is held");
     assert!(hub.packets_paused());
-    assert_eq!(hub.guests[0].position, [0.0, 64.0, 0.0], "nothing applied yet");
+    assert_eq!(
+        hub.guests[0].position,
+        [0.0, 64.0, 0.0],
+        "nothing applied yet"
+    );
     assert_eq!(hub.guests[0].inbox.len(), 1, "the second keeps its place");
     let (_, packet) = hub.heard_packet(conn).unwrap();
     assert!(matches!(packet, S::MovePlayerPos(p) if p.x == 1.0));
@@ -47,7 +51,11 @@ fn a_cancelled_packet_is_dropped_and_the_ones_behind_it_go_on() {
     hub.rule_packet(conn, false);
     assert_eq!(hub.guests[0].inbox.len(), 1);
     assert_eq!(heard(&drain(&mut hub)), [conn], "the turn is asked next");
-    assert_eq!(hub.guests[0].position, [0.0, 64.0, 0.0], "the move never happened");
+    assert_eq!(
+        hub.guests[0].position,
+        [0.0, 64.0, 0.0],
+        "the move never happened"
+    );
     hub.rule_packet(conn, true);
     drain(&mut hub);
     assert_eq!(hub.guests[0].yaw, 30.0);

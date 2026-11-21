@@ -45,12 +45,12 @@ mod block_changes;
 pub mod chat;
 pub mod chat_filter;
 mod fake_kicks;
+mod heard_packet;
 mod item_particles;
 mod joined;
 mod move_collision;
 mod moves;
 pub mod passage_cross;
-mod heard_packet;
 mod pending_move;
 mod raw_inbox;
 mod selector_sync;
@@ -58,10 +58,10 @@ mod spawn_info;
 pub(super) mod terrain;
 use advancements::AdvancementOwners;
 use chat::yellow_names;
+use heard_packet::HeardPacket;
 pub use pending_move::{
     Accepted, Hearing, MOVE_PACKET_BUDGET, MOVE_PACKET_QUEUE, MovePacket, PendingMove,
 };
-use heard_packet::HeardPacket;
 use raw_inbox::{DeferredPayload, PacketDrain, yield_raw};
 pub mod game_event {
     pub const NO_RESPAWN_BLOCK_AVAILABLE: u8 = 0;
@@ -5628,12 +5628,12 @@ mod tests {
     #[path = "../far_tests.rs"]
     mod far_tests;
     mod glide_motion_tests;
+    mod heard_packet_tests;
     mod impulse_grace_tests;
     mod live_player_limit_tests;
     mod main_hand_tests;
     mod menu_sync_tests;
     mod ordered_inbox_tests;
-    mod heard_packet_tests;
     mod pending_move_bound_tests;
     mod pending_move_scope_tests;
     mod pending_move_tests;
