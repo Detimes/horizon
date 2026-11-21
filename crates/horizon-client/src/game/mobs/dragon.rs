@@ -3241,7 +3241,8 @@ impl Game<'_> {
         let Some(d) = self.dragon.as_mut() else {
             return false;
         };
-        if cancel || new_phase == d.native_phase() {
+        // Nor may the outer change overwrite the dying flight a nested hit began.
+        if cancel || matches!(d.phase, Phase::Dying { .. }) || new_phase == d.native_phase() {
             return false;
         }
         d.set_phase(if new_phase == asked {
