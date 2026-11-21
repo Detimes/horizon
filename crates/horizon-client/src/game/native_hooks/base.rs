@@ -773,15 +773,17 @@ impl Game<'_> {
     /// Set `canceled` to ignore the click: the block isn't attacked, dug or
     /// broken on the server, and the player's client gets it back (its own
     /// predicted crack still shows to the clicking player). Server-side, for
-    /// every player of the world (the helpers read the acting one).
+    /// every player of the world (the helpers read the acting one). `player`
+    /// is the clicking guest's uuid.
     pub(in crate::game) fn native_left_click_block(
         &mut self,
         pos: [i32; 3],
         face: [i32; 3],
         state: BlockStateId,
+        player: u128,
         canceled: &mut bool,
     ) {
-        self.fire_left_click_block(pos, face, state, canceled);
+        self.fire_left_click_block(pos, face, state, player, canceled);
     }
     /// NeoForge's non-cancellable PlayerTickEvent.Pre on either logical side.
     pub(in crate::game) fn native_player_tick_pre(
@@ -3509,17 +3511,19 @@ impl Game<'_> {
     /// click): where `ServerPlayerGameMode.destroyBlock` starts. Set
     /// `canceled` to keep the block: nothing is destroyed or dropped, and a
     /// guest sees it back. Server-side, for every player of the world (the
-    /// helpers read the acting one).
+    /// helpers read the acting one). `player` is the acting guest's uuid, None
+    /// when the game's own player breaks the block.
     pub(in crate::game) fn native_break_block(
         &mut self,
         pos: [i32; 3],
         state: BlockStateId,
+        player: Option<u128>,
         canceled: &mut bool,
         exp_to_drop: &mut Option<u32>,
     ) {
         self.prepare_part_break_experience(pos, state, exp_to_drop);
         let initial = *exp_to_drop;
-        self.fire_break_block(pos, state, canceled, exp_to_drop);
+        self.fire_break_block(pos, state, player, canceled, exp_to_drop);
         *exp_to_drop = exp_to_drop.or(initial);
     }
     /// A player right clicks a block (NeoForge's

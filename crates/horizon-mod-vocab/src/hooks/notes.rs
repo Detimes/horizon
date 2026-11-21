@@ -2863,7 +2863,7 @@ registration path.
   block once the game allowed it (`ServerPlayerGameMode.destroyBlock`) and may cancel it, which keeps the block and its
   drops. Set `exp_to_drop` to `Some(amount)` to replace the vanilla XP sample later, after item drops are prepared;
   `None` retains vanilla sampling. The subsequent `block_drops` event can edit the resulting experience or cancel
-  the drops, and disabled block drops suppress both items and XP. `entity_place` (`EntityPlaceEvent`, `EntityMultiPlaceEvent`) hears a block placed from an item
+  the drops, and disabled block drops suppress both items and XP. `break_block` and `left_click_block` name the acting guest in `player` (the uuid; None for a break by the game's own player). `entity_place` (`EntityPlaceEvent`, `EntityMultiPlaceEvent`) hears a block placed from an item
   (`BlockItem.place`), an enderman putting its block down or a snow golem's trail, before it is written, and may cancel it:
   nothing is placed and the stack is kept. For a player, `placed_against` is the state next to the primary placed
   block opposite the clicked face, even when the clicked block is replaceable; for mobs it is the state below.
