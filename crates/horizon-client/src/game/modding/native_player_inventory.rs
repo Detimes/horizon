@@ -124,6 +124,19 @@ impl Game<'_> {
         });
         ran && swapped
     }
+
+    /// `Player#dropItem(boolean)` for a mod: see `drop_selected_stack`. Refused, with nothing
+    /// thrown, for a client, a stale or dead handle and a spectator.
+    pub(super) fn player_drop_selected(&mut self, player: PlayerRef, whole_stack: bool) -> bool {
+        if self.player_write_gate(player).is_err() {
+            return false;
+        }
+        let mut dropped = false;
+        let ran = self.native_as_player_handle(player, |game| {
+            dropped = game.drop_selected_stack(whole_stack);
+        });
+        ran && dropped
+    }
 }
 
 #[cfg(test)]
@@ -176,6 +189,47 @@ mod swap_hands_call_tests {
             set_hands(game, Some(ItemStack::new("minecraft:diamond_sword", 1)), None);
             assert!(player.swap_hands(game));
             assert_eq!(hands(game), (None, Some("minecraft:diamond_sword".into())));
+        });
+    }
+}
+
+#[cfg(test)]
+mod drop_selected_tests {
+    use super::super::native_guest_turn_tests::with_guests;
+    use horizon_client::items::ItemStack;
+
+    /// Puts `stack` in the selected slot of guest 13's record, as a parked guest keeps it.
+    fn give(game: &mut super::super::Game<'_>, stack: Option<ItemStack>) {
+        let host = game.lan.as_mut().unwrap();
+        let index = host.hub.guests.iter().position(|g| g.conn == 13).unwrap();
+        host.hub.guests.update(index, |g| {
+            let selected = g.selected;
+            g.inventory[selected] = stack;
+        });
+    }
+
+    /// The stack in guest 13's selected slot.
+    fn held(game: &super::super::Game<'_>) -> Option<ItemStack> {
+        let guest = game.lan.as_ref().unwrap().hub.guest(13).unwrap();
+        guest.inventory[guest.selected].clone()
+    }
+
+    /// One item goes at a time, then the rest with `whole_stack`; an empty hand throws nothing.
+    #[test]
+    #[ignore = "daily"]
+    fn a_guest_drops_one_then_the_rest() {
+        with_guests(|game| {
+            give(game, Some(ItemStack::new("minecraft:stone", 3)));
+            let player = game.player(13).unwrap();
+            let before = game.dropped.len();
+            assert!(player.drop_selected(game, false));
+            assert_eq!(held(game).map(|s| s.count), Some(2));
+            assert_eq!(game.dropped.len(), before + 1);
+            assert!(player.drop_selected(game, true));
+            assert!(held(game).is_none());
+            assert_eq!(game.dropped.len(), before + 2);
+            assert!(!player.drop_selected(game, true), "an empty hand throws nothing");
+            assert_eq!(game.dropped.len(), before + 2);
         });
     }
 }
