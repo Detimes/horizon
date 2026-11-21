@@ -1806,6 +1806,7 @@ impl GameLevel<'_> {
                 speed: [speed; 3],
                 count,
                 randomization: 0,
+                force: false,
             });
         true
     }
