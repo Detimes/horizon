@@ -1,6 +1,5 @@
 # Prepared-resource/descriptive-ignore inventory migration for arismoko/horizon#4451.
 # PACKAGE TEST TARGET daily REASON; exact logical libtest identities, sorted.
-horizon-client game::advancements::award_cancel_tests::a_canceled_advancement_completion_is_withheld lib daily resources
 horizon-client game::advancements::custom_data_equipment_tests::actual_mob_equipment_projects_typed_custom_data_into_named_predicate_evaluation lib daily resources
 horizon-client game::advancements::inventory_changed_tests::a_changed_inventory_is_heard_once_with_its_41_slots lib daily resources
 horizon-client game::advancements::movement_predicate_tests::actual_registered_movement_predicate_uses_admitted_mob lib daily resources
@@ -648,7 +647,6 @@ horizon-client game::fishing::fishing_catch_tests::fishing_catch_empty_keeps_dam
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_invalid_drops_keep_the_earlier_listeners_outputs lib daily child-process
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_noop_listener_preserves_randomness lib daily resources
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_replaces_rolled_stack lib daily resources
-horizon-client game::fishing::fishing_catch_tests::player_fish_reports_the_hooked_entity_on_a_reel_in lib daily resources
 horizon-client game::fishing::incoming_block_hit_tests::a_bobber_powers_a_target_block_and_counts_the_hit lib daily resources
 horizon-client game::fishing::incoming_block_hit_tests::a_bobber_rings_a_floor_bell_on_its_side lib daily resources
 horizon-client game::focused_text_field::tests::a_mod_edits_the_focused_box_before_each_character lib daily resources
@@ -1091,8 +1089,6 @@ horizon-client game::native_block_entity_refs::tests::retained_handles_reject_re
 horizon-client game::native_block_entity_refs::tests::viewers_follow_open_menus_per_level_and_leave_out_fake_players lib daily resources
 horizon-client game::native_block_entity_refs::tests::writes_merge_data_name_and_roll_back_with_a_transaction lib daily resources
 horizon-client game::native_block_entity_transform_tests::structure_transform_survives_real_datapack_reload_with_its_registry lib daily resources
-horizon-client game::native_block_player_tests::break_block_names_the_guest_and_none_for_the_game_player lib daily resources
-horizon-client game::native_block_player_tests::left_click_block_names_the_clicking_guest_and_a_cancel_is_reported lib daily resources
 horizon-client game::native_block_sounds::tests::a_block_part_answers_the_sound_type_a_block_plays lib daily resources
 horizon-client game::native_block_sprites::block_tint_color_tests::a_tinted_face_takes_its_colour_where_it_stands lib daily resources
 horizon-client game::native_block_sprites::texture_atlas_stitched_tests::a_client_mod_finds_its_sprites_each_time_an_atlas_is_stitched lib daily resources
