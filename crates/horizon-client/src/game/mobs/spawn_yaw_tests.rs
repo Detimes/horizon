@@ -159,3 +159,23 @@ fn a_new_shulker_faces_yaw_zero_and_a_loaded_one_keeps_its_rotation() {
         [73.0, -24.0]
     );
 }
+
+#[test]
+#[ignore = "daily"]
+fn a_spawned_mob_keeps_its_reason_until_it_joins_or_is_forgotten() {
+    let mut resources = None;
+    let mut game = game(&mut resources);
+    let id = game
+        .spawn_mob_spawned(
+            "pig",
+            [4.5, 100.0, 8.5],
+            SpawnSite::Finalizing(SpawnReason::Spawner),
+        )
+        .expect("pig");
+    assert_eq!(
+        game.native_lifecycle.spawn_reasons.get(&id),
+        Some(&SpawnReason::Spawner)
+    );
+    game.forget_entity(id);
+    assert_eq!(game.native_lifecycle.spawn_reasons.get(&id), None);
+}

@@ -242,12 +242,14 @@ impl Game<'_> {
             let mut canceled = false;
             let dimension = self.dim.id();
             self.construct_joining(id, &kind);
+            let reason = self.native_lifecycle.spawn_reasons.remove(&id);
             self.native_entity_join_level(
                 dimension,
                 id,
                 &kind,
                 [at.x, at.y, at.z],
                 loaded_from_disk,
+                reason,
                 &mut canceled,
             );
             let spawn = self

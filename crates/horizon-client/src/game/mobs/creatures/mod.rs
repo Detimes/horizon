@@ -1058,6 +1058,7 @@ impl Game<'_> {
         spawner: Option<mod_api::SpawnSource>,
     ) -> Finalized {
         let mut group = None;
+        self.native_lifecycle.spawn_reasons.insert(mob.id, reason);
         let (outcome, difficulty) = self.finalize_spawn_event(mob, reason, spawner, &mut group);
         if outcome == Finalized::Done {
             self.finalize_grouped(mob, &difficulty, reason, group);

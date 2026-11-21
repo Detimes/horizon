@@ -219,3 +219,9 @@ fn level_load(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::Le
 ```
 
 Only natural spawning reads the policy: spawners, trial spawners, patrols, sieges, phantoms, a new chunk's creatures and custom spawners keep their own rules. A change counts from the level's next spawn pass, and mobs already there stay. The policy is not saved. It survives parking and reopening a level within the same world session, but closing the world resets it. Set it in `level_load`. Reads work on any host and answer `None` on a client or for a stale handle; the writes need a `ServerHost` and return `false` there.
+
+## Spawn reason at the join
+
+`entity_join_level` (version 3) carries `reason`: the `EntitySpawnReason` a mob was spawned with, such as
+`Natural`, `Spawner` or `Command`. It is `None` for every other kind of entity and for a mob coming back from
+its chunk. A listener reads it at the join; it cannot cancel the spawn by reading it, cancel with `canceled` as before.
