@@ -451,6 +451,11 @@ impl ClientSession {
                         return Ok(Some(orb(&add, value.unwrap_or(0))));
                     }
                 }
+                // The data of another entity does not decide it: the orb keeps waiting for its own.
+                if id == cb::SET_ENTITY_DATA {
+                    *self.orb.lock().unwrap_or_else(|e| e.into_inner()) = Some(add);
+                    return self.clientbound_in(state, body);
+                }
                 // Anything else shows the orb with no value first.
                 let first = orb(&add, 0);
                 if let Some(next) = self.clientbound_with_extras(state, body)? {
@@ -1118,7 +1123,8 @@ fn encode_down(ids: &'static Ids, p: &play::Clientbound) -> Vec<u8> {
 /// 26.3's update_recipes in the item ids of an older client (1.21.2 to 26.2 lay it out as 26.3 does): the items
 /// of each recipe property set (an item the client lacks is left out, a stand-in would be a wrong answer to
 /// "may this go in the slot"), and each stonecutter recipe's input and result display. A recipe whose input
-/// has no item left, or whose result the client has nothing to show for, is not sent.
+/// has no item left is not sent; one whose result the client has nothing to show for stays, in place, with an
+/// empty result.
 fn update_recipes(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
     use crate::packets::recipes::{HolderSet, SlotDisplay};
     let mut r = Reader::new(payload);
@@ -1146,15 +1152,13 @@ fn update_recipes(ids: &'static Ids, payload: &[u8]) -> Result<Vec<u8>> {
                 continue;
             }
         }
-        let shown = match &result {
-            SlotDisplay::Item(id) => Some(*id),
-            SlotDisplay::ItemStack(stack) => Some(stack.item),
-            _ => None,
-        };
-        if let Some(id) = shown
-            && down_or_substitute(ids.item, ids.substitutes.item, id).is_none()
-        {
-            continue;
+        // The entry keeps its place (the server picks by position); a result the client cannot show is empty.
+        let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
+        let mut result = result;
+        if result.lacks_item(&has) {
+            result = SlotDisplay::Empty;
+        } else {
+            result.retain_available(&has);
         }
         kept.push((input, result));
     }
@@ -1308,11 +1312,14 @@ fn renumber(ids: &Ids, p: &mut play::Clientbound) -> Option<()> {
         play::Clientbound::RecipeBookAdd(a) => {
             let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
             a.entries.retain(|e| !e.display.lacks_item(&has));
+            a.entries
+                .iter_mut()
+                .for_each(|e| e.display.retain_available(&has));
             (a.replace || !a.entries.is_empty()).then_some(())
         }
         play::Clientbound::PlaceGhostRecipe(g) => {
             let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
-            (!g.display.lacks_item(&has)).then_some(())
+            (!g.display.lacks_item(&has)).then(|| g.display.retain_available(&has))
         }
         // Item stacks and recipe displays: their writers renumber items and components (encode_down).
         _ => Some(()),
@@ -3110,6 +3117,15 @@ mod tests {
             let gone = play::Clientbound::RemoveEntities(play::RemoveEntities { ids: vec![41] });
             assert_eq!(s.clientbound(&gone.encode()).unwrap(), Some(orb(0)));
             assert_eq!(s.take_extra().len(), 1, "{version:?}");
+            // the data of another entity passes, and the orb still waits for its own
+            let other = play::Clientbound::SetEntityData(play::SetEntityData {
+                id: 99,
+                values: vec![(8, serializer::INT, Value::Int(1))],
+            })
+            .encode();
+            assert_eq!(s.clientbound(&add).unwrap(), None);
+            s.clientbound(&other).unwrap();
+            assert_eq!(s.clientbound(&data).unwrap(), Some(orb(7)), "{version:?}");
         }
         // 1.21.5 and later have it as entity data: nothing waits
         let s = ClientSession::new(ServerVersion::V1_21_5);

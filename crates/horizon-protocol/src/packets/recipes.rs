@@ -125,7 +125,8 @@ impl SlotDisplay {
     }
 
     /// Whether this shows an item `has` rejects: a recipe holding one cannot be written for a client that
-    /// lacks the item (a list of items counts when none of them is one the client has).
+    /// lacks the item (a list of items, or a composite of displays, counts when none of its alternatives is
+    /// one the client has).
     pub fn lacks_item(&self, has: &dyn Fn(i32) -> bool) -> bool {
         match self {
             Self::Empty | Self::AnyFuel | Self::Tag(HolderSet::Tag(_)) => false,
@@ -145,7 +146,33 @@ impl SlotDisplay {
                 input: a,
                 remainder: b,
             } => a.lacks_item(has) || b.lacks_item(has),
-            Self::Composite(list) => list.iter().any(|d| d.lacks_item(has)),
+            Self::Composite(list) => !list.is_empty() && list.iter().all(|d| d.lacks_item(has)),
+        }
+    }
+
+    /// Drops the alternatives of every composite that show an item `has` rejects, so the display can be
+    /// written for a client that lacks them ([`Self::lacks_item`] says whether anything is left to show).
+    pub fn retain_available(&mut self, has: &dyn Fn(i32) -> bool) {
+        match self {
+            Self::Composite(list) => {
+                list.retain(|d| !d.lacks_item(has));
+                list.iter_mut().for_each(|d| d.retain_available(has));
+            }
+            Self::WithAnyPotion(d) | Self::OnlyWithComponent(d, _) => d.retain_available(has),
+            Self::Dyed { dye: a, target: b }
+            | Self::SmithingTrim {
+                base: a,
+                material: b,
+                ..
+            }
+            | Self::WithRemainder {
+                input: a,
+                remainder: b,
+            } => {
+                a.retain_available(has);
+                b.retain_available(has);
+            }
+            _ => {}
         }
     }
 
@@ -445,6 +472,50 @@ impl RecipeDisplay {
                 result,
                 station,
             } => any(&[template, base, addition, result, station]),
+        }
+    }
+    /// [`SlotDisplay::retain_available`] on every slot of this recipe.
+    pub fn retain_available(&mut self, has: &dyn Fn(i32) -> bool) {
+        let mut each = |d: &mut SlotDisplay| d.retain_available(has);
+        match self {
+            Self::Shapeless {
+                ingredients,
+                result,
+                station,
+            }
+            | Self::Shaped {
+                ingredients,
+                result,
+                station,
+                ..
+            } => {
+                ingredients.iter_mut().for_each(&mut each);
+                each(result);
+                each(station);
+            }
+            Self::Furnace {
+                ingredient,
+                fuel,
+                result,
+                station,
+                ..
+            } => [ingredient, fuel, result, station]
+                .into_iter()
+                .for_each(each),
+            Self::Stonecutter {
+                input,
+                result,
+                station,
+            } => [input, result, station].into_iter().for_each(each),
+            Self::Smithing {
+                template,
+                base,
+                addition,
+                result,
+                station,
+            } => [template, base, addition, result, station]
+                .into_iter()
+                .for_each(each),
         }
     }
     pub fn result(&self) -> &SlotDisplay {
@@ -1140,5 +1211,16 @@ mod tests {
             HolderSet::Items(vec![stick, apple])
         );
         assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn a_composite_is_unavailable_only_when_every_alternative_is() {
+        let has = |id: i32| id == 2;
+        let mut mixed = SlotDisplay::Composite(vec![SlotDisplay::Item(1), SlotDisplay::Item(2)]);
+        assert!(!mixed.lacks_item(&has));
+        mixed.retain_available(&has);
+        assert_eq!(mixed, SlotDisplay::Composite(vec![SlotDisplay::Item(2)]));
+        let none = SlotDisplay::Composite(vec![SlotDisplay::Item(1), SlotDisplay::Item(3)]);
+        assert!(none.lacks_item(&has));
     }
 }
