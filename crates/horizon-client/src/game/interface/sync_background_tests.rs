@@ -71,6 +71,7 @@ mod claims {
             event: &mut mod_api::EntityChangeBlockPreEvent<'_>,
         ) -> Flow {
             assert_eq!(event.player, Some(7));
+            assert_eq!(event.dimension, "minecraft:overworld");
             assert_eq!(event.entity, None);
             assert_eq!(event.kind, "minecraft:player");
             assert_eq!(Some(event.from), host.block_state_id("minecraft:farmland"));

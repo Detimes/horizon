@@ -363,6 +363,7 @@ fn an_air_normalized_placement_empties_the_hand_without_a_block_change_notice() 
             _: &mut dyn ServerHost,
             event: &mut EntityChangeBlockEvent<'_>,
         ) {
+            assert_eq!(event.dimension, "minecraft:overworld");
             assert_eq!(event.from, "minecraft:air");
             assert_eq!(event.to, "minecraft:note_block");
             self.0.fetch_add(1, Ordering::SeqCst);
