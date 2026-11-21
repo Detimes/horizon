@@ -145,6 +145,12 @@ Tab list (`hide` lists them out too), and chat is not filtered. The calls return
 anything changed, and refuse with `EntityVisibilityRefusal`: `Client`, `Stale`, `NoConnection` for a
 fake viewer and `StaleEntity` for an entity handle that names nothing or the viewer's own player.
 
+To show a score under a player's name for one viewer only, use
+`player.set_display_score(host, viewer, 0, Some(n))` for the Tab list or slot `2` for the name
+under the player in the world. Only the viewer's client receives the objective and the score;
+`None` removes the number. The call returns `false` when a player is not online or the slot is
+neither `0` nor `2`.
+
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
 return what the calls above set. Latency is the Tab list ping in milliseconds
 (`Option<i32>`, `0` until the first keep-alive answer). `hidden` is the level
