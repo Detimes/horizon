@@ -400,6 +400,7 @@ mod tests {
             let dragon = game.entity(28).unwrap();
             assert_eq!(dragon.classification(game), Some(MobCategory::Monster));
         });
+    }
 
     #[test]
     #[ignore = "daily"]
