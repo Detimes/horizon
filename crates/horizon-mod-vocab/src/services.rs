@@ -51,7 +51,10 @@ impl fmt::Display for ServiceNameError {
         match self {
             Self::TooLong => write!(f, "a service name is at most {MAX_SERVICE_NAME_LEN} bytes"),
             Self::NotNamespaced => write!(f, "a service name is namespace:path, both non-empty"),
-            Self::BadCharacter => write!(f, "a service name uses a-z, 0-9, _ . - in the namespace and a-z, 0-9, _ . - / in the path"),
+            Self::BadCharacter => write!(
+                f,
+                "a service name uses a-z, 0-9, _ . - in the namespace and a-z, 0-9, _ . - / in the path"
+            ),
         }
     }
 }
@@ -96,18 +99,39 @@ mod tests {
 
     #[test]
     fn a_name_without_a_namespace_is_refused() {
-        assert_eq!(check_service_name("economy"), Err(ServiceNameError::NotNamespaced));
-        assert_eq!(check_service_name(":economy"), Err(ServiceNameError::NotNamespaced));
-        assert_eq!(check_service_name("mymod:"), Err(ServiceNameError::NotNamespaced));
+        assert_eq!(
+            check_service_name("economy"),
+            Err(ServiceNameError::NotNamespaced)
+        );
+        assert_eq!(
+            check_service_name(":economy"),
+            Err(ServiceNameError::NotNamespaced)
+        );
+        assert_eq!(
+            check_service_name("mymod:"),
+            Err(ServiceNameError::NotNamespaced)
+        );
         assert_eq!(check_service_name(""), Err(ServiceNameError::NotNamespaced));
     }
 
     #[test]
     fn upper_case_spaces_and_a_second_colon_are_refused() {
-        assert_eq!(check_service_name("MyMod:economy"), Err(ServiceNameError::BadCharacter));
-        assert_eq!(check_service_name("mymod:eco nomy"), Err(ServiceNameError::BadCharacter));
-        assert_eq!(check_service_name("mymod:a:b"), Err(ServiceNameError::BadCharacter));
-        assert_eq!(check_service_name("my/mod:economy"), Err(ServiceNameError::BadCharacter));
+        assert_eq!(
+            check_service_name("MyMod:economy"),
+            Err(ServiceNameError::BadCharacter)
+        );
+        assert_eq!(
+            check_service_name("mymod:eco nomy"),
+            Err(ServiceNameError::BadCharacter)
+        );
+        assert_eq!(
+            check_service_name("mymod:a:b"),
+            Err(ServiceNameError::BadCharacter)
+        );
+        assert_eq!(
+            check_service_name("my/mod:economy"),
+            Err(ServiceNameError::BadCharacter)
+        );
     }
 
     #[test]

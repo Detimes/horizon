@@ -78,9 +78,8 @@ pub fn upgrade_block_state(data_version: i32, tag: Compound) -> Result<Compound,
         return Ok(tag);
     }
     let saved = tag.clone();
-    let upgraded = std::panic::catch_unwind(|| {
-        block_state_data::upgrade_block_state_tag(&Tag::Compound(tag))
-    });
+    let upgraded =
+        std::panic::catch_unwind(|| block_state_data::upgrade_block_state_tag(&Tag::Compound(tag)));
     match upgraded {
         Ok(Tag::Compound(upgraded)) => Ok(upgraded),
         _ => Ok(saved),
