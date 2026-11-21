@@ -456,7 +456,7 @@ what Pick Block gives.
 
 An item whose template is `minecraft:fishing_rod` (and no `block`) is a fishing rod, as a NeoForge mod's
 `new FishingRodItem(...)` is: it casts, floats, bites, reels in and wears as vanilla's rod, its item model's
-`minecraft:fishing_rod/cast` is true while its bobber is out, and `player_fish` hears it. List it in
+`minecraft:fishing_rod/cast` is true while its bobber is out, and `player_fish` hears it. A native mod hears each reel-in catch through `fish_caught_item`, which gives the first caught stack after `item_fished` did not cancel. List it in
 `#minecraft:enchantable/fishing` for Lure and Luck of the Sea, as vanilla's rod is. Other behaviour that vanilla ties
 to an item's class, such as a bow's draw or a shield's block, belongs to vanilla's item alone; components
 (`minecraft:tool`, `minecraft:consumable`, `minecraft:equippable` and the others) carry over for every template.
