@@ -1503,6 +1503,7 @@ horizon-client game::native_hooks::level_tick_tests::tests::client_level_tick_fi
 horizon-client game::native_hooks::level_tick_tests::tests::server_hook_resolves_uuid_only_while_the_entity_is_in_its_active_level lib daily resources
 horizon-client game::native_hooks::living_death_post::tests::living_death_post_fires_once_after_each_finished_death lib daily resources
 horizon-client game::native_hooks::living_death_post::tests::living_death_post_hears_a_player_death_after_the_message_and_loot lib daily resources
+horizon-client game::native_hooks::living_death_post::tests::mob_died_is_heard_without_a_living_death_subscription lib daily resources
 horizon-client game::native_hooks::math::tests::game_host_math_profile_matches_platform_and_is_stable lib daily resources
 horizon-client game::native_hooks::mod_mismatch::tests::a_resolved_missing_mod_is_not_asked_about lib daily resources
 horizon-client game::native_hooks::mod_mismatch::tests::existing_lists_fire_on_client_and_dedicated_even_without_differences lib daily resources

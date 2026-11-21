@@ -54,11 +54,17 @@ pub(in crate::game) fn hurt_server_args<'a>(
     }
 }
 
+/// A death is observed by `living_death` and, once it is not cancelled, by `mob_died`.
+pub(in crate::game) fn death_listened() -> bool {
+    mod_api::__private::listened(mod_api::HookId::LivingDeath)
+        || mod_api::__private::listened(mod_api::HookId::MobDied)
+}
+
 pub(super) fn capture_hit(
     hurting: Hurting<'_>,
     attack: &Attack,
 ) -> Option<horizon_client::health::AcceptedHit> {
-    let death = mod_api::__private::listened(mod_api::HookId::LivingDeath);
+    let death = death_listened();
     let loot = mod_api::__private::listened(mod_api::HookId::LootDrops);
     if !death && !loot {
         return None;
@@ -82,7 +88,7 @@ impl Game<'_> {
         if mob.death_canceled {
             return true;
         }
-        if !mod_api::__private::listened(mod_api::HookId::LivingDeath) {
+        if !death_listened() {
             return false;
         }
         let accepted = mob
