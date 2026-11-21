@@ -536,7 +536,13 @@ pub trait LevelAccess: BlockEntityNeighbors {
     }
     /// Whether a pressure plate at `pos` may change its signal from `from` to `to`
     /// (`pressure_plate_change`'s veto); false keeps the plate as it was.
-    fn allow_plate_signal(&self, _pos: BlockPos, _state: BlockStateId, _from: i32, _to: i32) -> bool {
+    fn allow_plate_signal(
+        &self,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        _from: i32,
+        _to: i32,
+    ) -> bool {
         true
     }
     /// Select or cancel the feature a block is about to grow into; `None` when
