@@ -910,11 +910,11 @@ impl Game<'_> {
     }
     /// How many times a mod replaced the progress of the player the game acts as now.
     pub(in crate::game) fn replacements(&self) -> u32 {
-        self.adv
-            .replaced
-            .get(&self.lan_acting_uuid.unwrap_or(0))
-            .copied()
-            .unwrap_or(0)
+        self.replacements_of(self.lan_acting_uuid.unwrap_or(0))
+    }
+    /// How many times a mod replaced the progress of one player.
+    fn replacements_of(&self, player: u128) -> u32 {
+        self.adv.replaced.get(&player).copied().unwrap_or(0)
     }
     /// A mod replaced the acting player's whole progress.
     pub(in crate::game) fn note_replacement(&mut self) {
@@ -984,6 +984,7 @@ impl Game<'_> {
         for task in tasks {
             let mut fresh = Vec::new();
             for grant in &task.grants {
+                let replaced = self.replacements_of(task.player);
                 let Some(was_done) = self
                     .with_advancement_hub(|hub, owners| hub.grant_native_tick(&task, grant, owners))
                     .flatten()
@@ -1030,6 +1031,11 @@ impl Game<'_> {
                     })
                     .flatten()
                     .unwrap_or(false);
+                // A hook that replaced this player's progress during the grant is no grant of this
+                // criterion: what it imported completed the advancement, so nothing is awarded.
+                if self.replacements_of(task.player) != replaced {
+                    continue;
+                }
                 if self.lan_acting == Some(task.conn) {
                     if !was_done && done {
                         self.award_definition(definition);
