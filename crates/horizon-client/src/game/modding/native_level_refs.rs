@@ -317,6 +317,21 @@ impl Game<'_> {
         Some(horizon_core::geometry::block_floor_height(&here, || &below))
     }
 
+    /// `level_can_stand_at`: a standing spot for a player whose feet are at `pos`. The floor is
+    /// read first, so a position with no floor level with its bottom refuses without a box walk.
+    /// Server only; the box is the player's (0.6 wide, 1.8 tall), its feet at `pos`.
+    pub(super) fn level_can_stand_at(&self, level: LevelRef, pos: [i32; 3]) -> Option<bool> {
+        if !self.is_logical_server() {
+            return None;
+        }
+        if self.level_block_floor_height(level, pos)? != 0.0 {
+            return Some(false);
+        }
+        let [x, y, z] = pos.map(f64::from);
+        let feet = [x + 0.2, y, z + 0.2, x + 0.8, y + 1.8, z + 0.8];
+        Some(!self.level_has_collisions(level, feet)?)
+    }
+
     /// The border of a resident server level, through the handle's lifetime check.
     pub(super) fn level_world_border(&self, level: LevelRef) -> Option<[f64; 4]> {
         self.native_level_world(level)?;
@@ -1598,6 +1613,45 @@ mod tests {
             assert_eq!(stale.height(host), None);
             game.remote.as_mut().unwrap().logged_in = false;
             assert_eq!(level.height(game), None, "logged out");
+        });
+    }
+
+    /// `level_can_stand_at` on literal blocks: a full stone floor with two air cells above stands;
+    /// a bottom slab under the feet, a block in the head cell and no floor at all do not; a
+    /// full block on the feet cell does not, and a client refuses.
+    #[test]
+    #[ignore = "daily"]
+    fn stand_check_needs_a_full_floor_and_two_clear_cells() {
+        use horizon_client::chunk::Chunk;
+        use std::sync::Arc;
+
+        with_game(|game| {
+            game.world
+                .chunks
+                .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+            let level = game.level(game.dim.id()).unwrap();
+            let registry = &game.pack.assets.registry;
+            let stone = registry.default_state("minecraft:stone").unwrap();
+            let slab = registry.default_state("minecraft:oak_slab").unwrap();
+            let air = registry.default_state("minecraft:air").unwrap();
+            let put = |game: &mut super::super::Game<'_>, y: i32, state| {
+                game.world.set(0, y, 0, state).unwrap();
+            };
+            put(game, 63, stone);
+            put(game, 64, air);
+            put(game, 65, air);
+            assert_eq!(level.can_stand_at(game, [0, 64, 0]), Some(true));
+            put(game, 63, slab);
+            assert_eq!(level.can_stand_at(game, [0, 64, 0]), Some(false));
+            put(game, 63, stone);
+            put(game, 65, stone);
+            assert_eq!(level.can_stand_at(game, [0, 64, 0]), Some(false));
+            put(game, 65, air);
+            put(game, 64, stone);
+            assert_eq!(level.can_stand_at(game, [0, 64, 0]), Some(false));
+            put(game, 64, air);
+            put(game, 63, air);
+            assert_eq!(level.can_stand_at(game, [0, 64, 0]), Some(false));
         });
     }
 
