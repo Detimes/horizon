@@ -4,7 +4,7 @@ use mod_api::PlayerRef;
 
 impl Game<'_> {
     /// Spawns a client-only entity of `kind` at `pos` for `viewer` alone; its id, None when refused
-    /// (see the host declaration). Takes the next entity id, so an id is used up even when refused.
+    /// (see the host declaration). Takes the next world entity id, so an id is used up even when refused.
     pub(super) fn viewer_entity_spawn(
         &mut self,
         viewer: PlayerRef,
@@ -14,8 +14,12 @@ impl Game<'_> {
         if !pos.iter().all(|c| c.is_finite()) {
             return None;
         }
+        if self.lan.is_none() || self.entity_ids_exhausted() {
+            return None;
+        }
+        // The one world entity counter (`Entity.nextEntityId`), so the id never names a tracked entity.
+        let id = self.take_entity_id();
         let host = self.lan.as_mut()?;
-        let id = host.hub.lan.shared.next_id()?;
         host.hub
             .spawn_viewer_entity(viewer.uuid(), id, kind, pos)
             .then_some(id)
