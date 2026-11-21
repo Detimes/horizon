@@ -144,6 +144,11 @@ the viewer leaves; a rejoin starts with nothing hidden. A hidden player stays in
 Tab list (`hide` lists them out too), and chat is not filtered. The calls return whether
 anything changed, and refuse with `EntityVisibilityRefusal`: `Client`, `Stale`, `NoConnection` for a
 fake viewer and `StaleEntity` for an entity handle that names nothing or the viewer's own player.
+To show a different Tab list name to one viewer only, use
+`target.set_list_name_for(host, viewer, Some(text))`. Only the viewer's client receives the
+entry; the other viewers keep the name `set_list_name` gives. `None` sends the viewer the
+target's usual entry again. The call returns `false` when either player is not online. The
+override is not re-sent when the viewer rejoins, and the format hook does not run on it.
 
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
 return what the calls above set. Latency is the Tab list ping in milliseconds

@@ -722,6 +722,22 @@ pub trait PlayersBackendMut {
         name: Option<Text>,
     ) -> Result<bool, TextFormError>;
     /// Side: server.
+    /// Shows `name` for `target` in the Tab list of `viewer` only (TAB-style per-viewer layouts;
+    /// Paper has no equivalent, the packet is `ClientboundPlayerInfoUpdatePacket` with
+    /// `UPDATE_DISPLAY_NAME`, sent to that one client). Everyone else keeps the name
+    /// `player_set_list_name` and the format hook give. None takes the viewer's override back and
+    /// sends that viewer the target's usual name. The override is not sent again when the viewer
+    /// rejoins, and no format hook runs on it. A viewer the target is hidden from gets nothing.
+    /// False when the server list is unavailable, a handle is stale, the target or the viewer is
+    /// not online, or the viewer is a fake player (no client).
+    #[access(WorldOnly)]
+    fn player_set_list_name_for(
+        &mut self,
+        viewer: PlayerRef,
+        target: PlayerRef,
+        name: Option<Text>,
+    ) -> Result<bool, TextFormError>;
+    /// Side: server.
     /// Hides that player (a vanish) from the players below permission
     /// `level`, or shows them again (None): from the next tick those players
     /// lose them from the Tab list and the world (their client stops
