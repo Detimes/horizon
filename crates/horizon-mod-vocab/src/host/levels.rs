@@ -1571,6 +1571,21 @@ pub trait LevelsBackendMut {
     /// that gives `None`.
     #[access(WorldOnly)]
     fn level_set_random(&mut self, level: LevelRef, random: LegacyRandom) -> bool;
+    /// Side: server.
+    /// Place the configured feature `feature` at `pos` with the level's random, as `/place feature`
+    /// does: a vanilla tree or mushroom by its feature id (`minecraft:oak`, `minecraft:birch`,
+    /// `minecraft:huge_red_mushroom`), which is Paper's `World#generateTree` for each `TreeType`.
+    /// `Ok(true)` when it placed something, `Ok(false)` when it ran and placed nothing, or the
+    /// position is not loaded, out of the world or locked by a carrier transfer. Each refusal
+    /// queues nothing and is named by `FeatureRefusal`: `Stale`, `Client`, `NotInPlace` and
+    /// `UnknownFeature`. The changed blocks go out as the level's own writes do.
+    #[access(WorldOnly)]
+    fn level_generate_tree(
+        &mut self,
+        level: LevelRef,
+        pos: [i32; 3],
+        feature: &str,
+    ) -> Result<bool, FeatureRefusal>;
     /// Side: both.
     /// Apply bone meal to the block at `pos` as a dispenser does (`BoneMealItem.growCrop`, then
     /// `growWaterPlant`), with no player and no item: the mods' `bonemeal` hook first, level event
