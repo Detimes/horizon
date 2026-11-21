@@ -905,6 +905,24 @@ impl Game<'_> {
             None => false,
         }
     }
+    /// `MapItem.create` for a mod's call: a new map in `level`'s dimension, centred on `center`
+    /// as given, at `scale` with `colors`. None on a client, for a stale handle, a scale over 4
+    /// and a colour list that is not 128 by 128.
+    pub(super) fn level_new_map(
+        &mut self,
+        level: LevelRef,
+        center: [i32; 2],
+        scale: u8,
+        colors: &[u8],
+    ) -> Option<i32> {
+        if !self.native_world_data_allowed(level) || scale > 4 || colors.len() != 128 * 128 {
+            return None;
+        }
+        let mut data = crate::game::maps::MapData::fresh(0.0, 0.0, scale, level.dimension_id());
+        data.center = center;
+        data.colors.copy_from_slice(colors);
+        Some(self.new_map_id(data))
+    }
     /// Queue the level to be saved at the start of the next server tick. False for a stale
     /// handle and on a client.
     pub(super) fn level_request_save(&mut self, level: LevelRef) -> bool {
@@ -1384,6 +1402,18 @@ mod tests {
             assert!(!stale.set_map_locked(game, id, false));
             assert!(!level.set_map_locked(game, i32::MAX, false), "a map nothing made");
             assert!(level.map_data(game, id).unwrap().locked);
+            // A new map keeps the centre, scale and colours it is given, in the level's dimension.
+            let mut painted = vec![0u8; 128 * 128];
+            painted[7 + 3 * 128] = 52;
+            let made = level.new_map(game, [64, -64], 2, &painted).unwrap();
+            assert_ne!(made, id);
+            let new = level.map_data(game, made).unwrap();
+            assert_eq!(new.center, [64, -64]);
+            assert_eq!((new.scale, new.dimension.as_str()), (2, "minecraft:overworld"));
+            assert_eq!((new.colors[7 + 3 * 128], new.locked), (52, false));
+            assert_eq!(level.new_map(game, [0, 0], 5, &painted), None, "scale over 4");
+            assert_eq!(level.new_map(game, [0, 0], 0, &painted[..10]), None);
+            assert_eq!(stale.new_map(game, [0, 0], 0, &painted), None);
 
             // Ticks run only in the level in place, at a loaded position inside its height.
             let height = level.height(game).unwrap();
