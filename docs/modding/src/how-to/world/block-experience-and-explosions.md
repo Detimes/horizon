@@ -109,8 +109,6 @@ interaction, `None` included. The steps run in vanilla's order:
 `explosion_detonate`, entity damage and knockback, the blocks, the fire, then
 what players hear and see. A blast set off inside another blast's hook keeps
 its own source and cause and leaves the other blast's as they were.
-`explosion_detonate` names the exploding entity as its `source` (`None` when
-Horizon tracks none); it is never in the entity list.
 
 There is no radius limit, as in vanilla. A blast casts 1352 rays whatever its
 radius; their steps grow with the radius and the distinct positions they find

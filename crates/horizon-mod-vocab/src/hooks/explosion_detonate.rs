@@ -17,10 +17,7 @@ pub trait Hooks {
     /// walk only, not global effect order: crystals/dragon and players run in
     /// separate earlier passes, and decorations run last in storage order.
     /// Block positions are shuffled before destruction, so their list order is
-    /// not destruction order either. `source` is the entity that explodes
-    /// (`getDirectSourceEntity`, as `explosion_start` names it; Paper's
-    /// `EntityExplodeEvent.getEntity()`), `None` when Horizon tracks none, and it
-    /// is never in `entities`. Server-side.
+    /// not destruction order either. Server-side.
     #[hook(
         side = "server",
         contract = "collect",

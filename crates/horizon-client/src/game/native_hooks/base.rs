@@ -2847,17 +2847,10 @@ impl Game<'_> {
 
     /// A Nether portal was built for a dimension travel, or an End platform
     /// was made for an arrival. `pos` is the lower corner of the Nether
-    /// portal rectangle or the End platform origin. `created` lists the Nether
-    /// portal blocks a travel built, in order, and is empty for an End
-    /// platform (its blocks are not listed yet). The blocks are already in
-    /// the world.
-    pub(in crate::game) fn native_portal_create(
-        &mut self,
-        dimension: &str,
-        pos: [i32; 3],
-        created: &[[i32; 3]],
-    ) {
-        self.fire_portal_create(dimension, pos, created);
+    /// portal rectangle or the End platform origin. The completed blocks are
+    /// already in the world.
+    pub(in crate::game) fn native_portal_create(&mut self, dimension: &str, pos: [i32; 3]) {
+        self.fire_portal_create(dimension, pos);
     }
 
     /// A raid wave has been spawned at `pos`; `wave` is its one-based wave

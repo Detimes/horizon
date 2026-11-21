@@ -41,7 +41,7 @@ impl Game<'_> {
         entities.retain(|entity| Some(entity.id()) != source);
         self.append_blast_specials(&mut entities, source, min, max);
         let dimension = self.dim.id();
-        self.native_explosion_detonate(dimension, center, source, blocks, &mut entities);
+        self.native_explosion_detonate(dimension, center, blocks, &mut entities);
         // The walks follow the list: one a listener added is walked as any
         // other, so a handle that names nothing real is refused here, and a
         // repeated id is taken once (`getEntities` lists an entity once).
@@ -200,52 +200,6 @@ mod tests {
             super::super::explosion::ExplosionSource::default(),
         )
         .unwrap();
-    }
-
-    /// The `source` a listener hears: the exploding entity, `None` when none is tracked.
-    struct SourceProbe(Arc<Mutex<Option<Option<u32>>>>);
-    #[mod_api::__subscriptions]
-    impl Hooks for SourceProbe {
-        fn explosion_detonate(
-            &self,
-            _: &mut dyn ServerHost,
-            event: &mut ExplosionDetonateEvent<'_>,
-        ) {
-            *self.0.lock().unwrap() = Some(event.source);
-        }
-    }
-
-    #[test]
-    #[ignore = "daily"]
-    fn the_event_names_the_exploding_source() {
-        let heard = Arc::new(Mutex::new(None));
-        let mods: mod_api::Mods = vec![mod_api::ModEntry::new(
-            "detonate",
-            Box::new(SourceProbe(heard.clone())),
-        )]
-        .into();
-        mod_platform::testing::with_mods(mods, || {
-            with_game(|game| {
-                zombie(game, 900, 2.0);
-                game.combat.explosion_direct = Some(900);
-                explode(game);
-            });
-        });
-        assert_eq!(*heard.lock().unwrap(), Some(Some(900)));
-
-        let heard = Arc::new(Mutex::new(None));
-        let mods: mod_api::Mods = vec![mod_api::ModEntry::new(
-            "detonate",
-            Box::new(SourceProbe(heard.clone())),
-        )]
-        .into();
-        mod_platform::testing::with_mods(mods, || {
-            with_game(|game| {
-                zombie(game, 900, 2.0);
-                explode(game);
-            });
-        });
-        assert_eq!(*heard.lock().unwrap(), Some(None));
     }
 
     fn health_of(game: &crate::game::Game<'_>, id: u32) -> f32 {

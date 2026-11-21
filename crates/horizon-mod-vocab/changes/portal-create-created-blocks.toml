@@ -1,3 +1,0 @@
-ids = ["method:Hooks::portal_create"]
-why = "portal_create gains a created argument listing the Nether portal blocks a dimension travel built, in order from pos along the travel axis and then up. It is empty for an End platform."
-migrate = "Rebuild listeners against the new portal_create signature; read created as a list that can be empty."

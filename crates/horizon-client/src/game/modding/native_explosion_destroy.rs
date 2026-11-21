@@ -83,8 +83,7 @@ impl Game<'_> {
             // A listener only spares: what it takes out stays, what it adds is ignored.
             let mut told = targets.clone();
             // This block-only phase has no entity victims.
-            let source = self.combat.explosion_direct.or(self.combat.explosion_source);
-            self.native_explosion_detonate(self.dim.id(), center, source, &mut told, &mut Vec::new());
+            self.native_explosion_detonate(self.dim.id(), center, &mut told, &mut Vec::new());
             let kept: HashSet<[i32; 3]> = told.into_iter().collect();
             targets.retain(|p| kept.contains(p));
         }

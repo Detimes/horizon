@@ -14,16 +14,14 @@ impl Game<'_> {
     /// not asked for it; one a mod adds is walked as any other, and the list
     /// the listeners leave controls membership subject to normal eligibility.
     /// Its order controls ordinary storage targets only: crystals/dragon and
-    /// players run earlier, and decorations run last in storage order. `source` is
-    /// the exploding entity's id, `None` when untracked. Server-side.
+    /// players run earlier, and decorations run last in storage order. Server-side.
     pub(in crate::game) fn native_explosion_detonate(
         &mut self,
         dimension: &str,
         center: [f64; 3],
-        source: Option<u32>,
         blocks: &mut Vec<[i32; 3]>,
         entities: &mut Vec<EntityRef>,
     ) {
-        self.fire_explosion_detonate(dimension, center, source, blocks, entities);
+        self.fire_explosion_detonate(dimension, center, blocks, entities);
     }
 }
