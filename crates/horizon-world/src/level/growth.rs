@@ -305,7 +305,8 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                 entities: Vec::new(),
                 placed: Vec::new(),
             };
-            let placed = features.place_configured(name, &mut world, &mut random, [pos.x, pos.y, pos.z]);
+            let placed =
+                features.place_configured(name, &mut world, &mut random, [pos.x, pos.y, pos.z]);
             (placed, std::mem::take(&mut world.placed))
         };
         *self.random() = random;
@@ -358,7 +359,8 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                 entities: Vec::new(),
                 placed: Vec::new(),
             };
-            let placed = features.place_placed(name, &mut world, &mut random, [pos.x, pos.y, pos.z]);
+            let placed =
+                features.place_placed(name, &mut world, &mut random, [pos.x, pos.y, pos.z]);
             (placed, std::mem::take(&mut world.placed))
         };
         *self.random() = random;
