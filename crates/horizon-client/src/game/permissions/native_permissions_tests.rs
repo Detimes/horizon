@@ -249,7 +249,11 @@ fn a_live_level_wins_over_a_listed_one() {
         alice_level: 0,
         asked: Vec::new(),
         reenter: false,
+        grant_inside: false,
+        granted: None,
         inner: None,
+        declare_inside: false,
+        declared: None,
         reply: Ok(PermissionValue::Boolean(true)),
     };
     assert_eq!(
@@ -318,15 +322,15 @@ fn a_node_declared_late_is_answered_and_a_declaration_from_inside_a_handler_is_r
         Ok(false)
     );
     // From inside a handler's answer the service is out of the host: the declaration is refused.
-    let mut host = host("garden.policy");
-    host.declare_inside = true;
+    let mut handler_host = self::host("garden.policy");
+    handler_host.declare_inside = true;
     assert_eq!(
-        run_query_bool(&mut host, &boolean("a.flag"), CAROL),
+        run_query_bool(&mut handler_host, &boolean("a.flag"), CAROL),
         Ok(true)
     );
-    assert_eq!(host.declared, Some(Err(PermissionError::Recursive)));
+    assert_eq!(handler_host.declared, Some(Err(PermissionError::Recursive)));
     assert_eq!(
-        run_query_bool(&mut host, &boolean("a.inside"), CAROL),
+        run_query_bool(&mut handler_host, &boolean("a.inside"), CAROL),
         Err(PermissionError::Unregistered)
     );
 }
