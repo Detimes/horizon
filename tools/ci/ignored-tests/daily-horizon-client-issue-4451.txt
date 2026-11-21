@@ -1885,7 +1885,6 @@ horizon-client game::native_projectiles::impact_panic_tests::shoot_listener_pani
 horizon-client game::native_projectiles::nested_spawn_tests::impact_exposure_retains_the_existing_spawn_buffer_for_the_next_pass lib daily resources
 horizon-client game::native_projectiles::nested_spawn_tests::impact_handoff_balances_the_active_owner lib daily resources
 horizon-client game::native_projectiles::nested_spawn_tests::impact_handoff_balances_the_parked_owner lib daily resources
-horizon-client game::native_projectiles::pearl_hit_tests::a_listener_can_skip_the_pearl_hurt_call_with_no_damage lib daily resources
 horizon-client game::native_projectiles::pearl_hit_tests::a_listening_mod_hears_the_pearls_hit_and_its_target_comes_back lib daily resources
 horizon-client game::native_projectiles::pearl_hit_tests::a_pearl_names_the_dragon_for_a_part_and_the_local_player_by_its_own_id lib daily resources
 horizon-client game::native_projectiles::pearl_hit_tests::a_pearl_tells_the_block_face_or_the_entity_it_hit lib daily resources
