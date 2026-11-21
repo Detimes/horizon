@@ -1021,6 +1021,14 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_set_selected_slot(&mut self, player: PlayerRef, slot: usize) -> bool;
     /// Side: server.
+    /// The swap-hands key for a mod's call: the main-hand and off-hand stacks trade places, as
+    /// the F key does for a player who is not a spectator. The inventory sync tells the
+    /// client. Returns `true` when the hands were swapped. `false` for a spectator, a client,
+    /// and a stale or dead handle, with nothing changed. The call is not a key press: the
+    /// `player_swap_hands` hook is not heard for it, and it does not stop an item in use.
+    #[access(WorldOnly)]
+    fn player_swap_hands(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
     /// `Player.drop(stack, false, thrown_by_player)`: `stack` is thrown from the player's eyes
     /// along their view as an item entity, with the main hand swinging and `item_toss` asked
     /// first. Nothing is taken from an inventory: the stack is the caller's, taken out through
