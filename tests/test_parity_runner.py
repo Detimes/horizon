@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from tools import parity, parity_shard
+from tools import fast_bins, parity, parity_shard
 from tools.parity_shim import UNKEYED as UNKEYED_VARIABLES  # the JVM's and javac's own variables, never keyed
 
 
@@ -100,6 +100,50 @@ class ParityRunnerTests(unittest.TestCase):
             ["cargo", "build", "--locked", "--profile", "release", "-p", "horizon-world", "--bin", "horizon-world"],
             ["cargo", "build", "--locked", "--profile", "release", "-p", "horizon-world", "--example", "a", "--example", "b",
              "--example", "old"],
+        ])
+
+    def test_the_harnesses_fast_programs_share_one_prebuild_run(self):
+        # The game alone (most server harnesses), with horizon-ctl (lan_e2e), with the server (management_protocol)
+        # and the official game with the relay (friends_integration).
+        programs = [["horizon-client"], ["horizon-client", "horizon-ctl"], ["horizon-client", "horizon-server"],
+                    ["horizon-official", "horizon-ctl", "horizon-relay"]]
+        artifacts = [artifact for names in programs for artifact in parity.artifacts_of(fast_bins.command(*names))]
+        packages = {("bin", "horizon-client"): "horizon-game", ("bin", "horizon-ctl"): "horizon-client-lib",
+                    ("bin", "horizon-server"): "horizon-server", ("bin", "horizon-official"): "horizon-official",
+                    ("bin", "horizon-relay"): "horizon-relay"}
+        self.assertEqual(parity.prebuild_commands(artifacts, packages), [
+            ["cargo", "build", "--locked", "--profile", "fast", "-p", "horizon-game", "-p", "horizon-client-lib",
+             "-p", "horizon-server", "-p", "horizon-official", "-p", "horizon-relay", "--bin", "horizon-client",
+             "--bin", "horizon-ctl", "--bin", "horizon-server", "--bin", "horizon-official", "--bin", "horizon-relay"],
+        ])
+
+    def test_records_of_the_old_fast_selections_are_prebuilt_as_the_shared_one(self):
+        # Harness records from before tools/fast_bins.py: calls 12, 13 (as --bins), 14 and 16 of the old prebuild.
+        old = [["bin", "horizon-client", "fast", ["-p", "horizon-game"], False],
+               ["bins", "", "fast", ["-p", "horizon-game", "-p", "horizon-client-lib"], False],
+               ["bin", "horizon-client", "fast", ["-p", "horizon-game", "-p", "horizon-server"], False],
+               ["bin", "horizon-server", "fast", ["-p", "horizon-game", "-p", "horizon-server"], False],
+               *[["bin", name, "fast", ["-p", "horizon-official", "-p", "horizon-client-lib", "-p", "horizon-relay"], False]
+                 for name in ("horizon-official", "horizon-ctl", "horizon-relay")]]
+        untouched = [
+            ["example", "client_probe", "fast", ["-p", "horizon-client-lib"], True],
+            ["bin", "horizon-client", "release", ["-p", "horizon-game"], False],
+            ["bin", "horizon-client", "fast", ["-p", "horizon-game", "--features", "x"], False],
+            ["bin", "horizon-mod-dimension-game", "fast", ["-p", "horizon-game", "-p", "horizon-mod-dimension-game"], False],
+        ]
+        packages = {("bin", "horizon-client"): "horizon-game", ("bin", "horizon-ctl"): "horizon-client-lib",
+                    ("bin", "horizon-server"): "horizon-server", ("bin", "horizon-official"): "horizon-official",
+                    ("bin", "horizon-relay"): "horizon-relay", ("example", "client_probe"): "horizon-client-lib",
+                    ("bin", "horizon-mod-dimension-game"): "horizon-mod-dimension-game"}
+        new = parity.artifacts_of(fast_bins.command("horizon-client"))  # a harness's record made since
+        self.assertEqual(parity.prebuild_commands([*old, *untouched, *new], packages), [
+            ["cargo", "build", "--locked", "--profile", "fast", "-p", "horizon-client-lib", "--example", "client_probe"],
+            ["cargo", "build", "--locked", "--profile", "fast", "-p", "horizon-game", "--features", "x",
+             "--bin", "horizon-client"],
+            fast_bins.command("horizon-client", "horizon-ctl", "horizon-server", "horizon-official", "horizon-relay"),
+            ["cargo", "build", "--locked", "--profile", "fast", "-p", "horizon-game", "-p", "horizon-mod-dimension-game",
+             "--bin", "horizon-mod-dimension-game"],
+            ["cargo", "build", "--locked", "--profile", "release", "-p", "horizon-game", "--bin", "horizon-client"],
         ])
 
     def test_a_prebuild_cargo_run_says_where_its_time_went(self):
@@ -338,7 +382,8 @@ class ParityRunnerTests(unittest.TestCase):
         build error) and passes without, "sleep" sleeps a minute, "missing" is no program at all.
 
         Returns the prebuild's result (or the exception it raised), the runs' arguments, the events (("print",
-        line), ("released",) when the compile turn ends, ("finish",)), the state folder and the target folder."""
+        line), ("yield",) at each check for a priority job between runs, ("released",) when the compile turn ends,
+        ("finish",)), the state folder and the target folder."""
         temp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, temp, True)
         cargo, argv = temp / "cargo.py", temp / "argv.txt"
@@ -389,6 +434,10 @@ class ParityRunnerTests(unittest.TestCase):
             def __enter__(self):
                 return self
 
+            def yield_if_ahead(self):
+                events.append(("yield",))
+                return False
+
             def __exit__(self, *exception):
                 events.append(("released",))
 
@@ -435,6 +484,15 @@ class ParityRunnerTests(unittest.TestCase):
         self.assertEqual(printed[3:], ["  compiler cache: not in use, or its counts could not be read"])
         self.assertNotIn(("finish",), events)
         self.assertEqual(sorted(path.name for path in state.iterdir()), ["prebuild-timings-6-1"])
+
+    def test_the_prebuild_checks_for_a_priority_job_between_its_cargo_runs(self):
+        (built, _), _, events, _, _ = self.prebuild_with_fake_cargo(["one", "two", "three"], switch=False)
+        self.assertTrue(built)
+        order = ["yield" if event == ("yield",) else untimed(event[1]) for event in events
+                 if event == ("yield",) or event[0] == "print" and event[1].startswith("  cargo ")]
+        self.assertEqual(order, ["  cargo 1/3: dev one: Ns, 0 crates compiled", "yield",
+                                 "  cargo 2/3: dev two: Ns, 0 crates compiled", "yield",
+                                 "  cargo 3/3: dev three: Ns, 0 crates compiled"])
 
     def test_parity_mains_prebuild_keeps_each_runs_timing_report(self):
         (built, _), runs, events, state, _ = self.prebuild_with_fake_cargo(["one", "none", "three"])

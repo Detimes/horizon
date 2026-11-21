@@ -71,11 +71,13 @@ import time
 try:
     from . import parity_reach
     from . import compile_lock
+    from . import fast_bins
     from . import file_lock
     from . import process_tree
 except ImportError:
     import parity_reach
     import compile_lock
+    import fast_bins
     import file_lock
     import process_tree
 
@@ -758,6 +760,22 @@ def selected_builds(artifacts, packages=None):
         if owner and selected and owner not in selected:
             # A recorded target may have moved packages; retain its feature flags and old selections.
             selection = [*selection, "-p", owner]
+            selected.append(owner)
+        if profile == "fast" and not examples and kind in ("bin", "bins") and selected \
+                and selection == [part for package in selected for part in ("-p", package)] \
+                and set(selected) <= set(fast_bins.PACKAGES):
+            # Records from before tools/fast_bins.py (one selection for every fast program) are built as the harness
+            # builds them now, so their old selection isn't compiled as well. A --bins build is its packages'
+            # programs, named, since the shared selection's --bins would build every package's.
+            # Removable once every runner's harnesses have run since tools/fast_bins.py and recorded the shared
+            # selection (one full parity-main per runner), and no open branch predates it.
+            shared = [part for package in fast_bins.PACKAGES for part in ("-p", package)]
+            names = [name] if name else [target for (other, target), package in (packages or {}).items()
+                                         if other == "bin" and package in selected]
+            if names:
+                for target in names:
+                    yield "bin", target, profile, shared, False
+                continue
         yield kind, name, profile, selection, examples
 
 
@@ -770,7 +788,8 @@ def prebuild(artifacts, jobs):
     """Build the recorded probes before the harnesses start, so they don't serialise on Cargo's lock.
 
     On the self-hosted Mac the Cargo runs wait for a turn on the machine (tools/compile_lock.py), as the job's
-    HORIZON_COMPILE_LOCK_ROLE says: `main` for parity-main, else `pr`."""
+    HORIZON_COMPILE_LOCK_ROLE says: `main` for parity-main, else `pr`. A `pr` job gives the turn back between its runs
+    while a priority job waits."""
     environment = run_environment()
     environment["CARGO_BUILD_JOBS"] = str(jobs)
     errors = ""
@@ -779,7 +798,7 @@ def prebuild(artifacts, jobs):
     role = os.environ.get("HORIZON_COMPILE_LOCK_ROLE") or "pr"
     timings = PrebuildTimings(environment) if os.environ.get(PREBUILD_TIMINGS) == "1" else None
     try:
-        with compile_lock.Turn(role):
+        with compile_lock.Turn(role) as turn:
             limit = PREBUILD_LIMIT.get(role)
             deadline = time.monotonic() + limit if limit else None
             expired = threading.Event()
@@ -829,6 +848,9 @@ def prebuild(artifacts, jobs):
                 timings.stats = stats
             failed = False  # with the switch on: a call's last attempt exited nonzero
             for number, command in enumerate(commands, 1):
+                if number > 1:
+                    # A pull request's job lets a waiting parity-main or Mac build go first, outside the call's time.
+                    turn.yield_if_ahead()
                 if timings:
                     timings.before_call()
                 started = time.monotonic()
