@@ -1,4 +1,3 @@
-use super::*;
 use crate::game::native_entity_refs::tests::with_game;
 use crate::game::native_item_places::tests::{guest, open_to_lan};
 use mod_api::{EntityToggleGlideCancelEvent, Flow, Hooks, ModEntry, ServerHost};
