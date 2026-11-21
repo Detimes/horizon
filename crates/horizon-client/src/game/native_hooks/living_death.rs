@@ -21,7 +21,17 @@ impl Game<'_> {
         // when the blow has no attacker.
         let killer = u32::try_from(source.causing).unwrap_or(0);
         let weapon = weapon.map_or("", |stack| stack.item.as_ref());
-        self.fire_mob_died(entity, kind, killer, source.damage_type, weapon);
+        self.native_mob_died(mod_api::__private::MobDiedCall {
+            entity,
+            kind,
+            killer,
+            damage_type: source.damage_type,
+            weapon,
+        });
+    }
+    /// The `mob_died` hook point: a death that was not cancelled, once.
+    pub(in crate::game) fn native_mob_died(&mut self, call: mod_api::__private::MobDiedCall<'_>) {
+        self.fire_mob_died(call);
     }
 }
 /// `native_living_incoming_damage`'s entity, entity type and source for a hit.

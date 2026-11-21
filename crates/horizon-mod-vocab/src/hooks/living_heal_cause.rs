@@ -16,7 +16,8 @@ pub trait Hooks {
         side = "both",
         contract = "listen",
         context = "loop",
-        neoforge = "none (LivingHealEvent has no cause)"
+        neoforge = "none (LivingHealEvent has no cause)",
+        target = "horizon_client_lib::hunger::native_living_heal_cause"
     )]
     fn living_heal_cause();
 }
