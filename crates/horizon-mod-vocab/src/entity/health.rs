@@ -242,6 +242,7 @@ pub struct ShieldBlock {
 /// Why [`DamageContainer::scale_original`] refused a factor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(horizon_mod_api_macros::Wire)]
 pub enum ScaleRefusal {
     /// The factor is NaN or infinite.
     NotFinite,
