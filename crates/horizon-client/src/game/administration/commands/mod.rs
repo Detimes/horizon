@@ -1117,6 +1117,7 @@ impl Game<'_> {
     fn cmd_help(&mut self, ctx: &Context) -> R<i32> {
         horizon_gameplay::commands::help::help(self, ctx)
     }
+    #[allow(dead_code)]
     pub(super) fn set_game_mode(&mut self, mode: GameMode) -> bool {
         self.set_game_mode_because(mode, "unknown")
     }
