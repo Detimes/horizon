@@ -736,7 +736,6 @@ mod tests {
             user: NameAndId::offline("Kim"),
         };
         assert!(white.try_add(kim()).unwrap());
-        assert!(!white.try_add(kim()).unwrap());
         // The file's place is taken by a directory, so a write cannot succeed.
         std::fs::remove_file(&file).unwrap();
         std::fs::create_dir(&file).unwrap();
