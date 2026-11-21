@@ -68,7 +68,12 @@ impl PlayerMotion {
                         &mut observer,
                     )?
                     .heal(amount)?;
-                    native_living_heal_cause(context, self.entity_id as u32, "regeneration", amount);
+                    native_living_heal_cause(
+                        context,
+                        self.entity_id as u32,
+                        "regeneration",
+                        amount,
+                    );
                 }
             }
             let saturation = self.health.food.saturation;
