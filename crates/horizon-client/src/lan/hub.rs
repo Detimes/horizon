@@ -2635,6 +2635,10 @@ impl Hub {
 
     pub(super) fn remove_guest(&mut self, i: usize, reason: &str) -> Guest {
         let mut g = self.guests.remove(i);
+        // The viewer's client is gone with its objectives: a reconnect must be sent them again.
+        let gone = g.uuid;
+        self.display_objectives
+            .retain(|(viewer, _)| *viewer != gone);
         if let Some(terrain) = self.terrain.as_mut() {
             terrain.players.remove(&g.conn);
         }
@@ -8890,5 +8894,24 @@ mod tests {
         // Only the Tab list and below-name slots; a player who is not on is refused.
         assert!(!hub.set_display_score(2, 1, 1, Some(1)));
         assert!(!hub.set_display_score(2, 0, 7, Some(1)));
+    }
+
+    /// The objective cache ends with the viewer's connection: after a reconnect the fresh client is
+    /// sent its objective again, not a bare score it would drop.
+    #[test]
+    fn a_reconnected_viewer_gets_its_display_objective_again() {
+        let (mut hub, _bob) = hub_with_a_guest();
+        let alice = add_alice(&mut hub);
+        sent(&alice);
+        assert!(hub.set_display_score(2, 0, 1, Some(5)));
+        assert_eq!(sent(&alice).len(), 3);
+        let i = hub.guests.iter().position(|g| g.uuid == 2).unwrap();
+        let _ = hub.remove_guest(i, "bye");
+        let alice = add_alice(&mut hub);
+        sent(&alice);
+        assert!(hub.set_display_score(2, 0, 1, Some(6)));
+        let got = sent(&alice);
+        assert!(matches!(&got[0], play::Clientbound::SetObjective(_)));
+        assert_eq!(got.len(), 3);
     }
 }
