@@ -211,8 +211,8 @@ impl LevelAccess for GameLevel<'_> {
             self.native_crop_grow_post(self.dimension, pos, original, state);
         }
     }
-    fn allow_block_burn(&self, pos: BlockPos) -> bool {
-        self.block_burn_allowed(pos)
+    fn allow_block_burn(&self, pos: BlockPos, igniting: Option<BlockPos>) -> bool {
+        self.block_burn_allowed(pos, igniting)
     }
     fn allow_plate_signal(&self, pos: BlockPos, state: BlockStateId, from: i32, to: i32) -> bool {
         self.plate_signal_allowed(pos, state, from, to)
