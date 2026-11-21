@@ -811,6 +811,20 @@ Online5277 since 2026-10-27, levzzz5154 since 2026-10-28) and for Ludovic, with 
   `python3 tools/ci/resolve_reviewer_ids.py` fills in IDs for new lines; `--check` reports a listed ID whose login
   changed (a rename to look at) or whose account is gone.
 
+### Stale pull requests
+
+`.github/workflows/stale-prs.yml` (`tools/ci/stale_prs.py`, daily) closes pull requests left waiting on their author.
+An open, non-draft pull request to main gets the `stale` label and one comment naming the reason when it conflicts
+with main and saw no push, reopen, or person's comment, review or review-thread reply for 4 days, or when its head is
+still the commit a changes-requested review looked at 7 days later and that reviewer hasn't been asked to look again.
+Any push or person's comment takes the label off; unchanged 3 days after the notice, it is closed with a comment (its
+unfinished checks are cancelled, as `cancel-on-close.yml` would), and reopening it starts again. Drafts, the merge
+queue, other bases and the labels `keep-open`, `pinned`, `proposal`, `tracker` and `release-now` are never touched, nor
+is a pull request whose mergeable state GitHub hasn't worked out yet; each one is read again right before it is
+labelled or closed. At most 30 actions a run. A dry run by hand: `gh workflow run stale-prs.yml` (its `dry_run` box is
+ticked by default), or locally `python3 tools/ci/stale_prs.py`, which only reads. Before the first scheduled run,
+`python3 tools/ci/stale_prs.py create --apply` creates the labels.
+
 ### Trusted reviewers pick the Nightly's pull requests
 
 The Nightly is where contributors test pull requests before the gate. The trusted reviewers listed in
@@ -949,5 +963,6 @@ Releases ship often, so nothing they leave behind may grow without bound.
   `ssh macmini 'cd ~/.actions-runners && for f in runner-gc.sh git-slim.sh; do curl -fsSL https://raw.githubusercontent.com/horizon-rust/horizon/main/tools/ci/$f -o $f; done'`.
 
 Guest-stack release note (arismoko/horizon#3232): game and server executables reserve 136 MiB
-for their main stack through MSVC `/STACK` or Apple `-stack_size` linker arguments;
-Linux raises RLIMIT_STACK and re-execs before initialization.
+(144 MiB on macOS) for their main stack through MSVC `/STACK` or Apple `-stack_size` linker arguments;
+Linux raises RLIMIT_STACK and re-execs before initialization. Rosetta 2 ignores `-stack_size`, so an
+Intel macOS program there runs its `main` on a stack its main thread allocates (`run_main`).
