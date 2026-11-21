@@ -1001,8 +1001,10 @@ pub trait PlayersBackendMut {
     /// listeners (which can still cancel it). `Broken` when the block went, `Kept` when the game or a
     /// listener refused it, and `NotThisPlayer` for a stale player or one this handle does not act for
     /// (only the local guest is served by this build). Paper: `Player#breakBlock`.
+    ///
+    /// Not on wasm: its result enum is not a wire type yet.
     #[access(WorldOnly)]
-    fn tool_break_block(&mut self, player: PlayerRef, pos: [i32; 3]) -> BlockBreakResult;
+    fn tool_break_block(&mut self, player: PlayerRef, pos: [i32; 3]) -> crate::game::BlockBreakResult;
     /// Side: server.
     /// `Inventory.setSelectedSlot`: makes `slot` (0 to 8) the hotbar slot the player holds and
     /// tells their client (`ClientboundSetHeldSlot`), as `/clear`-style server code does. A new
@@ -1346,15 +1348,4 @@ pub trait PlayersBackendMut {
     /// that is not finite.
     #[access(WorldOnly)]
     fn player_set_velocity(&mut self, player: PlayerRef, velocity: [f64; 3]) -> bool;
-}
-
-/// The outcome of `tool_break_block`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockBreakResult {
-    /// The block was removed, with its drops and tool damage.
-    Broken,
-    /// The game or a `break_block` listener refused the break; the block stays.
-    Kept,
-    /// The handle is stale, or it names a player this build does not act for.
-    NotThisPlayer,
 }
