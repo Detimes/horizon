@@ -53,7 +53,7 @@ impl Game<'_> {
         if was != gliding {
             // Heard before the change is applied: a cancel keeps the state.
             let mut cancel = false;
-            if self.native_authoritative
+            if self.native_authoritative()
                 && mod_api::__private::listened(mod_api::HookId::EntityToggleGlide)
             {
                 self.native_entity_toggle_glide(uuid, &name, gliding, &mut cancel);
@@ -164,3 +164,7 @@ impl Game<'_> {
 #[cfg(test)]
 #[path = "tests/collision_exclusion_wall_tests.rs"]
 mod collision_exclusion_wall_tests;
+
+#[cfg(test)]
+#[path = "tests/glide_toggle_hook_tests.rs"]
+mod glide_toggle_hook_tests;

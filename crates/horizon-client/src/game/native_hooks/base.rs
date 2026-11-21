@@ -27,6 +27,20 @@ impl GameLevel<'_> {
     ) {
         self.fire_hopper_pickup_item(dimension, pos, item, count, cancel);
     }
+    /// A hopper at `pos` is about to pick up `count` of `item`, the dropped item entity `entity`.
+    /// Set `cancel` to leave the dropped stack in the world. Server-side.
+    #[inline(always)]
+    pub(in crate::game) fn native_hopper_pickup_item_detail(
+        &self,
+        dimension: LevelDimension,
+        pos: BlockPos,
+        item: &str,
+        count: u32,
+        entity: u32,
+        cancel: &mut bool,
+    ) {
+        self.fire_hopper_pickup_item_detail(dimension, pos, item, count, entity, cancel);
+    }
     /// An authoritative server committed a changed state through `Level.setBlock`.
     /// The world contains `new`; block side effects and neighbour updates follow.
     #[inline(always)]
@@ -1720,6 +1734,14 @@ impl Game<'_> {
     ) {
         self.fire_ender_pearl_teleport(call);
     }
+    /// The same pearl landing as `native_ender_pearl_teleport`, heard after it: the fall damage
+    /// may be skipped (`None`) and the position packet's `relative` flags set. Server-side.
+    pub(in crate::game) fn native_ender_pearl_teleport_detail(
+        &mut self,
+        call: mod_api::__private::EnderPearlTeleportDetailCall<'_>,
+    ) {
+        self.fire_ender_pearl_teleport_detail(call);
+    }
     /// A server player or fox that ate chorus fruit (or another item with the
     /// `teleport_randomly` consume effect) is about to try a random spot
     /// (NeoForge's `EntityTeleportEvent.ItemConsumption`, vanilla's
@@ -3073,6 +3095,48 @@ impl Game<'_> {
         cancel: &mut bool,
     ) {
         self.fire_inventory_move_item(source, destination, item, cancel);
+    }
+    /// A hopper is about to move `amount` items out of `source_slot` of `source`: the same move
+    /// `native_inventory_move_item` reports, with the slot and the count. Set `cancel` to leave
+    /// it in its source slot.
+    pub(in crate::game) fn native_inventory_move_item_detail(
+        &self,
+        source: [i32; 3],
+        destination: [i32; 3],
+        item: &str,
+        source_slot: Option<u32>,
+        amount: u32,
+        cancel: &mut bool,
+    ) {
+        self.fire_inventory_move_item_detail(
+            source,
+            destination,
+            item,
+            source_slot,
+            amount,
+            cancel,
+        );
+    }
+    /// One hopper move, heard by `inventory_move_item` and then `inventory_move_item_detail`
+    /// (which a cancel by the first skips).
+    pub(in crate::game) fn native_inventory_move(
+        &self,
+        source: [i32; 3],
+        destination: [i32; 3],
+        item: &str,
+        source_slot: Option<u32>,
+        amount: u32,
+        cancel: &mut bool,
+    ) {
+        self.native_inventory_move_item(source, destination, item, cancel);
+        self.native_inventory_move_item_detail(
+            source,
+            destination,
+            item,
+            source_slot,
+            amount,
+            cancel,
+        );
     }
     /// A hopper selected a container while searching for items to push or
     /// pull. Exactly one of `container` and `entity` identifies the target.

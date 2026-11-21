@@ -5243,7 +5243,7 @@ impl Game<'_> {
         };
         let dimension = self.dim;
         let _: std::result::Result<(), ()> = mod_api::run_transaction(self, |game, _| {
-            let (mut target, _, cancel) =
+            let (mut target, _, _, cancel) =
                 game.native_pearl_teleport(owner, pearl.id, from, pearl.previous, 0.0, hit);
             // Listener writes stay in the transaction; never overwrite a changed,
             // dead, sleeping or removed owner using the old decision.
@@ -5917,8 +5917,9 @@ impl Game<'_> {
                 }
                 // To where the pearl started its last tick (oldPosition).
                 let mut to = p.previous;
-                let mut damage = 5.0;
+                let mut damage = Some(5.0);
                 let mut cancel = false;
+                let mut pearl_relative = 0;
                 // EntityTeleportEvent.EnderPearl: a server player's pearl.
                 if p.owner == Some(Who::Player)
                     && let Some(from) = self.player.as_ref().map(|pl| pl.position)
@@ -5926,8 +5927,10 @@ impl Game<'_> {
                 {
                     let dimension = self.dim;
                     let target;
-                    (target, damage, cancel) =
-                        self.native_pearl_teleport(owner, p.id, from, to, damage, hit);
+                    let relative;
+                    (target, damage, relative, cancel) =
+                        self.native_pearl_teleport(owner, p.id, from, to, 5.0, hit);
+                    pearl_relative = relative;
                     cancel |= self.dim != dimension
                         || self.player.as_ref().is_none_or(|pl| pl.position != from)
                         || self.native_acting_player().map(|player| player.entity()) != Some(owner);
@@ -5960,8 +5963,11 @@ impl Game<'_> {
                         self.spawn_mob_raw("minecraft:endermite", [from.x, from.y, from.z], false);
                     }
                     // ServerPlayer.teleport: removeVehicle before the placement.
-                    section_steps::teleport_player(self, to);
-                    self.hurt_player_by("minecraft:ender_pearl", damage);
+                    section_steps::teleport_player_keeping(self, to, pearl_relative);
+                    // `damage` None: a listener skipped the hurt call.
+                    if let Some(damage) = damage {
+                        self.hurt_player_by("minecraft:ender_pearl", damage);
+                    }
                     self.audio.play(
                         "minecraft:entity.player.teleport",
                         Some([to.x, to.y, to.z]),
@@ -10096,6 +10102,8 @@ mod pickable_projectile_tests {
 
 #[cfg(test)]
 mod mob_pearl_hook_tests;
+#[cfg(test)]
+mod break_door_hook_tests;
 
 #[cfg(test)]
 mod breeding_orb_tests;
