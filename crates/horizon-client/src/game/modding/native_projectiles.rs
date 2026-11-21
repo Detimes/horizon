@@ -771,8 +771,8 @@ mod pearl_hit_tests {
                 _: &mut dyn ServerHost,
                 event: &mut EnderPearlTeleportDamageEvent,
             ) -> Flow {
-                assert_eq!(event.damage, Some(0.0));
-                event.damage = None;
+                assert_eq!(*event.damage, Some(0.0));
+                *event.damage = None;
                 Flow::Continue
             }
         }

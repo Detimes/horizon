@@ -30,6 +30,7 @@ impl Game<'_> {
             DataKind::BlockState => self.upgrade_block_state_nbt(from_version, nbt),
             DataKind::BlockEntity => self.upgrade_block_entity_nbt(from_version, nbt),
             DataKind::Entity => self.upgrade_entity_nbt(from_version, nbt),
+            _ => return Err(DataFixError::Upgrade(NbtUpgradeError::TooDeep)),
         }
         .map_err(DataFixError::Upgrade)
     }

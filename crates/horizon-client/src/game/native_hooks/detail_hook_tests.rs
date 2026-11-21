@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! The separate hooks of the follow-up PR, each heard through its native function with literal
 //! values: the listener sees the values, and its cancel comes back.
 use super::*;
