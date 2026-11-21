@@ -1,0 +1,3 @@
+ids = ["method:Hooks::player_teleport_end_gateway"]
+why = "player_teleport_end_gateway gains a to argument giving where the player would land: the exit block centre, or the search start when no exit is known yet. Mods can now see the destination before the gateway is used, and cancel still leaves the player at the entrance."
+migrate = "Rebuild listeners against the new signature, which takes to after gateway, and read it as the three-element position of the landing point."

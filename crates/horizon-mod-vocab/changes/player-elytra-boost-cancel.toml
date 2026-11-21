@@ -1,0 +1,3 @@
+ids = ["hook:player_elytra_boost", "method:Hooks::player_elytra_boost"]
+why = "player_elytra_boost moved from after the firework rocket is launched and consumed to before it, and is now cancellable: a cancel leaves the rocket in the player's hand and awards no stat. This matches Paper's PlayerElytraBoostEvent, which fires before the boost."
+migrate = "Rebuild listeners and do not count a boost as used in this hook unless you also check that it was not cancelled, since the rocket is not yet launched when the hook runs."

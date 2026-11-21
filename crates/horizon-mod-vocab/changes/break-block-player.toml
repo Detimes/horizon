@@ -1,0 +1,3 @@
+ids = ["method:Hooks::break_block"]
+why = "BreakBlockEvent gains a player field that names the breaking guest by uuid, so a mod can tell which player broke a block. It is None when the game's own player breaks the block, which lets listeners separate guest breaks from the host's."
+migrate = "Rebuild listeners against the new event and read player as an Option of the uuid; treat None as a break by the game's own player."

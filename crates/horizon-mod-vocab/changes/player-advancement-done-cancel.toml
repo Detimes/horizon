@@ -1,0 +1,3 @@
+ids = ["hook:player_advancement_done", "method:Hooks::player_advancement_done"]
+why = "player_advancement_done is now cancellable, with a cancel flag that withholds the advancement's toast, announcement and rewards while the advancement stays done in the progress. This matches Paper's behaviour for advancement completion and was missing from the hook."
+migrate = "Rebuild listeners against the new signature and, if you need to suppress the toast or rewards, set cancel; the advancement is still recorded as done either way."
