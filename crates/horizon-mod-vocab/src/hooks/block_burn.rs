@@ -3,9 +3,7 @@
 
 pub trait Hooks {
     /// On an authoritative server, fire is about to burn the block at `pos`
-    /// away; `igniting` is the fire block that burns it (Bukkit's
-    /// `BlockBurnEvent.getIgnitingBlock`), None when no fire names it. Set
-    /// `cancel` to keep that block.
+    /// away. Set `cancel` to keep that block.
     #[hook(
         side = "server",
         contract = "cancel",

@@ -1,3 +1,0 @@
-ids = ["method:Hooks::block_burn", "type:BlockBurnEvent"]
-why = "The block_burn hook now reports the igniting fire block, as Bukkit's BlockBurnEvent.getIgnitingBlock does: an Option position that is None when no fire names the burning block. Mods can now tell which fire is consuming a block before they decide to cancel the burn."
-migrate = "Rebuild listeners against the new block_burn signature and treat the igniting position as an Option, since it can be None."
