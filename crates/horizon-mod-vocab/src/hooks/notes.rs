@@ -375,8 +375,9 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   potion or trident. It fires after the projectile is created and only for guest players in a LAN world.
 - **`entity_unleash(entity, kind)`**: a mob's leash was removed, before any lead drop is handled.
 - **`entity_drop_item(entity, item, count, pos)`**: a mob is about to drop `count` of `item` at `pos`.
-- **`item_despawn(entity, item, count, pos)`**: a dropped item entity reached its 6000-tick lifetime and is
-  about to be removed.
+- **`item_despawn(entity, item, count, pos, cancel)`**: a dropped item entity reached its 6000-tick lifetime and is
+  about to be removed. Set `cancel` to keep it for 5 more minutes (Paper's `ItemDespawnEvent` cancel). It runs only
+  when no `item_expire` listener extended the item's life.
 - **`explosion_prime(center, radius)`**: a server explosion is about to begin at `center` with `radius`.
   It is listen-only, so the explosion proceeds as usual; it also fires on the single-player server.
 - **`vehicle_damage(kind, damage, cancel)`**: a player is about to damage a boat or minecart. Change `damage`
@@ -2700,7 +2701,7 @@ registration path.
 
 - A hopper is about to move one item between containers: `inventory_move_item(source, destination, item, source_slot, amount, cancel)` runs before the source slot is changed, a composter's bone meal included; a chest boat or minecart is reported at the block it is in. Set `cancel` to keep the item in its source slot.
 
-- A dropped item entity reached its 6000-tick lifetime and is about to be removed: `item_despawn(entity, item, count, pos)`.
+- A dropped item entity reached its 6000-tick lifetime and is about to be removed: `item_despawn(entity, item, count, pos, cancel)`; set `cancel` to keep it 5 more minutes.
 
 - A boat or minecart joined the level at `pos`, after a player or dispenser placed it: `vehicle_create(kind, pos)` is listen-only.
 
