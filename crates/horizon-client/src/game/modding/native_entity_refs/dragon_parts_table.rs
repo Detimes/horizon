@@ -320,6 +320,88 @@ impl DragonSet {
     }
 }
 
+/// The table travels with the dimension-owned singleton, including actor loans.
+#[derive(Default)]
+#[allow(dead_code)] // kept: its mod points and internals stay published (#18777)
+pub(in crate::game) struct DragonSlot {
+    slot: horizon_client::join_seq::ResidentSlot<crate::game::dragon::Dragon>,
+    table: std::cell::RefCell<DragonPartsTable>,
+    registered: std::cell::Cell<u32>,
+}
+impl std::ops::Deref for DragonSlot {
+    type Target = horizon_client::join_seq::ResidentSlot<crate::game::dragon::Dragon>;
+    fn deref(&self) -> &Self::Target {
+        &self.slot
+    }
+}
+impl std::ops::DerefMut for DragonSlot {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.slot
+    }
+}
+#[allow(dead_code)]
+impl DragonSlot {
+    fn register(&self, id: u32) {
+        let old = self.registered.replace(id);
+        if old == id {
+            return;
+        }
+        let mut table = self.table.borrow_mut();
+        if old != 0 {
+            for part in old + 1..=old + 8 {
+                table.remove(part);
+            }
+        }
+        if id != 0 {
+            for part in id + 1..=id + 8 {
+                table.insert(part);
+            }
+        }
+    }
+    pub(super) fn parts_table(&self) -> std::cell::Ref<'_, DragonPartsTable> {
+        self.table.borrow()
+    }
+    #[cfg(test)]
+    fn part_ids(&self) -> Vec<u32> {
+        self.table.borrow().iter().collect()
+    }
+    pub(in crate::game) fn replace(&mut self, dragon: crate::game::dragon::Dragon) {
+        self.register(0);
+        self.register(dragon.id);
+        self.slot.replace(dragon);
+    }
+    // Preserve ResidentSlot's ownership-returning refusal contract without allocating.
+    #[allow(clippy::result_large_err)]
+    pub(in crate::game) fn install(
+        &mut self,
+        dragon: crate::game::dragon::Dragon,
+    ) -> Result<(), crate::game::dragon::Dragon> {
+        if self.slot.is_some() {
+            return Err(dragon);
+        }
+        self.replace(dragon);
+        Ok(())
+    }
+    pub(in crate::game) fn discard(&mut self) {
+        self.register(0);
+        self.slot.discard();
+    }
+    pub(in crate::game) fn id_assigned(&self) {
+        self.register(self.slot.as_ref().map_or(0, |d| d.id));
+        self.slot.id_assigned();
+    }
+    pub(in crate::game) fn retire_extracted(
+        &self,
+        id: u32,
+        join: horizon_client::join_seq::JoinSeq,
+    ) {
+        if self.registered.get() == id {
+            self.register(0);
+        }
+        self.slot.retire_extracted(id, join);
+    }
+}
+
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
