@@ -341,3 +341,29 @@ fn a_node_that_gates_many_paths_is_asked_once_for_a_player() {
     // The answer of a node still reaches every one of its paths.
     assert_eq!(denied, vec![words(&["warp", "set", "amount"])]);
 }
+
+#[test]
+fn path_names_keep_an_argument_with_an_empty_name() {
+    use horizon_client::command::{ArgType, Dispatcher, Node, NodeKind};
+    let node = |kind| Node {
+        kind,
+        children: Vec::new(),
+        command: None,
+        redirect: None,
+        permission: 0,
+        execution_permission: 0,
+        suggests: None,
+        restricted: false,
+    };
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.nodes.push(node(NodeKind::Literal("pay".into())));
+    dispatcher.nodes.push(node(NodeKind::Argument {
+        name: String::new(),
+        ty: ArgType::Word,
+    }));
+    let parsed = [(0usize, ()), (1, ()), (2, ())];
+    assert_eq!(
+        super::permission_gate::path_names(&dispatcher, &parsed),
+        words(&["pay", ""])
+    );
+}

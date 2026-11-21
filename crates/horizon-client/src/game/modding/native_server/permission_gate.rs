@@ -147,8 +147,8 @@ pub(super) fn path_names<R>(
     parsed
         .iter()
         .filter_map(|(id, _)| dispatcher.nodes.get(*id))
+        .filter(|node| !matches!(node.kind, horizon_client::command::NodeKind::Root))
         .map(|node| node.name().to_owned())
-        .filter(|name| !name.is_empty())
         .collect()
 }
 
