@@ -633,6 +633,26 @@ pub trait PlayersBackendMut {
     /// Refuses text deeper than 512 component nodes before applying any changes.
     fn player_action_bar(&mut self, player: PlayerRef, line: Text) -> Result<bool, TextFormError>;
     /// Side: server.
+    /// Shows a title and a subtitle on that player's screen (Paper's `Player#showTitle`,
+    /// `/title`): the timings first (`ClientboundSetTitlesAnimationPacket`), then the subtitle
+    /// (`ClientboundSetSubtitleTextPacket`) and the title (`ClientboundSetTitleTextPacket`),
+    /// in vanilla's order; a text that is None sends nothing for its line, and the other
+    /// stays as it was. `fade_in`, `stay` and `fade_out` are game ticks; a negative one leaves
+    /// that timing as the client has it (the client skips a negative timing, as with
+    /// `/title ... times`). Also inside a player's hook for the acting player. False when they
+    /// aren't on.
+    #[access(WorldOnly)]
+    /// Refuses text deeper than 512 component nodes before applying any changes.
+    fn player_show_title(
+        &mut self,
+        player: PlayerRef,
+        title: Option<Text>,
+        subtitle: Option<Text>,
+        fade_in: i32,
+        stay: i32,
+        fade_out: i32,
+    ) -> Result<bool, TextFormError>;
+    /// Side: server.
     /// The lines over and under that player's list of players (Tab):
     /// `ClientboundTabListPacket`, an empty text for none. False when they
     /// aren't on.
