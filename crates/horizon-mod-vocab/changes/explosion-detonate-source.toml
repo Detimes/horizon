@@ -1,0 +1,3 @@
+ids = ["method:Hooks::explosion_detonate"]
+why = "explosion_detonate gains a source argument: the entity that explodes (getDirectSourceEntity, as explosion_start names it; Paper's EntityExplodeEvent.getEntity()). It is None when Horizon tracks no source, and the source is never listed in entities."
+migrate = "Rebuild listeners against the new explosion_detonate signature and read source as an Option."
