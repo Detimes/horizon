@@ -225,3 +225,10 @@ Only natural spawning reads the policy: spawners, trial spawners, patrols, siege
 `entity_join_level` (version 3) carries `reason`: the `EntitySpawnReason` a mob was spawned with, such as
 `Natural`, `Spawner` or `Command`. It is `None` for every other kind of entity and for a mob coming back from
 its chunk. A listener reads it at the join; it cannot cancel the spawn by reading it, cancel with `canceled` as before.
+
+## Category of a type
+
+`entity_type_classification(kind)` answers `EntityType.getCategory` for a type with no entity, such as
+`minecraft:zombie` (`Monster`), `minecraft:cow` (`Creature`) or `minecraft:ender_dragon` (`Monster`). It is `None`
+for a kind that is no mob type, such as `minecraft:item`, and for an unknown kind. An entity's own category, which
+also answers `Misc` for non-mob kinds, is `entity_classification`.
