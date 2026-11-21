@@ -1456,11 +1456,14 @@ impl Hub {
                 } else {
                     C::PlayerInfoUpdate(play::PlayerInfoUpdate {
                         actions: Self::INFO_ACTIONS,
-                        entries: vec![self.player_info(
-                            other.uuid,
-                            &other.name,
-                            other.game_mode,
-                            other.latency.load(Ordering::Relaxed),
+                        entries: vec![self.entry_for(
+                            viewer.uuid,
+                            self.player_info(
+                                other.uuid,
+                                &other.name,
+                                other.game_mode,
+                                other.latency.load(Ordering::Relaxed),
+                            ),
                         )],
                     })
                 };
@@ -1519,6 +1522,23 @@ impl Hub {
         native_player_tab_list_name_format(&self.loop_context, uuid, name, &mut display_name);
         display_name.map(|text| crate::scoreboard::component_tag(&text.component()))
     }
+    /// `entry` as `viewer`'s client shows it: a per-viewer list name (`set_list_name_for`) stands in
+    /// for the usual one, also when the entry is built again for a show or a rejoin.
+    fn entry_for(&self, viewer: u128, entry: play::PlayerInfo) -> play::PlayerInfo {
+        Self::entry_with(&self.viewer_list_names, viewer, entry)
+    }
+    /// `entry_for` on the map alone, for a closure that holds `self.guests` mutably.
+    fn entry_with(
+        names: &std::collections::HashMap<(u128, u128), crate::text::Text>,
+        viewer: u128,
+        mut entry: play::PlayerInfo,
+    ) -> play::PlayerInfo {
+        if let Some(name) = names.get(&(viewer, entry.uuid)) {
+            entry.display_name = Some(Some(crate::scoreboard::component_tag(&name.component())));
+        }
+        entry
+    }
+
     /// ClientboundPlayerInfoUpdatePacket.createPlayerInitializing: every action.
     const INFO_ACTIONS: u8 = 0xFF;
 
@@ -1526,6 +1546,11 @@ impl Hub {
     /// players with profiles of 16 properties each can pass it together, and a frame too large closes
     /// the connection (`info_batches`).
     fn send_player_list(&self, i: usize, entries: Vec<play::PlayerInfo>) {
+        let viewer = self.guests[i].uuid;
+        let entries: Vec<_> = entries
+            .into_iter()
+            .map(|e| self.entry_for(viewer, e))
+            .collect();
         for entries in info_batches(Self::INFO_ACTIONS, entries) {
             self.guests[i].send(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
                 actions: Self::INFO_ACTIONS,
@@ -1684,9 +1709,10 @@ impl Hub {
         }
         self.guests.update(i, |g| g.tab_hidden.extend(hidden));
         self.send_player_list(i, entries);
+        let entry = self.player_info(uuid, &name, mode, 0);
         let newcomer = C::PlayerInfoUpdate(play::PlayerInfoUpdate {
             actions: Self::INFO_ACTIONS,
-            entries: vec![self.player_info(uuid, &name, mode, 0)],
+            entries: vec![entry.clone()],
         })
         .encode();
         if held {
@@ -1697,10 +1723,16 @@ impl Hub {
             // A held player is shown the entities around it, so it must know the players
             // who join meanwhile, or its client drops their entity (`ClientPacketListener`
             // adds a player only with its list entry).
+            let names = &self.viewer_list_names;
             self.guests.update_all(|g| {
                 if (g.placed || g.held) && g.participates_online() {
                     if level.is_some_and(|l| g.permission < l) {
                         g.tab_hidden.insert(uuid);
+                    } else if names.contains_key(&(g.uuid, uuid)) {
+                        g.send(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+                            actions: Self::INFO_ACTIONS,
+                            entries: vec![Self::entry_with(names, g.uuid, entry.clone())],
+                        }));
                     } else {
                         g.sender.send(newcomer.clone());
                     }
@@ -1842,16 +1874,23 @@ impl Hub {
             g.last_reported = (g.position, [g.yaw, g.pitch]);
         });
         // The player list entry of the newcomer, to everyone placed or held (itself included).
+        let entry = self.player_info(uuid, &name, mode, 0);
         let newcomer = C::PlayerInfoUpdate(play::PlayerInfoUpdate {
             actions: Self::INFO_ACTIONS,
-            entries: vec![self.player_info(uuid, &name, mode, 0)],
+            entries: vec![entry.clone()],
         })
         .encode();
         let level = self.hidden.get(&uuid).copied();
+        let names = &self.viewer_list_names;
         self.guests.update_all(|g| {
             if g.participates_online() && (g.placed || g.held) {
                 if level.is_some_and(|l| g.permission < l) {
                     g.tab_hidden.insert(uuid);
+                } else if names.contains_key(&(g.uuid, uuid)) {
+                    g.send(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+                        actions: Self::INFO_ACTIONS,
+                        entries: vec![Self::entry_with(names, g.uuid, entry.clone())],
+                    }));
                 } else {
                     g.sender.send(newcomer.clone());
                 }
@@ -4987,14 +5026,19 @@ impl Hub {
             return;
         };
         let display_name = self.tab_list_name(uuid, &guest.name);
-        self.broadcast(&C::PlayerInfoUpdate(play::PlayerInfoUpdate {
-            actions: 0x20,
-            entries: vec![play::PlayerInfo {
-                uuid,
-                display_name: Some(display_name),
-                ..Default::default()
-            }],
-        }));
+        // A viewer with a name of its own for the player keeps it.
+        self.broadcast_to(
+            &C::PlayerInfoUpdate(play::PlayerInfoUpdate {
+                actions: 0x20,
+                entries: vec![play::PlayerInfo {
+                    uuid,
+                    display_name: Some(display_name),
+                    ..Default::default()
+                }],
+            }),
+            self.online_players()
+                .filter(|g| !self.viewer_list_names.contains_key(&(g.uuid, uuid))),
+        );
     }
 
     /// Per-viewer Tab list name (`player_set_list_name_for`): `name` for `target` in `viewer`'s Tab list
@@ -5080,6 +5124,7 @@ impl Hub {
             self.guests.simulation_iter().filter(|g| {
                 g.participates_online()
                     && (g.placed || g.held)
+                    && !self.viewer_list_names.contains_key(&(g.uuid, uuid))
                     && (g.uuid == uuid
                         || (self.sees(g.permission, uuid) && !g.tab_hidden.contains(&uuid)))
             }),
@@ -6314,6 +6359,29 @@ mod tests {
         // A player who is not on is refused, and nothing is kept.
         assert!(!hub.set_list_name_for(2, 7, Some(red)));
         assert!(!hub.viewer_list_names.contains_key(&(2, 7)));
+    }
+
+    /// A per-viewer list name set while the viewer could not see the target is used when the entry is
+    /// built later, and a global name change leaves that viewer's name alone.
+    #[test]
+    fn a_stored_viewer_list_name_is_used_when_the_entry_is_rebuilt() {
+        let (mut hub, bob) = hub_with_a_guest();
+        let alice = add_alice(&mut hub);
+        sent(&bob);
+        sent(&alice);
+        let red = crate::text::Text::legacy("\u{a7}cBob");
+        let red_tag = crate::scoreboard::component_tag(&red.component());
+        assert!(hub.set_list_name_for(2, 1, Some(red.clone())));
+        hub.set_list_name(1, Some(crate::text::Text::literal("Other")));
+        let i = hub.guests.iter().position(|g| g.uuid == 2).unwrap();
+        sent(&alice);
+        let entry = hub.player_info(1, "Bob", 0, 0);
+        hub.send_player_list(i, vec![entry]);
+        let shown = sent(&alice).into_iter().find_map(|p| match p {
+            play::Clientbound::PlayerInfoUpdate(u) => Some(u.entries[0].display_name.clone()),
+            _ => None,
+        });
+        assert_eq!(shown, Some(Some(Some(red_tag))));
     }
 
     /// A mod's list name is kept by UUID and goes to every client that has the player's Tab entry, and
