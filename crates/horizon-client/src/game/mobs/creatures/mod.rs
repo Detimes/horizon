@@ -6133,7 +6133,7 @@ impl Game<'_> {
                 };
                 let owner = self.potion_owner(p.owner);
                 let item = stack.item.to_string();
-                if !self.native_potion_splash_cancel(&item, [at.x, at.y, at.z]) {
+                if !self.potion_splash_cancelled(&item, [at.x, at.y, at.z]) {
                     self.splash(
                         stack,
                         at,

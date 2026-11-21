@@ -125,6 +125,7 @@ pub trait MenusBackend {
     /// one. Meant for a `menu_closed` listener: the closing menu is still lent there, so its contents
     /// are read before they are gone (Paper: `InventoryCloseEvent#getInventory`). `None` for a stale
     /// menu, a client's menu or a read refused by `menu_slot`. Read-only.
+    #[access(WorldOnly)]
     fn menu_contents(&self, menu: MenuRef) -> Option<Vec<Option<ItemStack>>>;
     /// Side: server.
     /// The storage menu slot `slot` shows (`Slot.container` and `getContainerSlot`): the
