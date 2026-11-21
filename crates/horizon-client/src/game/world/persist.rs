@@ -1649,10 +1649,11 @@ impl Game<'_> {
         }
         // `Entity.saveWithoutId` writes `TicksFrozen` only while it is positive,
         // and only a `LivingEntity` thaws, so these entities keep it unchanged.
-        if let Some(v) = tag.get("TicksFrozen")
-            && horizon_client::save::number(Some(v)).is_some_and(|ticks| ticks > 0)
+        // Read as an int (`NumericTag.intValue`) and written back as one, whatever tag type was loaded.
+        if let Some(ticks) = horizon_client::save::number(tag.get("TicksFrozen"))
+            && ticks as i32 > 0
         {
-            map.insert("TicksFrozen".into(), v.clone());
+            map.insert("TicksFrozen".into(), Tag::Int(ticks as i32));
         }
         if !map.is_empty() {
             self.persist.raw.insert(id, Tag::Compound(map));

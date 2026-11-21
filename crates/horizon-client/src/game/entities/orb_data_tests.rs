@@ -243,5 +243,18 @@ fn a_loaded_ticks_frozen_is_kept_by_an_orb_and_an_arrow() {
             .command_target_nbt(commands::Target::Orb(cold))
             .unwrap();
         assert_eq!(tag.get("TicksFrozen"), None);
+        let short = load(
+            game,
+            "{Pos:[6.5d,100d,6.5d],Value:1s,Age:0s,Health:5s,Count:1,TicksFrozen:60s}",
+            5,
+        );
+        let tag = game
+            .command_target_nbt(commands::Target::Orb(short))
+            .unwrap();
+        assert_eq!(
+            tag.get("TicksFrozen"),
+            Some(&Tag::Int(60)),
+            "saved as an int"
+        );
     });
 }
