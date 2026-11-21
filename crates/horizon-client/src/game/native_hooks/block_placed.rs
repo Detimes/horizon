@@ -4,7 +4,7 @@ impl Game<'_> {
     /// Notify after a player places a block, with the replaced state
     pub(in crate::game) fn native_block_placed(
         &mut self,
-        call: mod_api::__private::BlockPlacedCall<'_>,
+        call: super::fire::BlockPlacedCall<'_>,
     ) {
         self.fire_block_placed(call);
     }

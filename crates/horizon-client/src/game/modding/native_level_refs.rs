@@ -435,12 +435,8 @@ impl Game<'_> {
         &self,
         level: LevelRef,
         section: [i32; 3],
-    ) -> Option<Vec<mod_api::BlockState>> {
-        use crate::game::api_values::TryIntoApi;
-        self.native_section_ids(level, section)?
-            .into_iter()
-            .map(|id| id.try_into_api().ok())
-            .collect()
+    ) -> Option<Vec<BlockStateId>> {
+        self.native_section_ids(level, section)
     }
     /// `level_section_has_only_air`: every block of the section is `minecraft:air`. The scan reads
     /// the section's ids once; vanilla answers from a flag the section keeps.
