@@ -477,10 +477,8 @@ impl Game<'_> {
                 Some(h) if h.nibble > 0 => 2,
                 Some(_) => 3,
             };
-            // The entity a reel-in of a bobber hooked to one (state 4) holds; none otherwise.
-            let caught = self.hook.as_ref().and_then(Hook::hooked_in);
             let mut cancel = false;
-            self.native_player_fish(uuid, &name, state, caught, &mut cancel);
+            self.native_player_fish(uuid, &name, state, &mut cancel);
             if cancel {
                 return true;
             }
@@ -886,7 +884,7 @@ impl Game<'_> {
                     (self.lan_acting_uuid, self.lan_acting_name.clone())
                 {
                     let mut cancel = false;
-                    self.native_player_fish(uuid, &name, 1, None, &mut cancel);
+                    self.native_player_fish(uuid, &name, 1, &mut cancel);
                     if cancel {
                         h.time_until_lured = 0;
                         h.time_until_hooked = 0;

@@ -150,12 +150,12 @@ fn block_parts_xp_and_explosion_contract() {
             assert_eq!(drop(game, stone, None, None), 0);
             let mut canceled = false;
             let mut xp = None;
-            game.native_break_block([1, 64, 1], ore, None, &mut canceled, &mut xp);
+            game.native_break_block([1, 64, 1], ore, &mut canceled, &mut xp);
             assert_eq!(xp, Some(7));
             assert_eq!(drop(game, ore, None, xp), 7);
             add.store(true, Ordering::Relaxed);
             xp = None;
-            game.native_break_block([1, 64, 1], ore, None, &mut canceled, &mut xp);
+            game.native_break_block([1, 64, 1], ore, &mut canceled, &mut xp);
             assert_eq!(seen.lock().unwrap().as_slice(), &[Some(7), Some(7)]);
             assert_eq!(drop(game, ore, None, xp), 10);
             let mut silk = horizon_client::items::ItemStack::new("minecraft:diamond_pickaxe", 1);
@@ -167,7 +167,7 @@ fn block_parts_xp_and_explosion_contract() {
             assert_eq!(drop(game, ore, Some(&silk), xp), 10);
             *game.held_mut() = Some(silk.clone());
             xp = None;
-            game.native_break_block([1, 64, 1], ore, None, &mut canceled, &mut xp);
+            game.native_break_block([1, 64, 1], ore, &mut canceled, &mut xp);
             assert_eq!(seen.lock().unwrap().last(), Some(&Some(0)));
             assert_eq!(xp, Some(3));
             assert_eq!(drop(game, ore, Some(&silk), xp), 3);

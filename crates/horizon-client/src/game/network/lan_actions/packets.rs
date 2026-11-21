@@ -208,13 +208,9 @@ impl Game<'_> {
                     // attacks, digs and breaks nothing (the ack puts the
                     // block back on the client).
                     let canceled = self.as_guest(conn, |g| {
-                        // Only a guest's click is asked: it names the clicking player.
-                        let Some(player) = g.lan_acting_uuid else {
-                            return false;
-                        };
                         let state = g.world.block(a.pos[0], a.pos[1], a.pos[2]);
                         let mut canceled = false;
-                        g.native_left_click_block(a.pos, face, state, player, &mut canceled);
+                        g.native_left_click_block(a.pos, face, state, &mut canceled);
                         canceled
                     });
                     if canceled == Some(true) {

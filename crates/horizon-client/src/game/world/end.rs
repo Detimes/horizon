@@ -64,24 +64,6 @@ enum Arriving {
 }
 
 impl GatewayJob {
-    /// The spot a traveller lands at: the known exit (block centre), or for a search the start
-    /// 1024 blocks out from the origin, towards the gateway (its height is 75).
-    pub(super) fn destination(self) -> Vec3 {
-        match self {
-            Self::Known { exit, .. } => Vec3::new(
-                f64::from(exit[0]) + 0.5,
-                f64::from(exit[1]),
-                f64::from(exit[2]) + 0.5,
-            ),
-            Self::Find { gateway, .. } => {
-                let d = glam::DVec2::new(f64::from(gateway[0]), f64::from(gateway[2]))
-                    .normalize_or_zero()
-                    * 1024.0;
-                Vec3::new(d.x, 75.0, d.y)
-            }
-        }
-    }
-
     /// The source of a new exit must stay loaded until its block entity is updated.
     pub(super) fn source_chunk(self) -> Option<(i32, i32)> {
         match self {
@@ -1041,31 +1023,32 @@ impl Game<'_> {
     /// its exit, or the search for one, and the spot to load before either
     /// is resolved ([`Game::resolve_gateway`]).
     pub(super) fn gateway_job(&mut self, gateway: [i32; 3]) -> (GatewayJob, Vec3) {
-        let job = self.gateway_job_of(gateway);
+        let job = GatewayJob::for_gateway(
+            gateway,
+            self.world
+                .block_entities
+                .get(&(gateway[0], gateway[1], gateway[2])),
+        );
         if let Some(c) = job.source_chunk()
             && !self.end.areas.contains(&c)
         {
             self.end.areas.push(c);
             self.streaming.extra.push((c, 1));
         }
-        let destination = job.destination();
+        let destination = match job {
+            GatewayJob::Known { exit, .. } => Vec3::new(
+                f64::from(exit[0]) + 0.5,
+                f64::from(exit[1]),
+                f64::from(exit[2]) + 0.5,
+            ),
+            GatewayJob::Find { gateway, .. } => {
+                let d = glam::DVec2::new(f64::from(gateway[0]), f64::from(gateway[2]))
+                    .normalize_or_zero()
+                    * 1024.0;
+                Vec3::new(d.x, 75.0, d.y)
+            }
+        };
         (job, destination)
-    }
-
-    /// Where `gateway` leads, read without loading any chunk: the exit, or the search start
-    /// ([`GatewayJob::destination`]). For the player's gateway hook, before the trip starts.
-    pub(super) fn gateway_destination(&self, gateway: [i32; 3]) -> Vec3 {
-        self.gateway_job_of(gateway).destination()
-    }
-
-    /// The job of `gateway` from its block entity alone, with no chunk asked for.
-    fn gateway_job_of(&self, gateway: [i32; 3]) -> GatewayJob {
-        GatewayJob::for_gateway(
-            gateway,
-            self.world
-                .block_entities
-                .get(&(gateway[0], gateway[1], gateway[2])),
-        )
     }
 
     /// `TheEndGatewayBlockEntity.isChunkEmpty` for the exit search. Vanilla's
@@ -2093,24 +2076,6 @@ mod tests {
             Vec3::new(10.5, 70.0, 12.5)
         );
         assert_eq!(fallback_spawn(None, None), Vec3::new(0.5, 64.0, 0.5));
-    }
-
-    #[test]
-    fn end_gateway_destination_is_the_exit_or_the_search_start() {
-        let known = GatewayJob::Known {
-            exit: [8, 100, 0],
-            exact: true,
-        };
-        assert_eq!(known.destination(), Vec3::new(8.5, 100.0, 0.5));
-        // (3000, 4000) normalised is (0.6, 0.8); 1024 blocks out gives (614.4, 819.2) at y 75.
-        let find = GatewayJob::Find {
-            gateway: [3000, 70, 4000],
-            exact: false,
-        }
-        .destination();
-        assert!((find.x - 614.4).abs() < 1e-9, "{find:?}");
-        assert_eq!(find.y, 75.0);
-        assert!((find.z - 819.2).abs() < 1e-9, "{find:?}");
     }
 
     #[test]

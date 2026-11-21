@@ -299,15 +299,6 @@ impl Game<'_> {
         {
             return false;
         }
-        // PlayerElytraBoostEvent: heard before the launch and the consumption. A
-        // cancel swallows the use: nothing launches, the rocket stays in hand.
-        let mut cancel = false;
-        if let (Some(player), Some(name)) = (self.lan_acting_uuid, self.lan_acting_name.clone()) {
-            self.native_player_elytra_boost(player, &name, &mut cancel);
-        }
-        if cancel {
-            return true;
-        }
         // Server path of `use`: `dropAllLeashConnections(null)`, and when that
         // drops anything `playSound(null, player, LEAD_BREAK, NEUTRAL, 1, 1)`.
         // The entity overload follows the player and excludes nobody, including
@@ -325,6 +316,9 @@ impl Game<'_> {
         }
         self.award_stat("used", "minecraft:firework_rocket", 1);
         self.swing_arm();
+        if let (Some(player), Some(name)) = (self.lan_acting_uuid, self.lan_acting_name.clone()) {
+            self.native_player_elytra_boost(player, &name);
+        }
         true
     }
     pub(super) fn tick_rockets(&mut self) {

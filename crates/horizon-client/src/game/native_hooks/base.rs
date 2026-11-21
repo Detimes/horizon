@@ -773,17 +773,15 @@ impl Game<'_> {
     /// Set `canceled` to ignore the click: the block isn't attacked, dug or
     /// broken on the server, and the player's client gets it back (its own
     /// predicted crack still shows to the clicking player). Server-side, for
-    /// every player of the world (the helpers read the acting one). `player`
-    /// is the clicking guest's uuid.
+    /// every player of the world (the helpers read the acting one).
     pub(in crate::game) fn native_left_click_block(
         &mut self,
         pos: [i32; 3],
         face: [i32; 3],
         state: BlockStateId,
-        player: u128,
         canceled: &mut bool,
     ) {
-        self.fire_left_click_block(pos, face, state, player, canceled);
+        self.fire_left_click_block(pos, face, state, canceled);
     }
     /// NeoForge's non-cancellable PlayerTickEvent.Pre on either logical side.
     pub(in crate::game) fn native_player_tick_pre(
@@ -2003,16 +2001,14 @@ impl Game<'_> {
     ) {
         self.fire_player_shear_entity(player, name, entity_id, off_hand, cancel);
     }
-    /// A server player completed an advancement, after progress was recorded. Set `cancel` to
-    /// withhold its toast, announcement and rewards; the advancement stays done in the progress.
+    /// A server player completed an advancement, after progress was recorded.
     pub(in crate::game) fn native_player_advancement_done(
         &mut self,
         player: u128,
         name: &str,
         advancement: &str,
-        cancel: &mut bool,
     ) {
-        self.fire_player_advancement_done(player, name, advancement, cancel);
+        self.fire_player_advancement_done(player, name, advancement);
     }
     /// A criterion of a server player's advancement was granted or revoked, after its progress changed
     /// and before any completion rewards. A grant or revoke that changes nothing is not heard.
@@ -2080,17 +2076,15 @@ impl Game<'_> {
     /// away, the owner dying), nor the host of a LAN world's rod. The
     /// player's state is swapped in, so `native_acting_player`, `native_tell`
     /// and the item helpers reach them. Once for each cast, bite and reel-in,
-    /// on a server. `caught` is the entity id the bobber holds on a state-4 reel-in (a mob,
-    /// an armour stand, an item), and `None` otherwise.
+    /// on a server.
     pub(in crate::game) fn native_player_fish(
         &mut self,
         player: u128,
         name: &str,
         state: i32,
-        caught: Option<u32>,
         cancel: &mut bool,
     ) {
-        self.fire_player_fish(player, name, state, caught, cancel);
+        self.fire_player_fish(player, name, state, cancel);
     }
     /// A sculk sensor or shrieker received a vibration for `event` at `pos`.
     /// Set `cancel` to suppress its response. Server-side.
@@ -2320,16 +2314,8 @@ impl Game<'_> {
     }
     /// A server player used a firework rocket to boost while gliding, after the rocket was launched
     /// and consumed. Server-side.
-    /// A server player is about to use a firework rocket to boost while
-    /// gliding, before the rocket is launched or consumed. Set `cancel` and
-    /// nothing is launched. Server-side.
-    pub(in crate::game) fn native_player_elytra_boost(
-        &mut self,
-        player: u128,
-        name: &str,
-        cancel: &mut bool,
-    ) {
-        self.fire_player_elytra_boost(player, name, cancel);
+    pub(in crate::game) fn native_player_elytra_boost(&mut self, player: u128, name: &str) {
+        self.fire_player_elytra_boost(player, name);
     }
     /// A server player put a plant into a flower pot, after the potted block state was stored and the
     /// item consumed. `plant` is the item id and `pos` the pot position. Server-side.
@@ -2552,19 +2538,16 @@ impl Game<'_> {
     ) {
         self.fire_player_map_filled(player, name, map_id);
     }
-    /// A server player is about to travel through an End gateway at `gateway`. `to` is where they
-    /// would land: the exit (block centre), or the search start when no exit is known yet. Set
-    /// `cancel` to leave them at the entrance; the gateway is not consumed and its cooldown does not
-    /// start. Server-side.
+    /// A server player is about to travel through an End gateway at `gateway`. Set `cancel` to leave
+    /// them at the entrance; the gateway is not consumed and its cooldown does not start. Server-side.
     pub(in crate::game) fn native_player_teleport_end_gateway(
         &mut self,
         player: u128,
         name: &str,
         gateway: [i32; 3],
-        to: [f64; 3],
         cancel: &mut bool,
     ) {
-        self.fire_player_teleport_end_gateway(player, name, gateway, to, cancel);
+        self.fire_player_teleport_end_gateway(player, name, gateway, cancel);
     }
     /// A server player's recipe book requested a known recipe be placed in
     /// their crafting grid. `recipe` is the recipe id; `all` is the shift
@@ -3550,19 +3533,17 @@ impl Game<'_> {
     /// click): where `ServerPlayerGameMode.destroyBlock` starts. Set
     /// `canceled` to keep the block: nothing is destroyed or dropped, and a
     /// guest sees it back. Server-side, for every player of the world (the
-    /// helpers read the acting one). `player` is the acting guest's uuid, None
-    /// when the game's own player breaks the block.
+    /// helpers read the acting one).
     pub(in crate::game) fn native_break_block(
         &mut self,
         pos: [i32; 3],
         state: BlockStateId,
-        player: Option<u128>,
         canceled: &mut bool,
         exp_to_drop: &mut Option<u32>,
     ) {
         self.prepare_part_break_experience(pos, state, exp_to_drop);
         let initial = *exp_to_drop;
-        self.fire_break_block(pos, state, player, canceled, exp_to_drop);
+        self.fire_break_block(pos, state, canceled, exp_to_drop);
         *exp_to_drop = exp_to_drop.or(initial);
     }
     /// A player right clicks a block (NeoForge's

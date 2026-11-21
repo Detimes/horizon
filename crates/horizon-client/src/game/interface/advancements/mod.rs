@@ -7,8 +7,6 @@ mod icons;
 #[cfg(test)]
 #[path = "inventory_changed_tests.rs"]
 mod inventory_changed_tests;
-#[cfg(test)]
-mod award_cancel_tests;
 use horizon_client::actions::Action;
 use horizon_client::{
     advancements::{self as adv, EntityView, Frame, ItemView, Progress, Tree},
@@ -1164,13 +1162,8 @@ impl Game<'_> {
         if self.lan_acting_fake {
             return;
         }
-        // The mods hear the completion first; a cancel withholds its toast, announcement and rewards.
-        let mut cancel = false;
         if let (Some(player), Some(name)) = (self.lan_acting_uuid, self.lan_acting_name.clone()) {
-            self.native_player_advancement_done(player, &name, &a.id, &mut cancel);
-        }
-        if cancel {
-            return;
+            self.native_player_advancement_done(player, &name, &a.id);
         }
         let rewards = self.grant_rewards(a);
         if let Some(d) = &a.display {

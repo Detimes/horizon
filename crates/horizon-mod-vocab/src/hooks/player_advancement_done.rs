@@ -2,15 +2,12 @@
 // catalog-order: 0275
 
 pub trait Hooks {
-    /// A server player completed an advancement, after progress was recorded. Set `cancel` to
-    /// withhold its toast, announcement and rewards; the advancement stays done in the progress.
-    /// Server-side. Not the message override (Paper's `message(Component)`): only the cancel.
+    /// A server player completed an advancement, after progress was recorded.
     #[hook(
         side = "server",
-        contract = "cancel",
-        out = "cancel",
+        contract = "listen",
         neoforge = "AdvancementEvent.AdvancementEarnEvent",
-        cancellable = true
+        cancellable = false
     )]
     fn player_advancement_done();
 }

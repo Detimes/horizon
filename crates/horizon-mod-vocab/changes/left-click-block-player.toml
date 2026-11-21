@@ -1,3 +1,0 @@
-ids = ["method:Hooks::left_click_block", "type:LeftClickBlockEvent"]
-why = "LeftClickBlockEvent gains a player field that names the clicking guest by uuid, so a mod can tell which player started a dig. A click by the game's own player is not asked, so every click this hook reports has a guest."
-migrate = "Rebuild listeners against the new event and read player (a uuid) to identify the clicking guest; the cancel behaviour is unchanged."

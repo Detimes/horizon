@@ -12,9 +12,7 @@ pub trait Hooks {
     /// supplied as this event's initial amount. `block_drops` sees and may change that
     /// amount afterwards; cancellation or disabled block drops suppresses it.
     /// Server-side, for every player of the world (the
-    /// helpers read the acting one). `player` is the breaking guest's uuid
-    /// (`BreakBlockEvent.getPlayer`), None when the game's own player breaks
-    /// the block. Diverges from upstream: renamed from
+    /// helpers read the acting one). Diverges from upstream: renamed from
     /// `destroy_block`, to NeoForge's `BreakBlockEvent`.
     #[hook(
         side = "server",
