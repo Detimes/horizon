@@ -427,6 +427,41 @@ impl<E: Entry> UserList<E> {
         self.told(Change::Added(entry));
         true
     }
+    /// `add` for a caller that must know the list reached the disk: when the save fails the list is
+    /// put back as it was, nobody is told of a change, and the error is returned.
+    pub fn try_add(&mut self, entry: E) -> std::io::Result<bool> {
+        let key = JKey(E::key(entry.user()));
+        if self.map.get(&key).is_some_and(|old| entry.same(old)) {
+            return Ok(false);
+        }
+        let old = self.map.put(key.clone(), entry.clone());
+        if let Err(e) = self.save() {
+            match old {
+                Some(old) => {
+                    self.map.put(key, old);
+                }
+                None => {
+                    self.map.remove(&key);
+                }
+            }
+            return Err(e);
+        }
+        self.told(Change::Added(entry));
+        Ok(true)
+    }
+    /// `remove` with the same guarantee as `try_add`: a failed save leaves the entry in the list.
+    pub fn try_remove(&mut self, user: &E::User) -> std::io::Result<bool> {
+        let key = JKey(E::key(user));
+        let Some(entry) = self.map.remove(&key) else {
+            return Ok(false);
+        };
+        if let Err(e) = self.save() {
+            self.map.put(key, entry);
+            return Err(e);
+        }
+        self.told(Change::Removed(entry));
+        Ok(true)
+    }
     pub fn remove(&mut self, user: &E::User) -> bool {
         let Some(entry) = self.map.remove(&JKey(E::key(user))) else {
             return false;
@@ -687,6 +722,34 @@ mod tests {
             saved.contains("Caf\u{fffd}") && saved.contains("Kim"),
             "{saved}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_list_as_it_was() {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-lists-trysave-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("whitelist.json");
+        let mut white = WhiteList::new(&file);
+        let kim = || WhiteEntry {
+            user: NameAndId::offline("Kim"),
+        };
+        assert!(white.try_add(kim()).unwrap());
+        assert!(!white.try_add(kim()).unwrap());
+        // The file's place is taken by a directory, so a write cannot succeed.
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        assert!(white.try_remove(&NameAndId::offline("Kim")).is_err());
+        assert!(white.contains(&NameAndId::offline("Kim")), "still listed");
+        let lee = WhiteEntry {
+            user: NameAndId::offline("Lee"),
+        };
+        assert!(white.try_add(lee).is_err());
+        assert!(!white.contains(&NameAndId::offline("Lee")), "never listed");
+        std::fs::remove_dir(&file).unwrap();
+        assert!(white.try_remove(&NameAndId::offline("Kim")).unwrap());
+        assert!(!white.try_remove(&NameAndId::offline("Kim")).unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

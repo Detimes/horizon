@@ -12,6 +12,13 @@ impl Game<'_> {
             id: uuid,
             name: String::new(),
         };
-        shared.lock().unwrap().white.remove(&user)
+        // A failed save leaves the entry listed and is no success.
+        match shared.lock().unwrap().white.try_remove(&user) {
+            Ok(removed) => removed,
+            Err(e) => {
+                log::warn!("Could not save the whitelist after removing a user. {e}");
+                false
+            }
+        }
     }
 }

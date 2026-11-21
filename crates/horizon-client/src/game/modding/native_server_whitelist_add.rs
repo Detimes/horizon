@@ -20,7 +20,14 @@ impl Game<'_> {
         if lists.white.contains(&user) {
             return false;
         }
-        lists.white.add(WhiteEntry { user })
+        // A failed save leaves the list unchanged and is no success.
+        match lists.white.try_add(WhiteEntry { user }) {
+            Ok(added) => added,
+            Err(e) => {
+                log::warn!("Could not save the whitelist after adding a user. {e}");
+                false
+            }
+        }
     }
 }
 
