@@ -3162,8 +3162,9 @@ fn write_dat_as(path: &Path, tag: Tag, durable: bool) -> Result<()> {
             Some(stem) => path.with_file_name(format!("{stem}.dat_old")),
             None => path.with_file_name(format!("{file}_old")),
         };
-        // Util.safeReplaceFile: no backup, no replacement.
-        fs::rename(path, old).map_err(|e| format!("{}: {e}", path.display()))?;
+        // Util.safeReplaceFile: no backup, no replacement. The backup is a copy, so the live
+        // file stays in place until the new one replaces it in one rename.
+        fs::copy(path, old).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     fs::rename(temporary, path)?;
     if durable {
