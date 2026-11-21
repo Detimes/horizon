@@ -107,14 +107,14 @@ pub trait ConfigServerHost {
     /// milliseconds its ticks took on average lately, as `/tick query`
     /// reports them. The ticks a second it keeps up is the rate, or
     /// 1000 / milliseconds when that is lower.
+    #[access(WorldOnly)]
+    fn tick_stats(&self) -> (f32, f64);
     /// Side: server.
     /// Whether the dedicated server runs in online mode (`online-mode` of server.properties,
     /// Paper's `Bukkit.getOnlineMode`): its players sign in with their accounts. None off a
     /// dedicated server and before it listens, so a client or an integrated game gives None.
     #[access(WorldOnly)]
     fn server_online_mode(&self) -> Option<bool>;
-    #[access(WorldOnly)]
-    fn tick_stats(&self) -> (f32, f64);
     /// Side: server.
     /// The last 100 server ticks' durations in nanoseconds, as
     /// `MinecraftServer.getTickTimesNanos` lays them out: the tick numbered `n` at index
