@@ -1222,6 +1222,8 @@ horizon-client game::native_entity_layers_tests::a_living_type_draws_its_layers_
 horizon-client game::native_entity_layers_tests::a_mob_looks_up_only_its_own_types_or_models_layers lib daily child-process
 horizon-client game::native_entity_layers_tests::a_player_draws_the_layers_of_its_model lib daily child-process
 horizon-client game::native_entity_layers_tests::this_windows_player_is_told_its_own_entity_id lib daily child-process
+horizon-client game::native_entity_motion::tests::entity_set_fall_distance_writes_a_mob_or_guest_and_refuses_the_rest lib daily resources
+horizon-client game::native_entity_motion::tests::entity_set_swimming_writes_a_players_flag_and_refuses_a_mob lib daily resources
 horizon-client game::native_entity_motion::tests::on_block_picks_the_support_nearest_the_entity_and_pick_clips_blocks lib daily resources
 horizon-client game::native_entity_motion::tests::only_a_mount_its_rider_controls_takes_the_riders_speed lib daily resources
 horizon-client game::native_entity_motion::tests::reset_fall_distance_forgets_a_fall_for_mobs_carts_and_players lib daily resources

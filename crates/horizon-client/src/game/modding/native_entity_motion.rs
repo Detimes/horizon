@@ -587,6 +587,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "daily"]
     fn entity_set_swimming_writes_a_players_flag_and_refuses_a_mob() {
         fn fake_swimming<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut bool {
             let host = game.lan.as_mut().unwrap();
@@ -622,6 +623,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "daily"]
     fn entity_set_fall_distance_writes_a_mob_or_guest_and_refuses_the_rest() {
         fn fake_fall<'a>(game: &'a mut super::super::Game<'_>) -> &'a mut f64 {
             let host = game.lan.as_mut().unwrap();
