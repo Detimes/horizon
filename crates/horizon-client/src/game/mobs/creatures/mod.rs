@@ -3056,7 +3056,11 @@ impl Game<'_> {
                         self.level_event_at(2001, pos, old.0 as i32);
                     }
                 }
-                MobEvent::CrackTurtleEgg { pos } => self.crack_turtle_egg(pos)?,
+                MobEvent::CrackTurtleEgg { pos, mob } => {
+                    if !self.mob_turtle_egg_trample_canceled(mob, pos) {
+                        self.crack_turtle_egg(pos)?;
+                    }
+                }
                 MobEvent::BedOccupied { pos, occupied } => self.set_bed_occupied(pos, occupied),
                 MobEvent::SetDoorOpen { pos, open } => {
                     let pos = BlockPos::new(pos[0], pos[1], pos[2]);
@@ -3553,6 +3557,16 @@ impl Game<'_> {
                 }
             }
         }
+    }
+    /// `turtle_egg_trample` for the mob whose step won the roll: whether a mod keeps the eggs.
+    fn mob_turtle_egg_trample_canceled(&mut self, mob: u32, pos: [i32; 3]) -> bool {
+        if !mod_api::__private::listened(mod_api::HookId::TurtleEggTrample) {
+            return false;
+        }
+        let Some(entity) = self.entity(mob) else {
+            return false;
+        };
+        self.turtle_egg_trample_for(entity, BlockPos::new(pos[0], pos[1], pos[2]))
     }
     /// `TurtleEggBlock.decreaseEggs` after an entity's step or landing won its
     /// roll (`destroyEgg`): the break sound and the remaining eggs (a stack of
@@ -5233,8 +5247,14 @@ impl Game<'_> {
         };
         let dimension = self.dim;
         let _: std::result::Result<(), ()> = mod_api::run_transaction(self, |game, _| {
-            let (mut target, _, _, cancel) =
-                game.native_pearl_teleport(owner, pearl.id, from, pearl.previous, 0.0, hit);
+            let (mut target, _, _, cancel) = game.native_pearl_teleport_relative(
+                owner,
+                pearl.id,
+                from,
+                pearl.previous,
+                0.0,
+                hit,
+            );
             // Listener writes stay in the transaction; never overwrite a changed,
             // dead, sleeping or removed owner using the old decision.
             if cancel
@@ -5919,7 +5939,7 @@ impl Game<'_> {
                     let target;
                     let relative;
                     (target, damage, relative, cancel) =
-                        self.native_pearl_teleport(owner, p.id, from, to, 5.0, hit);
+                        self.native_pearl_teleport_relative(owner, p.id, from, to, 5.0, hit);
                     pearl_relative = relative;
                     cancel |= self.dim != dimension
                         || self.player.as_ref().is_none_or(|pl| pl.position != from)
@@ -10088,9 +10108,9 @@ mod pickable_projectile_tests {
 }
 
 #[cfg(test)]
-mod mob_pearl_hook_tests;
-#[cfg(test)]
 mod break_door_hook_tests;
+#[cfg(test)]
+mod mob_pearl_hook_tests;
 
 #[cfg(test)]
 mod breeding_orb_tests;

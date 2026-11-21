@@ -2195,6 +2195,7 @@ pub enum MobEvent {
     /// the last.
     CrackTurtleEgg {
         pos: [i32; 3],
+        mob: u32,
     },
     /// `LivingEntity.startSleeping` / `stopSleeping`: the bed head at `pos`
     /// gets `occupied` (`setBlockAndUpdate`; the foot follows it).

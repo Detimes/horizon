@@ -251,10 +251,29 @@ impl Game<'_> {
     }
 
     /// `EntityTeleportEvent.EnderPearl` for `owner`'s pearl that hit `hit`:
+    /// the listeners' `(target, damage, cancel)`, starting from `to` and `damage`.
+    /// Kept as it was; `native_pearl_teleport_relative` also hears the detail hook.
+    #[allow(dead_code)]
+    pub(in crate::game) fn native_pearl_teleport(
+        &mut self,
+        owner: mod_api::EntityRef,
+        pearl: u32,
+        from: Vec3,
+        to: Vec3,
+        mut damage: f32,
+        hit: Hit,
+    ) -> ([f64; 3], f32, bool) {
+        let (target, heard, _, cancel) =
+            self.native_pearl_teleport_relative(owner, pearl, from, to, damage, hit);
+        damage = heard;
+        (target, damage, cancel)
+    }
+
+    /// `EntityTeleportEvent.EnderPearl` for `owner`'s pearl that hit `hit`:
     /// the listeners' `(target, damage, relative, cancel)`, starting from `to` and `damage`.
     /// `ender_pearl_teleport` hears it first, then `ender_pearl_teleport_detail`, which can also
     /// set the position packet's `relative` flags.
-    pub(in crate::game) fn native_pearl_teleport(
+    pub(in crate::game) fn native_pearl_teleport_relative(
         &mut self,
         owner: mod_api::EntityRef,
         pearl: u32,
@@ -749,7 +768,7 @@ mod pearl_hit_tests {
                     who: Who::Mob(SPECIAL + 2),
                     at: Vec3::new(1.5, 64.5, -0.5),
                 };
-                let (target, damage, relative, cancel) = game.native_pearl_teleport(
+                let (target, damage, relative, cancel) = game.native_pearl_teleport_relative(
                     owner,
                     9,
                     Vec3::ZERO,
@@ -799,7 +818,7 @@ mod pearl_hit_tests {
                     who: Who::Mob(SPECIAL + 2),
                     at: Vec3::new(1.5, 64.5, -0.5),
                 };
-                let (target, damage, relative, cancel) = game.native_pearl_teleport(
+                let (target, damage, relative, cancel) = game.native_pearl_teleport_relative(
                     owner,
                     9,
                     Vec3::ZERO,

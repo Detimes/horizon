@@ -59,6 +59,10 @@ impl Game<'_> {
                 self.native_entity_toggle_glide_cancel(uuid, &name, gliding, &mut cancel);
             }
             if cancel {
+                // The client predicted the change: resend the shared flags so it hears the glide state kept.
+                if let Some(host) = self.lan.as_mut() {
+                    let _ = host.hub.update_guest(conn, |g| g.sent_shared ^= -128);
+                }
                 return;
             }
         }

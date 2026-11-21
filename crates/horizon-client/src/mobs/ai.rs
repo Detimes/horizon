@@ -1359,7 +1359,10 @@ pub(crate) fn effects_from_blocks(
             && w.can_grief(m.id)
             && level.random().next_int_bound(100).unwrap_or(1) == 0
         {
-            events.push(MobEvent::CrackTurtleEgg { pos: [x, y, z] });
+            events.push(MobEvent::CrackTurtleEgg {
+                pos: [x, y, z],
+                mob: m.id,
+            });
         }
     }
     // `Entity.checkInsideBlocks` itself, the shared walk: each axis of the

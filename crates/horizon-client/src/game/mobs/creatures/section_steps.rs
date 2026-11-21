@@ -91,7 +91,11 @@ pub(super) fn teleport_player_keeping(game: &mut Game<'_>, to: Vec3, relative: u
         player.fall_distance = 0.0;
         player.impulse.reset();
         player.teleported = true;
-        player.teleported_delta = [false; 3];
+        player.teleported_delta = [
+            relative & 0x20 != 0,
+            relative & 0x40 != 0,
+            relative & 0x80 != 0,
+        ];
     }
     game.previous_position = to;
     if let (Some(from), Ok(id)) = (from, u32::try_from(game.own_entity_id())) {

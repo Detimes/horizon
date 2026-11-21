@@ -52,11 +52,14 @@ fn a_mod_cancels_a_guests_glide_toggle() {
             let mut gliding = guest(5);
             gliding.fall_flying = true;
             game.lan.as_mut().unwrap().hub.guests.push(gliding);
+            let sent = game.lan.as_ref().unwrap().hub.guest(5).unwrap().sent_shared;
             game.lan_start_gliding(5);
-            assert_eq!(
-                *heard.lock().unwrap(),
-                [(127, "guest5".to_owned(), false)]
+            // A cancel forces the shared flags out again, so the client's predicted change is corrected.
+            assert_ne!(
+                game.lan.as_ref().unwrap().hub.guest(5).unwrap().sent_shared,
+                sent
             );
+            assert_eq!(*heard.lock().unwrap(), [(127, "guest5".to_owned(), false)]);
             assert!(game.lan.as_ref().unwrap().hub.guest(5).unwrap().fall_flying);
             cancel.store(false, Ordering::SeqCst);
             game.lan_start_gliding(5);

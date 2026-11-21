@@ -4386,19 +4386,18 @@ impl Game<'_> {
         from: BlockStateId,
         to: BlockStateId,
     ) -> bool {
-        if !mod_api::__private::listened(mod_api::HookId::EntityChangeBlockPre) {
-            return false;
-        }
         let mut cancel = false;
-        self.native_entity_change_block_pre(native_hooks::EntityChangeBlockPreCall {
-            player,
-            entity: None,
-            kind: "minecraft:player",
-            pos: [position.x, position.y, position.z],
-            from,
-            to,
-            cancel: &mut cancel,
-        });
+        if mod_api::__private::listened(mod_api::HookId::EntityChangeBlockPre) {
+            self.native_entity_change_block_pre(native_hooks::EntityChangeBlockPreCall {
+                player,
+                entity: None,
+                kind: "minecraft:player",
+                pos: [position.x, position.y, position.z],
+                from,
+                to,
+                cancel: &mut cancel,
+            });
+        }
         cancel || self.turtle_egg_trample_cancelled(player, position, from)
     }
     /// `turtle_egg_trample`: whether a mod keeps the turtle eggs a player's landing is about to
@@ -4420,6 +4419,14 @@ impl Game<'_> {
         else {
             return false;
         };
+        self.turtle_egg_trample_for(entity, position)
+    }
+    /// Asks `turtle_egg_trample` about `entity` trampling the eggs at `position`.
+    pub(in crate::game) fn turtle_egg_trample_for(
+        &mut self,
+        entity: mod_api::EntityRef,
+        position: BlockPos,
+    ) -> bool {
         let dimension = self.dim.id().to_owned();
         let mut canceled = false;
         self.native_turtle_egg_trample(mod_api::__private::TurtleEggTrampleCall {
