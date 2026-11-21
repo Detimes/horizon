@@ -27,7 +27,7 @@ impl Hooks for PearlProbe {
         self.owners.lock().unwrap().push(event.owner.id());
         assert_eq!(event.owner.position(host), Some(event.from));
         assert_eq!(
-            event.damage,
+            *event.damage,
             Some(0.0),
             "non-player owners take no vanilla fall damage"
         );
@@ -63,7 +63,7 @@ impl Hooks for PlayerPearlProbe {
             host.players().acting_player().unwrap().entity(),
             event.owner
         );
-        assert_eq!(event.damage, Some(5.0));
+        assert_eq!(*event.damage, Some(5.0));
         // What the pearl hit: the block and its face, no entity.
         assert_eq!(event.hit_entity, None);
         assert_eq!(
@@ -76,7 +76,7 @@ impl Hooks for PlayerPearlProbe {
             _ => {}
         }
         *event.target = [12.0, 80.0, -4.0];
-        event.damage = Some(0.0);
+        *event.damage = Some(0.0);
         Flow::Continue
     }
 }

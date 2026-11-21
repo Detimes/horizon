@@ -137,7 +137,7 @@ fn a_hanging_entity_is_valid_until_it_is_gone() {
     with_hanging(|game| {
         let frame = game.entity(FRAME).expect("the frame's handle");
         assert!(game.entity_is_valid(frame));
-        let stale = mod_api::EntityRef::new(frame.epoch().wrapping_add(1), FRAME);
+        let stale = mod_api::EntityRef::new(mod_api::WorldEpoch::new(frame.epoch().get().wrapping_add(1)), FRAME);
         assert!(!game.entity_is_valid(stale));
         game.item_frames.clear();
         assert!(!game.entity_is_valid(frame));

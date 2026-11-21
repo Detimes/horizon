@@ -1494,6 +1494,7 @@ mod detonate_tests {
     }
 }
 
+#[cfg(test)]
 mod fuse_tests {
     use super::super::native_entity_refs::tests::with_game;
     use horizon_core::geometry::Vec3;

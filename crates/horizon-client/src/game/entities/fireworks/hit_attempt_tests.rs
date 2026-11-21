@@ -29,7 +29,7 @@ impl Hooks for Probe {
         _: &mut dyn ServerHost,
         event: &mut EnderPearlTeleportEvent<'_>,
     ) -> Flow {
-        event.damage = Some(0.0);
+        *event.damage = Some(0.0);
         Flow::Continue
     }
 }
