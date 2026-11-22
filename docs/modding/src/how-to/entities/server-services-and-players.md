@@ -102,7 +102,16 @@ refused and the login's own properties are sent. `player_login` follows later an
 can still refuse the player.
 
 `player.set_sneaking(host, sneaking)` (`player_set_sneaking`) sets the shift-key state a server player or a guest crouches by, so the crouching pose and hitbox follow, as Paper's `Player#setSneaking` does. A fake player takes it too, which shows a bot crouched. It returns `false` for a stale handle, a client, or a player the server does not hold in place.
+
 Game profiles (server only): `host.profile_by_uuid(uuid)` and `host.profile_by_name(name)` (any case) return the `GameProfile` the server knows: an online player's, with its properties, else the name from the user cache (`usercache.json`, on a dedicated server), without properties. Neither asks Mojang, and `None` means neither the server nor its cache knows the player. To change a skin, `player.set_profile_property(host, "textures", value, signature)` sets the `textures` property (Mojang's base64 value and its signature). Other players see it once `player.refresh(host)` sends the player to them again; the player's own client keeps its current skin until they change level or join again. A property set this way is published and returned by the two lookups; `player.profile(host)` keeps returning the properties the player logged in with. To drop a property a mod set (a reset to the default skin), `player.remove_profile_property(host, name)` removes that override and the profile shows the account's properties again; it returns `false` for a stale or unavailable player and an empty or over-long name, and it does not send the player to the others, so call `player.refresh(host)` after it.
+
+`entity.set_swimming(host, swimming)` (`entity_set_swimming`) sets the swimming flag of a server player or a guest, the one the next water update reads, as Paper's `Entity#setSwimming` does. It returns `false` for a mob, which keeps its own swim, and for a stale handle.
+
+`entity.detonate(host)` (`entity_detonate`) explodes an entity now: a primed TNT explodes where it stands with its power, as `PrimedTnt.explode` does, and a creeper is lit and explodes at once, as `Creeper.explodeCreeper` does. The entity is gone after its explosion. It returns `false`, changing nothing, for a stale handle, a kind that does not explode, or when the explosion itself fails.
+
+`entity.set_fall_distance(host, distance)` (`entity_set_fall_distance`) sets the blocks a server player, a guest or a mob has fallen, as Paper's `Entity#setFallDistance` does, so the next landing hurts by that much. It returns `false` for another kind, a client, a stale handle or a value that is not finite; `entity_reset_fall_distance` is the zero.
+
+`entity.set_fuse(host, ticks)` (`entity_set_fuse`) sets the ticks left before a primed TNT explodes, as vanilla's `PrimedTnt.setFuse` and Paper's `TNTPrimed#setFuseTicks` do. A fuse of `0` or less explodes it on its next tick. It returns `false`, changing nothing, for a negative count, a stale handle or an entity that is not primed TNT (a creeper's fuse is its swell, not this).
 
 ## Messages and visibility
 
@@ -151,6 +160,12 @@ the viewer leaves; a rejoin starts with nothing hidden. A hidden player stays in
 Tab list (`hide` lists them out too), and chat is not filtered. The calls return whether
 anything changed, and refuse with `EntityVisibilityRefusal`: `Client`, `Stale`, `NoConnection` for a
 fake viewer and `StaleEntity` for an entity handle that names nothing or the viewer's own player.
+
+To show an entity to one player only, spawn it with `player.spawn_viewer_entity(host, kind, pos)`.
+Its `AddEntity` goes to that client alone; the level does not hold it, and the other players do not
+see it. Move it with `player.move_viewer_entity(host, id, pos)` and remove it with
+`player.remove_viewer_entity(host, id)`. It has the type's default metadata only, and it is gone
+when the viewer leaves, so a mod that wants it kept re-spawns it on the next join.
 
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
 return what the calls above set. Latency is the Tab list ping in milliseconds
@@ -325,3 +340,9 @@ goes back to 0, scoreboard criteria follow the changed values, and the client se
 `player_stat_award` is not heard.
 
 Measuring a client's transaction round trip (a lag-compensating anticheat): send the player a `ping` with `player_send_packet` and hear the answer in `player_pong(player, name, id)`, which carries the number the ping had; the time between the two is finer than the keep-alive average `player_latency` reads. The engine's own pings (a recording's end-of-tick ping, whose id is the server tick) are answered here too, so pick ids that tell apart from small tick numbers. The hook is heard only for a pong that answers a ping the server sent on that connection, once per ping (an unsolicited or repeated pong, or an answer to a ping older than 30 seconds, is dropped), in order with the guest's other packets, with their state swapped in, and cannot cancel; with no listener nothing is queued.
+
+## Entity broadcast range
+
+`ConfigServerHost::entity_range_percent()` (server side) returns the entity broadcast range the server hosts with,
+in percent of vanilla's (`entity-broadcast-range-percentage` of server.properties). It is `100` when no server is
+hosting a world, which is vanilla's default. Read only.
