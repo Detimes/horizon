@@ -3690,7 +3690,13 @@ impl Game<'_> {
                             f64::from(pos.y) + 0.5,
                             f64::from(pos.z) + 0.5,
                         ];
-                        self.audio.play(sound, Some(at), 3.0, 1.0);
+                        // NoteBlock: a custom-head sound still plays on
+                        // SoundSource.RECORDS whatever its sound id is.
+                        let records = horizon_client::settings::SOUND_SOURCES
+                            .iter()
+                            .position(|n| *n == "record")
+                            .unwrap_or(0);
+                        self.audio.play_on(records, sound, Some(at), 3.0, 1.0);
                     }
                 }
                 // `level.addParticle`: only the local player's own click draws it.
@@ -3812,17 +3818,7 @@ impl Game<'_> {
                     None,
                 );
             }
-            let stat = match &*name {
-                "minecraft:chest" => "open_chest",
-                "minecraft:trapped_chest" => "trigger_trapped_chest",
-                "minecraft:barrel" => "open_barrel",
-                "minecraft:hopper" => "inspect_hopper",
-                "minecraft:dropper" => "inspect_dropper",
-                "minecraft:dispenser" => "inspect_dispenser",
-                n if storage::is_shulker_box(n) => "open_shulker_box",
-                _ => "",
-            };
-            if !stat.is_empty() {
+            if let Some(stat) = storage::open_stat(&name) {
                 self.award_custom_stat(stat, 1);
             }
             // Opening a piglin-guarded container angers the piglins who see it.
@@ -7342,13 +7338,9 @@ impl Game<'_> {
         // ServerPlayer.bedBlocked: Player.freeAt (not suffocating) for the
         // blocks above the head and the foot, as `in_wall` reads suffocating.
         let blocked = problem.is_none()
-            && [head, foot].iter().any(|bed| {
-                let f = self
-                    .res
-                    .facts()
-                    .get(self.world.block(bed[0], bed[1] + 1, bed[2]));
-                f.full_collision && f.solid_render
-            });
+            && [head, foot]
+                .iter()
+                .any(|bed| self.state_suffocating(self.world.block(bed[0], bed[1] + 1, bed[2])));
         if blocked {
             problem = Some("obstructed");
         }
@@ -9637,6 +9629,13 @@ impl Game<'_> {
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     let pressed = state == ElementState::Pressed;
+                    // A debug modifier on this button is let go whatever is open, so
+                    // a screen opened while it was held does not leave it down.
+                    if !pressed {
+                        let name = horizon_client::keybinds::mouse_name(button);
+                        self.debug_keys
+                            .mouse_button(&self.settings.keys, &name, false);
+                    }
                     if self.studio_mouse_input(pressed, button) {
                         return Ok(());
                     }
@@ -9670,6 +9669,12 @@ impl Game<'_> {
                             if self.key_mapping_canceled(Some(input.as_str()), pressed) {
                                 self.physical_buttons.remove(&button);
                                 return Ok(());
+                            }
+                            // MouseHandler.onButton: `KeyMapping.set(mouseKey, pressed)`
+                            // also holds a debug modifier bound to the button.
+                            if pressed {
+                                self.debug_keys
+                                    .mouse_button(&self.settings.keys, &input, true);
                             }
                             self.extras_mouse(button, pressed);
                             if pressed
@@ -10180,16 +10185,27 @@ impl Game<'_> {
                         let steps = self.clock.advance(elapsed, target);
                         self.drain_native_world_request()?;
                         self.client_tick_steps(steps, Some(event_loop))?;
-                    } else if let Some(step) = &step
-                        && let Err(error) = self.export_tick_frame(step, event_loop)
-                    {
-                        self.abort_export(Some(error.to_string()));
-                        return Ok(());
+                    } else {
+                        let result = (|| {
+                            if let Some(step) = &step {
+                                self.export_tick_frame(step, event_loop)?;
+                            }
+                            self.export_progress_frame(event_loop)
+                        })();
+                        match result {
+                            Ok(true) => {}
+                            Ok(false) => return Ok(()),
+                            Err(error) => {
+                                self.abort_export(Some(error.to_string()));
+                                return Ok(());
+                            }
+                        }
                     }
                     if !exporting {
                         self.extras_frame(elapsed);
                     }
-                    if advance_frame {
+                    let completed_live_frame = self.take_live_frame_update();
+                    if advance_frame || completed_live_frame {
                         self.extras_retry()?;
                         self.apply_mouse_look();
                         self.input_look(elapsed.as_secs_f32());

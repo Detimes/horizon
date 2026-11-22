@@ -40,7 +40,7 @@ impl Game<'_> {
         {
             self.clear_lod();
         }
-        if self.lod_source_attempted {
+        if self.lod_source_attempted || self.export_server_calls_blocked() {
             return;
         }
         self.lod_source_attempted = true;
@@ -191,6 +191,10 @@ impl Game<'_> {
             self.streaming.complete_commit(&mut self.world, commit)
         });
         self.streaming.extra.truncate(areas);
+        // A lectern read from a save resolves its book pages as its chunk
+        // arrives (`LecternBlockEntity.loadAdditional`): the chunk was decoded
+        // on a worker, which has no game to read a selector or a score with.
+        horizon_client::spans::time("resolve_loaded_lecterns", || self.resolve_loaded_lecterns());
         // The viewed levels' meshing, queued after the player's level's (nothing while no view
         // names one).
         if self.streaming.mesh
@@ -287,7 +291,7 @@ impl Game<'_> {
             self.view_arrival.arriving(view, now, has)
         };
         self.view_arriving = view_arriving;
-        let arriving = view_arriving || self.remote_backlog() > 0;
+        let arriving = view_arriving || self.remote_backlog_delays_frame();
         // Which far tiles a zoom magnifies (`lod::ZoomAim`), read before
         // `self.renderer.as_mut()` below borrows self mutably for the rest of
         // this function. Cheap: trigonometry on one angle, or None when the

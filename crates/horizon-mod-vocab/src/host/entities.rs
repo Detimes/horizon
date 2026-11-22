@@ -163,7 +163,8 @@ pub trait EntitiesBackend {
     fn entity_added_to_level(&self, entity: EntityRef) -> bool;
     /// Side: both.
     /// The entity's position (`Entity.position`): its feet, the middle of
-    /// its box for a painting or an item frame.
+    /// its box for a painting or an item frame. A client display reports the
+    /// current interpolation tick's position.
     #[access(WorldOnly)]
     fn entity_position(&self, entity: EntityRef) -> Option<[f64; 3]>;
     /// Side: server.
@@ -176,9 +177,10 @@ pub trait EntitiesBackend {
     /// for the kinds that don't turn. API 373.
     #[access(WorldOnly)]
     fn entity_rotation(&self, entity: EntityRef) -> Option<[f32; 2]>;
-    /// Side: server.
+    /// Side: both.
     /// The entity's resolved type key (`Entity.getType`). Compare keys directly;
-    /// request `key.id(host)` explicitly when its canonical name is needed. API 373.
+    /// request `key.id(host)` explicitly when its canonical name is needed.
+    /// On the client, reads the local player or a tracked entity's type. API 373.
     #[access(WorldOnly)]
     fn entity_kind(&self, entity: EntityRef) -> Option<EntityTypeKey>;
     /// Side: server.
@@ -255,9 +257,11 @@ pub trait EntitiesBackend {
     fn entity_on_ground(&self, entity: EntityRef) -> Option<bool>;
     /// Side: both.
     /// The entity's box (`Entity.getBoundingBox`): its lowest and highest
-    /// corner. None for the kinds whose box Horizon doesn't keep (displays,
-    /// markers, End crystals, the dragon); a dragon part's is its own. On a client, reads
-    /// its own copy of a tracked entity, or the local player's predicted box.
+    /// corner. A display has coincident corners at its position; its width and
+    /// height are used for render culling. None for the kinds whose box Horizon
+    /// doesn't keep (markers, End crystals, the dragon); a dragon part's is its
+    /// own. On a client, reads its own copy of a tracked entity, or the local
+    /// player's predicted box.
     #[access(WorldOnly)]
     fn entity_bounding_box(&self, entity: EntityRef) -> Option<[[f64; 3]; 2]>;
     /// Side: both.
@@ -354,10 +358,13 @@ pub trait EntitiesBackend {
     /// shulker bullet set it in their constructors and never clear it.
     #[access(WorldOnly)]
     fn entity_no_physics(&self, entity: EntityRef) -> Option<bool>;
-    /// Side: server.
+    /// Side: both.
     /// What the entity rides (`Entity.getVehicle`): `None` when it rides
     /// nothing, its actual vehicle is retained off-level and has no resident handle,
-    /// or the supplied handle is stale. `is_passenger` still reports the relationship.
+    /// or the supplied handle is stale. On a client, reads the server's latest
+    /// passenger relationships (or the local player's ride), and returns `None`
+    /// when the vehicle is not tracked in the current client level.
+    /// `is_passenger` remains server-only.
     #[access(WorldOnly)]
     fn entity_vehicle(&self, entity: EntityRef) -> Option<EntityRef>;
     /// Side: server.
@@ -452,15 +459,17 @@ pub trait EntitiesBackend {
     /// False for non-player entities, None for a stale or unreachable handle.
     #[access(WorldOnly)]
     fn entity_is_shift_key_down(&self, entity: EntityRef) -> Option<bool>;
-    /// Side: server.
+    /// Side: both.
     /// Whether the entity crouches (`Entity.isCrouching`: the crouching
     /// pose).
+    /// On a client, the local player's own (`LocalPlayer`'s); None for any other entity there.
     #[access(WorldOnly)]
     fn entity_is_crouching(&self, entity: EntityRef) -> Option<bool>;
-    /// Side: server.
+    /// Side: both.
     /// Whether the entity sprints (`Entity.isSprinting`): a player, or a
     /// cat or ocelot dashing after its target (their shared sprinting flag);
     /// false for the other kinds.
+    /// On a client, the local player's own (`LocalPlayer`'s); None for any other entity there.
     #[access(WorldOnly)]
     fn entity_is_sprinting(&self, entity: EntityRef) -> Option<bool>;
     /// Side: both.
@@ -480,13 +489,15 @@ pub trait EntitiesBackend {
     /// client, reads its own copy as `entity_fluid_heights` does.
     #[access(WorldOnly)]
     fn entity_eye_fluid(&self, entity: EntityRef) -> Option<Option<String>>;
-    /// Side: server.
+    /// Side: both.
     /// Whether the entity touched water at its last fluid update
     /// (`Entity.isInWater`): players and mobs.
+    /// On a client, the local player's own (`LocalPlayer`'s); None for any other entity there.
     #[access(WorldOnly)]
     fn entity_is_in_water(&self, entity: EntityRef) -> Option<bool>;
-    /// Side: server.
+    /// Side: both.
     /// Whether the entity is in lava (`Entity.isInLava`): players and mobs.
+    /// On a client, the local player's own (`LocalPlayer`'s); None for any other entity there.
     #[access(WorldOnly)]
     fn entity_is_in_lava(&self, entity: EntityRef) -> Option<bool>;
     /// Side: server.
@@ -542,10 +553,11 @@ pub trait EntitiesBackend {
     /// flag.
     #[access(WorldOnly)]
     fn entity_is_invisible(&self, entity: EntityRef) -> Option<bool>;
-    /// Side: server.
+    /// Side: both.
     /// The entity's pose (`Entity.getPose`) as `Pose` names it: `standing`,
     /// `crouching`, `swimming`, `sleeping`, a warden's `roaring`... Kinds
     /// with no pose stand.
+    /// On a client, the local player's own (`LocalPlayer`'s); None for any other entity there.
     #[access(WorldOnly)]
     fn entity_pose(&self, entity: EntityRef) -> Option<&'static str>;
     /// Side: server.
