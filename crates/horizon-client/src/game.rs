@@ -1279,6 +1279,10 @@ struct Game<'a> {
     /// player's own (taken by `update_world`).
     spawn_wait: Vec<(i32, i32)>,
     mobs: horizon_client::join_seq::JoinList<Mob>,
+    /// The state each armor stand's network entry was last built as, for the stands nobody has
+    /// touched since (`ArmorStand::sync_dirty`).
+    stand_states:
+        horizon_client::fast_hash::FxHashMap<u32, horizon_client::lan::entity::EntityState>,
     /// `mobs` by network id, for the packets that name one (`game/mobs/mob_index.rs`).
     mob_index: mob_index::MobIndex,
     creatures: creatures::Creatures,
@@ -1907,6 +1911,8 @@ struct Game<'a> {
     save_after_guest_turn: bool,
     /// Guests whose records are displaced by nested player swaps, outer first.
     lan_guest_swaps: Vec<u32>,
+    /// Outer vehicle(s) displaced by nested guest turns, outer first.
+    lan_outer_ridings: Vec<Option<u32>>,
     /// Guests whose last turn a panic ended after their state was written back and the outer
     /// player restored (`as_guest_at`, `as_guest_messaged`, `leave_guest`), which hides the turn
     /// from `lan_acting`: crash teardown keeps their last saved file (`keep_interrupted_players`).
@@ -2036,6 +2042,9 @@ fn inventory_add(
     max: u32,
     stack: &mut ItemStack,
 ) -> bool {
+    if stack.count == 0 || &*stack.item == "minecraft:air" {
+        return false;
+    }
     let order = std::iter::once(selected)
         .chain(std::iter::once(shield::OFFHAND_SLOT))
         .chain((0..36).filter(|&i| i != selected));
@@ -2071,6 +2080,33 @@ fn inventory_add(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod inventory_add_tests {
+    use super::*;
+
+    #[test]
+    fn inventory_add_leaves_empty_stacks_out_of_slots() {
+        for mut stack in [
+            ItemStack::new("minecraft:air", 1),
+            ItemStack::new("minecraft:stone", 0),
+        ] {
+            let mut inventory = [const { None }; 36];
+            let mut offhand = None;
+            let count = stack.count;
+            assert!(!inventory_add(
+                &mut inventory,
+                &mut offhand,
+                0,
+                64,
+                &mut stack
+            ));
+            assert!(inventory.iter().all(Option::is_none));
+            assert!(offhand.is_none());
+            assert_eq!(stack.count, count);
+        }
+    }
 }
 
 fn facing_offset(facing: &str) -> [i32; 3] {
@@ -2462,25 +2498,36 @@ impl Game<'_> {
         velocity: Option<[f64; 3]>,
         pickup_delay: u32,
         random: Option<spill::ItemRandom>,
-    ) -> [f64; 3] {
-        let velocity = self.push_item_entity(stack, position, velocity, pickup_delay, random);
-        self.join_item_entity(self.next_entity, position);
-        velocity
+    ) -> Option<(u32, [f64; 3])> {
+        let (id, velocity) =
+            self.try_push_item_entity(stack, position, velocity, pickup_delay, random)?;
+        self.join_item_entity(id, position);
+        Some((id, velocity))
     }
     /// The block entity at `pos` saved with its id and position
     /// (`saveWithFullMetadata`), or the saved one Horizon keeps as loaded:
     /// what a broken block's loot sees as `LootContextParams.BLOCK_ENTITY`.
     fn loot_block_entity(&self, pos: [i32; 3], block: &str) -> Option<horizon_core::nbt::Tag> {
         let key = (pos[0], pos[1], pos[2]);
-        match self.world.block_entities.get(&key) {
-            Some(entity) => Some(horizon_client::save::block_entity_encode::encode(
-                key, entity, block,
-            )),
-            None => spill::saved_entity(&self.world, pos),
-        }
+        let Some(entity) = self.world.block_entities.get(&key) else {
+            return spill::saved_entity(&self.world, pos);
+        };
+        // The model encode alone drops the fields Horizon keeps outside it (a
+        // container's `components`/`lock`, another type's unmodelled keys);
+        // merge the tag it was loaded with back in, as a chunk save does.
+        let source = self.world.block_entity_source(key);
+        Some(horizon_client::save::full_block_entity_data(
+            key,
+            entity,
+            block,
+            source,
+            self.world.block_names.get(&key),
+            self.world.block_lock(key),
+        ))
     }
     /// Where a loot roll at `origin` happens, for a mod's own loot kinds:
-    /// the block entity it may copy from, and this level as
+    /// the block entity it may copy from, the block and light facts at the
+    /// origin (`LocationPredicate`), and this level as
     /// `LootContext.getLevel` gives it (`Level.isRaining`: rain above 0.2;
     /// `isThundering`: thunder above 0.9; neither where `canHaveWeather` is
     /// false: a level with a ceiling or no sky light, or the End).
@@ -2489,19 +2536,91 @@ impl Game<'_> {
         origin: [f64; 3],
         block_entity: Option<horizon_core::nbt::Tag>,
     ) -> horizon_world::loot::LootPlace {
+        self.loot_place_with_block(origin, block_entity, None)
+    }
+    /// `loot_place_at` for the roll of a block that is gone from the world
+    /// (broken, blown up): `at_state` is the state it had, which the origin's
+    /// block facts report in place of what the level holds there now.
+    fn loot_place_with_block(
+        &self,
+        origin: [f64; 3],
+        block_entity: Option<horizon_core::nbt::Tag>,
+        at_state: Option<BlockStateId>,
+    ) -> horizon_world::loot::LootPlace {
         let (rain, thunder) = self.world.weather.levels(1.0);
         // Level.canHaveWeather: sky light, no ceiling and not the End.
         let weather =
             self.world.shape.sky_light && !self.world.shape.has_ceiling && self.dim != Dim::End;
+        // `BlockEntity.collectComponents` for a block predicate's `components`.
+        let block_entity_components = block_entity.as_ref().map(|tag| {
+            horizon_core::nbt::Tag::Compound(crate::block_entity_item::collected_components(tag))
+        });
+        let pos = origin.map(|v| v.floor() as i32);
+        // `Level.isLoaded`: outside the build height or in an unloaded chunk
+        // there is no block, light or fluid to read; those facts stay unset
+        // so a predicate asking for them fails instead of reading the air and
+        // full light an absent chunk falls back to. A caller that passes the
+        // state a block broke with keeps it.
+        let loaded = self.world.is_loaded_at(pos[0], pos[1], pos[2]);
+        // A broken block's own drops still name it after the removal, so the
+        // caller passes the state it broke; every other roll reads the block
+        // it started on.
+        let state = at_state.or_else(|| loaded.then(|| self.world.block(pos[0], pos[1], pos[2])));
+        let facts = state.map(|state| self.res.facts().get(state));
+        let packed = loaded.then(|| self.world.light(pos[0], pos[1], pos[2]));
+        let fluid = match facts.map(|facts| facts.fluid) {
+            Some(crate::blocks::Fluid::Water) => Some("minecraft:water".to_owned()),
+            Some(crate::blocks::Fluid::Lava) => Some("minecraft:lava".to_owned()),
+            _ => None,
+        };
         horizon_world::loot::LootPlace {
             origin: Some(origin),
             block_entity,
+            block_entity_components,
             level: Some(horizon_world::loot::LootLevel {
                 dimension: self.dim.id().to_owned(),
                 game_time: self.world.game_time,
                 day_time: self.world.day_time,
                 raining: weather && rain > 0.2,
                 thundering: weather && thunder > 0.9,
+            }),
+            // `Level.getBiome` at ORIGIN: the chunk holds the biome even
+            // outside the build height, so only a missing chunk has none.
+            biome: self
+                .world
+                .chunks
+                .get(&(pos[0] >> 4, pos[2] >> 4))
+                .map(|chunk| {
+                    world_biomes!(self)
+                        .name(chunk.biome(pos[0], pos[1], pos[2]))
+                        .to_owned()
+                }),
+            block: state.map(|state| horizon_world::loot::LootBlockState {
+                name: self.res.facts().get(state).name.to_string(),
+                properties: self
+                    .pack
+                    .assets
+                    .registry
+                    .state(state)
+                    .map(|s| s.properties.clone())
+                    .unwrap_or_default(),
+            }),
+            // Level.getMaxLocalRawBrightness: block light, or sky light less
+            // the sky darkening.
+            light: packed.map(|packed| {
+                let sky = i32::from(packed >> 4);
+                i32::from(packed & 15).max(sky - self.sky_darken())
+            }),
+            can_see_sky: packed.map(|packed| packed >> 4 >= 15),
+            fluid,
+            // `StructureManager.getStructureAt` / `getStructureWithPieceAt`
+            // at the origin: which structures' start boxes reach it, and
+            // whether one of their pieces covers it too.
+            structures: loaded.then(|| {
+                self.structures_reaching(pos)
+                    .into_iter()
+                    .map(|(name, piece)| horizon_world::loot::LootStructure { name, piece })
+                    .collect()
             }),
         }
     }
@@ -2517,7 +2636,8 @@ impl Game<'_> {
         block_entity: Option<horizon_core::nbt::Tag>,
     ) -> Vec<ItemStack> {
         let dynamic = self.pending.dynamic(pos);
-        let place = self.loot_place_at(pos.map(|v| f64::from(v) + 0.5), block_entity);
+        let place =
+            self.loot_place_with_block(pos.map(|v| f64::from(v) + 0.5), block_entity, Some(state));
         let (_, entity) = self.native_clicker();
         let mut drops = horizon_world::loot::with_native_loot_place(place, || {
             let roll = horizon_client::items::BlockLootRoll {
@@ -2534,6 +2654,9 @@ impl Game<'_> {
     }
     /// `Player.drop`: the statistics and a thrown item entity in front of the player.
     pub(super) fn player_drop(&mut self, thrown: ItemStack) -> Option<u32> {
+        if thrown.count == 0 || &*thrown.item == "minecraft:air" {
+            return None;
+        }
         let eye = self.eye_position()?;
         // LivingEntity.drop: every drop swings the main hand, a menu's
         // THROW and a creative tab's drop included.
@@ -2555,7 +2678,7 @@ impl Game<'_> {
         stack: ItemStack,
         thrown_from_hand: bool,
     ) -> Option<u32> {
-        if stack.count == 0 {
+        if stack.count == 0 || &*stack.item == "minecraft:air" {
             return None;
         }
         self.swing_hand(Hand::Main, SwingAnimation::DEFAULT);
@@ -4368,6 +4491,8 @@ impl Game<'_> {
         self.update_interaction_ranges();
         // A logical server has no window to lead and never follows another server.
         if !self.is_logical_server() {
+            // Screen and other shared-host hooks can only stage payloads; publish them now.
+            self.flush_shared_payloads();
             self.tick_client_lead()?;
             if self.remote.is_some() {
                 return self.with_residency_tick(Self::tick_remote);
@@ -5299,7 +5424,7 @@ impl Game<'_> {
         laps.lap("eg_fire_items");
         for stand in &self.armor_stands {
             if stand.fire_ticks > 0 && !stand.marker {
-                let scale = if stand.small { 0.5 } else { 1.0 };
+                let scale = if stand.small { 0.5 } else { 1.0 } * stand.scale;
                 let at = stand.render_position(alpha);
                 if !fire_visible([at.x, at.y, at.z], 0.5 * scale, 1.975 * scale) {
                     continue;
@@ -6057,13 +6182,13 @@ impl Game<'_> {
     pub(super) fn mob_hit_within(&self, reach: f64) -> Option<(usize, f64, [f64; 3])> {
         let (eye, dir) = self.aim()?;
         let mut best: Option<(usize, f64, [f64; 3])> = None;
+        let skipped = [self.riding, self.remote_camera_id()];
         for (i, m) in self.mobs.iter().enumerate() {
-            // ProjectileUtil.getEntityHitResult: the mob the player rides
-            // shares its root vehicle and is never the hit, nor is the
-            // camera entity the pick starts from. EntitySelector.CAN_BE_PICKED
-            // is isPickable — `!isRemoved`, not alive: a health-0 fake player
-            // still answers a click.
-            if m.removed || Some(m.id) == self.riding || Some(m.id) == self.remote_camera_id() {
+            // ProjectileUtil.getEntityHitResult skips the mob the player rides (it shares
+            // the root vehicle) and the camera entity the pick starts from. CAN_BE_PICKED
+            // is isPickable, `!isRemoved` rather than alive (a health-0 fake player still
+            // answers a click), and NO_SPECTATORS skips a player in spectator mode.
+            if m.removed || m.extra.spectator || skipped.contains(&Some(m.id)) {
                 continue;
             }
             if let Some(t) = ray_box(eye, dir, reach, m.bounds())
@@ -6211,7 +6336,6 @@ impl Game<'_> {
         self.score = Default::default();
         let stack = self.open_world_datapacks(&level.enabled_features)?;
         let root = self.options.resources.clone();
-        self.open_world_tables(&stack, &root)?;
         self.invalidate_tagged_shader_ids();
         self.damage_tag_generation = self.damage_tag_generation.wrapping_add(1);
         self.resolve_parts()?;
@@ -10240,6 +10364,7 @@ impl Game<'_> {
                                 ms(elapsed),
                                 ms(cpu),
                                 r.gpu_times.last().copied(),
+                                ms(r.last_wait),
                             );
                             if let Some(&gpu) = r.gpu_times.last() {
                                 self.gpu_utilization =
@@ -10735,6 +10860,7 @@ impl<'a> Game<'a> {
             player_spawn: None,
             spawn_wait: Vec::new(),
             mobs: Default::default(),
+            stand_states: Default::default(),
             mob_index: Default::default(),
             creatures: Default::default(),
             sculk: Default::default(),
@@ -11071,6 +11197,7 @@ impl<'a> Game<'a> {
             lan_building_boxes: Default::default(),
             save_after_guest_turn: false,
             lan_guest_swaps: Vec::new(),
+            lan_outer_ridings: Vec::new(),
             lan_interrupted_turns: Vec::new(),
             keep_owner_files: false,
             player_state: Default::default(),
@@ -11587,49 +11714,8 @@ fn test_server_load() -> horizon_world::native_load_context::LoadContext {
 }
 
 #[cfg(test)]
-mod nested_orb_spawn_tests {
-    #[test]
-    #[ignore = "daily"]
-    fn experience_pickup_keeps_nested_orbs_until_the_next_ordered_pass() {
-        crate::game::native_entity_refs::tests::with_game(|game| {
-            game.world.chunks.insert(
-                (0, 0),
-                std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
-            );
-            game.block_ticks
-                .add_empty_chunk(horizon_core::position::ChunkPos::new(0, 0))
-                .unwrap();
-            for (x, value) in [(7.5, 1), (9.5, 3), (11.5, 7)] {
-                game.add_orb([x, 80.0, 3.5], value);
-            }
-            let _ = game.orbs.remove(1);
-            let mut expected: Vec<_> = game.orbs.iter().map(|o| (o.id, o.join)).collect();
-            crate::game::entity::taken_pass_tests::with_spawn(
-                |g| g.add_orb([3.5, 80.0, 3.5], 1),
-                || game.tick_experience(),
-            );
-            assert_eq!(game.orbs.len(), 3);
-            let join = game.orbs[2].join;
-            expected.push((game.orbs[2].id, join));
-            assert_eq!(
-                game.orbs.iter().map(|o| (o.id, o.join)).collect::<Vec<_>>(),
-                expected
-            );
-            assert_eq!(game.orbs[2].age, 0);
-            game.ordered.announced = horizon_client::join_seq::JoinSeq::MAX;
-            game.tickets.update(None);
-            game.begin_ordered_ticks();
-            game.run_ordered_ticks(horizon_client::join_seq::JoinSeq::MAX, false)
-                .unwrap();
-            let spawned = game.orbs.iter().find(|o| o.join == join).unwrap();
-            assert_eq!(spawned.age, 1);
-            assert_eq!(
-                game.orbs.iter().map(|o| (o.id, o.join)).collect::<Vec<_>>(),
-                expected
-            );
-        });
-    }
-}
+#[path = "game/interface/tests/nested_orb_spawn_tests.rs"]
+mod nested_orb_spawn_tests;
 
 #[cfg(test)]
 pub(crate) fn in_own_process(name: &str, body: impl FnOnce()) {
