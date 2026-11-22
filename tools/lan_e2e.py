@@ -15,7 +15,7 @@ address. The script then checks, from both sides, what a guest's game used to ge
              dimension change, a death and respawn); the inventory opens as its own menu, items kept;
 - crafting:  the guest crafts planks in the inventory's 2x2 grid and opens a crafting table, which
              leaves the host's screen and mouse look alone;
-- datapack-recipe: (--server-thread) a crafting recipe from the world's data pack shows its result in the
+- datapack-recipe: a crafting recipe from the world's data pack shows its result in the
              table of the host's window and of a guest, and taking it crafts (#6733);
 - recipes-hmod: opt-in, requires native Recipes: search original .hmod content, fill the server's
              crafting grid, consume inputs and preserve both players' output after save/rejoin (#9647);
@@ -384,6 +384,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_control_e2e import Cli, Failed, game_env  # noqa: E402
+import fast_bins  # noqa: E402
 import lab  # noqa: E402
 from integration_env import game_environment, require_server_reports  # noqa: E402
 
@@ -1563,6 +1564,10 @@ def check_arrows(host, guest, out):
         g('command', command='item replace entity @s weapon.mainhand with minecraft:bow')
         g('command', command='give @s minecraft:arrow 16')
     hits = {}
+    # AbstractArrow.onHitEntity: an arrow that hurt a player sends its shooter game event 6
+    # (PLAY_ARROW_HIT_SOUND), which the shooter's client plays as this sound (#8053).
+    ding = 'minecraft:entity.arrow.hit_player'
+    heard_dings = {}
     try:
         for name, rule, shooter in (('guest shoots host', 'true', guest), ('host shoots guest', 'true', host),
                                     ('pvp off', 'false', guest)):
@@ -1573,9 +1578,11 @@ def check_arrows(host, guest, out):
             shooter.wait(20)
             victim = (lambda: host('state')['player']['health']) if shooter is guest else (lambda: remote(guest)['health'])
             before = victim()
+            dings = heard(shooter, ding)
             shooter.raw('use-item', '--hold', 1.3)  # a full draw (BowItem: 20 ticks)
             shooter.wait(20)
             hits[name] = (before, victim())
+            heard_dings[name] = heard(shooter, ding) - dings
             shooter.shot(out, 'arrows-' + name.replace(' ', '-'))
     finally:
         host('command', command='gamerule pvp true')
@@ -1584,6 +1591,9 @@ def check_arrows(host, guest, out):
     assert hits['guest shoots host'][1] < hits['guest shoots host'][0], f"the guest's arrow did not hurt the host: {hits}"
     assert hits['host shoots guest'][1] < hits['host shoots guest'][0], f"the host's arrow did not hurt the guest: {hits}"
     assert hits['pvp off'][1] >= hits['pvp off'][0], f'pvp off, an arrow still hurts: {hits}'
+    assert heard_dings['guest shoots host'] == 1 and heard_dings['host shoots guest'] == 1, \
+        f'a shooter did not hear one arrow-hit ding for the hit: {heard_dings}'
+    assert heard_dings['pvp off'] == 0, f'pvp off, the refused arrow still dings: {heard_dings}'
     return hits
 
 
@@ -7480,14 +7490,11 @@ def main():
     parser.add_argument('--bin-dir', help='prebuilt horizon-client and horizon-ctl (default: build with the fast profile)')
     parser.add_argument('--check', action='append', choices=CHECKS, help='run only these checks (repeatable)')
     parser.add_argument('--out', default=str(ROOT / '.local/lan-e2e'), help='screenshots and game logs go here')
-    # The host's world always runs on its server thread; the flag stays for existing callers.
-    parser.add_argument('--server-thread', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.bin_dir:
         bins = Path(args.bin_dir).resolve()
     else:
-        subprocess.run(['cargo', 'build', '--locked', '--profile', 'fast', '-p', 'horizon-game', '-p', 'horizon-client-lib',
-                        '--bin', 'horizon-client', '--bin', 'horizon-ctl'],
+        subprocess.run(fast_bins.command('horizon-client', 'horizon-ctl'),
                        cwd=ROOT, check=True)
         meta = json.loads(subprocess.run(['cargo', 'metadata', '--format-version', '1', '--no-deps'], cwd=ROOT,
                                          capture_output=True, text=True, check=True).stdout)

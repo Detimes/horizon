@@ -14,7 +14,7 @@ use crate::{
 };
 use horizon_core::{
     geometry::{Aabb, Direction, Vec3, VoxelShape, border::BorderGeometry},
-    position::BlockPos,
+    position::{BlockPos, SectionPos},
     random::{EntityRandom, RandomSource},
 };
 use horizon_world::{
@@ -22,6 +22,7 @@ use horizon_world::{
     level::portal_travel::{BorderBounds, find_free_position},
     movement_properties::BoundMovementProperties,
 };
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Gravity applied each tick when the item is not in a fluid (`ItemEntity.tick`).
 const ITEM_GRAVITY: f64 = 0.04;
@@ -417,6 +418,7 @@ impl crate::entity_rules::EntityRules for ArmorStand {
 pub struct ItemStep {
     old_velocity: Vec3,
     landed: Option<(BlockPos, f64)>,
+    /// The displacement requested by `Entity.move`, when the item tried to move.
     movement: Option<Vec3>,
     pub vertical_contact: Option<BlockPos>,
     /// `Entity.move` with physics: where it started, what it moved, and
@@ -429,6 +431,12 @@ impl ItemStep {
     /// The landing position and accumulated fall distance, before block contact.
     pub fn landed(&self) -> Option<(BlockPos, f64)> {
         self.landed
+    }
+
+    /// The attempted displacement before collision clipping, used to order the block sweep.
+    pub fn original_movement(&self) -> Option<Vec3> {
+        self.movement
+            .filter(|_| self.fall_move.is_some_and(|(_, _, applied)| applied))
     }
 }
 #[cfg(test)]
@@ -852,6 +860,8 @@ fn lava_cauldron_contacts(
 pub const ORB_QUAD: [[f32; 2]; 4] = [[-0.5, -0.25], [0.5, -0.25], [0.5, 0.75], [-0.5, 0.75]];
 /// `poseStack.scale(0.3F, 0.3F, 0.3F)`.
 pub const ORB_QUAD_SCALE: f32 = 0.3;
+static NEXT_ORB_SECTION_ORDER: AtomicU64 = AtomicU64::new(1);
+
 /// ExperienceOrb: gravity 0.03, homing towards the player within 8 blocks.
 #[derive(Clone, Debug)]
 pub struct ExperienceOrb {
@@ -861,6 +871,8 @@ pub struct ExperienceOrb {
     pub rotation: [f32; 2],
     /// When it joined its list ([`crate::join_seq`]); set by the list, not by the spawn site.
     pub join: crate::join_seq::JoinSeq,
+    /// Order of entry into the current section. Zero before joining the level.
+    pub section_order: u64,
     /// The entity id servers track it by.
     pub id: u32,
     pub position: Vec3,
@@ -908,6 +920,7 @@ impl ExperienceOrb {
             attachment_lifetime: Default::default(),
             rotation: [0.0, 0.0],
             join: Default::default(),
+            section_order: 0,
             id,
             position,
             previous: position,
@@ -925,6 +938,20 @@ impl ExperienceOrb {
             fire_ticks: 0,
         }
     }
+    /// `PersistentEntitySectionManager.Callback.onMove` appends to the new section.
+    pub fn set_position(&mut self, position: Vec3) {
+        if self.join.is_joined()
+            && SectionPos::containing(self.position) != SectionPos::containing(position)
+        {
+            self.enter_section();
+        }
+        self.position = position;
+    }
+
+    fn enter_section(&mut self) {
+        self.section_order = NEXT_ORB_SECTION_ORDER.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// `ExperienceOrb.hurtServer`: the damage comes off the health as an
     /// `int`; an orb at 0 or below is discarded. True when it is gone.
     pub fn hurt(&mut self, damage: f32) -> bool {
@@ -1095,7 +1122,7 @@ impl ExperienceOrb {
             context,
             on_sound,
             entities,
-            &mut |_| false,
+            &mut |_, _| false,
         )
     }
 
@@ -1114,7 +1141,7 @@ impl ExperienceOrb {
         context: &horizon_world::native_load_context::LoopContext,
         on_sound: &mut dyn FnMut([f64; 3], f32),
         entities: &[Aabb],
-        invulnerable: &mut dyn FnMut(&mut World) -> bool,
+        invulnerable: &mut dyn FnMut(&mut World, &str) -> bool,
     ) -> (bool, OrbMove) {
         self.tick_among_inner(
             &mut world,
@@ -1128,7 +1155,7 @@ impl ExperienceOrb {
             context,
             on_sound,
             entities,
-            &mut |world| invulnerable(world),
+            &mut |world, damage| invulnerable(world, damage),
         )
     }
 
@@ -1146,7 +1173,7 @@ impl ExperienceOrb {
         context: &horizon_world::native_load_context::LoopContext,
         on_sound: &mut dyn FnMut([f64; 3], f32),
         entities: &[Aabb],
-        invulnerable: &mut dyn FnMut(&mut W) -> bool,
+        invulnerable: &mut dyn FnMut(&mut W, &str) -> bool,
     ) -> (bool, OrbMove) {
         self.ticks += 1;
         self.previous = self.position;
@@ -1155,7 +1182,9 @@ impl ExperienceOrb {
         let (eye_in_water, in_water, in_lava) = self.update_fluids(world, fluids, context);
         // `Entity.baseTick`'s fire step, right after the fluid step: an orb is
         // not fire immune, so each 20th tick of a burn hurts it for 1 (out of
-        // lava; `isInLava` is false on the first tick). The client only
+        // lava; `isInLava` is false on the first tick), unless it refuses
+        // `on_fire` (`ExperienceOrb.hurtServer`'s `isInvulnerableToBase`: an
+        // `Invulnerable` orb keeps its health). The client only
         // `clearFire`s (`min(0, ticks)`). A burn that empties its health discards it.
         let mut burnt_out = false;
         if !server {
@@ -1163,7 +1192,7 @@ impl ExperienceOrb {
         } else {
             if self.fire_ticks > 0 {
                 if self.fire_ticks % 20 == 0 && !(in_lava && self.ticks > 1) {
-                    burnt_out = self.hurt(1.0);
+                    burnt_out = !invulnerable(world, "minecraft:on_fire") && self.hurt(1.0);
                 }
                 self.fire_ticks -= 1;
             }
@@ -1256,11 +1285,11 @@ impl ExperienceOrb {
         )
         .unwrap_or(Vec3::ZERO);
         let from = self.position;
-        self.position = Vec3::new(
+        self.set_position(Vec3::new(
             self.position.x + moved.x,
             self.position.y + moved.y,
             self.position.z + moved.z,
-        );
+        ));
         self.on_ground = wanted.y < 0.0 && moved.y != wanted.y;
         // Entity.move's restituteMovementAfterCollisions, an orb's bounciness
         // 0: each collided axis's velocity is zeroed — x and z by Mth.equal's
@@ -1334,7 +1363,7 @@ impl ExperienceOrb {
             wanted,
             next_float,
             on_sound,
-            &mut |_| false,
+            &mut |_, _| false,
         )
     }
 
@@ -1345,7 +1374,7 @@ impl ExperienceOrb {
         wanted: Vec3,
         next_float: &mut dyn FnMut() -> f32,
         on_sound: &mut dyn FnMut([f64; 3], f32),
-        invulnerable: &mut dyn FnMut(&mut W) -> bool,
+        invulnerable: &mut dyn FnMut(&mut W, &str) -> bool,
     ) -> bool {
         if self.health <= 0 {
             return true;
@@ -1366,7 +1395,12 @@ impl ExperienceOrb {
             })
         });
         for _ in 0..contacts {
-            let dead = !invulnerable(world) && self.hurt(4.0);
+            // Entity.lavaHurt: the burn sound (and its pitch draw) only for a
+            // hurt `hurtServer` took; an Invulnerable orb's refusal makes none.
+            if invulnerable(world, "minecraft:lava") {
+                continue;
+            }
+            let dead = self.hurt(4.0);
             let pitch = 2.0 + next_float() * 0.4;
             on_sound([self.position.x, self.position.y, self.position.z], pitch);
             if dead {
@@ -2112,6 +2146,30 @@ impl ArmorStand {
         self.environment_tick_inner(&mut world, facts, registry, |_, _| false)
     }
     /// As `environment_tick`, allowing the caller to decide each actual damage attempt.
+    /// Whether a block clears the stand's freeze this tick through
+    /// `applyEffectsFromBlocks`: a fire block applies `CLEAR_FREEZE` itself
+    /// (`BaseFireBlock.entityInside`), whatever the stand's `Fire`, and lava's
+    /// `LAVA_IGNITE` (`Entity.lavaIgnite`) reaches `igniteForTicks`, which calls
+    /// `clearFreeze`. A marker or `NoGravity` stand has `noPhysics`, so no
+    /// block reaches it.
+    pub fn freeze_cleared_by_blocks(
+        &self,
+        world: &World,
+        facts: &BlockFacts,
+        registry: &horizon_world::registry::BlockRegistry,
+    ) -> bool {
+        if self.no_physics.unwrap_or(self.marker || self.no_gravity) {
+            return false;
+        }
+        let (lo, hi) = (self.bounds().min_position(), self.bounds().max_position());
+        let lava = (lo.x.floor() as i32..=hi.x.floor() as i32).any(|x| {
+            (lo.y.floor() as i32..hi.y.ceil() as i32).any(|y| {
+                (lo.z.floor() as i32..=hi.z.floor() as i32)
+                    .any(|z| facts.get(world.block(x, y, z)).fluid == Fluid::Lava)
+            })
+        });
+        lava || crate::motion::environment::fire_contact(world, registry, self.bounds()) > 0.0
+    }
     pub fn environment_tick_with_hook(
         &mut self,
         mut world: &mut World,
@@ -2162,21 +2220,67 @@ impl ArmorStand {
             }
             self.fire_ticks -= 1;
         }
-        if lava {
-            self.fire_ticks = self.fire_ticks.max(300);
-        }
-        let fire = crate::motion::environment::fire_contact(world, registry, self.bounds()) > 0.0;
-        // The fire block reaches a stand through `applyEffectsFromBlocks`,
-        // which a NoGravity stand does not feel (measured beside the server).
-        if fire && !self.invisible && !self.marker && !self.no_gravity {
-            if self.fire_ticks > 0 {
-                if !invulnerable(world, "minecraft:in_fire") {
+        // `applyEffectsFromBlocks` reaches a stand with physics only (a marker or
+        // NoGravity stand has `noPhysics`), and none that `baseTick`'s burn just
+        // broke (`isAffectedByBlocks` wants it not removed).
+        let affected =
+            !self.no_physics.unwrap_or(self.marker || self.no_gravity) && self.health > 0.5;
+        // The fire blocks the box (less 1e-5) is in, each visited once by
+        // `Entity.checkInsideBlocks`.
+        let fires = if affected {
+            let b = self.bounds().deflate(Vec3::new(1e-5, 1e-5, 1e-5));
+            let (lo, hi) = (b.min_position(), b.max_position());
+            let mut n = 0;
+            for x in lo.x.floor() as i32..=hi.x.floor() as i32 {
+                for y in lo.y.floor() as i32..=hi.y.floor() as i32 {
+                    for z in lo.z.floor() as i32..=hi.z.floor() as i32 {
+                        let name = registry
+                            .state(world.block(x, y, z))
+                            .map(|s| s.name.as_str());
+                        if matches!(name, Some("minecraft:fire" | "minecraft:soul_fire")) {
+                            n += 1;
+                        }
+                    }
+                }
+            }
+            n
+        } else {
+            0
+        };
+        if fires > 0 {
+            // FIRE_IGNITE, `BaseFireBlock.fireIgnite`, once a tick however many
+            // fire blocks: a negative `Fire` counts up by one; from 0 the stand
+            // is lit for 8 seconds, every tick it stays in the fire, against
+            // `baseTick`'s countdown.
+            if self.fire_ticks < 0 {
+                self.fire_ticks += 1;
+            }
+            if self.fire_ticks >= 0 {
+                self.fire_ticks = self.fire_ticks.max(160);
+            }
+            // Then each fire block's `runAfter` `hurt(inFire)`: `ArmorStand.hurtServer`
+            // refuses it for an invulnerable, invisible or marker stand;
+            // IGNITES_ARMOR_STANDS takes 0.15 off a burning stand and lights one
+            // that is not for 5 seconds (`igniteForSeconds(5)`).
+            for _ in 0..fires {
+                if self.health <= 0.5
+                    || self.invisible
+                    || self.marker
+                    || invulnerable(world, "minecraft:in_fire")
+                {
+                    break;
+                }
+                if self.fire_ticks > 0 {
                     self.health -= 0.15;
                     hit_by = Some("minecraft:in_fire");
+                } else {
+                    self.fire_ticks = self.fire_ticks.max(100);
                 }
-            } else {
-                self.fire_ticks = 100;
             }
+        }
+        // LAVA_IGNITE after FIRE_IGNITE (`InsideBlockEffectType` order).
+        if lava {
+            self.fire_ticks = self.fire_ticks.max(300);
         }
         // Dead: the damage type that ran its health out, which vanilla's
         // `brokenByAnything` receives as the `DamageSource`.
@@ -3318,6 +3422,7 @@ mod world_border_tests {
                 fall_distance: 0.0,
                 rotation: [0.0, 0.0],
                 join: Default::default(),
+                section_order: 0,
                 no_gravity: false,
                 id: 2,
                 position: Vec3::new(24.0, 4.0, 20.5),
@@ -4704,6 +4809,7 @@ mod orb_underwater_tests {
                     fall_distance: 0.0,
                     rotation: [0.0, 0.0],
                     join: Default::default(),
+                    section_order: 0,
                     no_gravity: false,
                     id: 1,
                     position: Vec3::ZERO,
@@ -4742,6 +4848,7 @@ mod render_light_tests {
             fall_distance: 0.0,
             rotation: [0.0, 0.0],
             join: Default::default(),
+            section_order: 0,
             no_gravity: false,
             id: 1,
             position: Vec3::new(0.5, y, 0.5),
@@ -4912,14 +5019,18 @@ mod dropped_item_light_tests {
         assert_eq!(burning.render_light(light(0, 0)), ((15 * 16) << 8) as u32);
     }
 }
-crate::impl_joined!(
-    ItemEntity,
-    ExperienceOrb,
-    ArmorStand,
-    Painting,
-    Cushion,
-    ItemFrame
-);
+impl crate::join_seq::Joined for ExperienceOrb {
+    fn join_seq(&self) -> crate::join_seq::JoinSeq {
+        self.join
+    }
+
+    fn set_join_seq(&mut self, join: crate::join_seq::JoinSeq) {
+        self.join = join;
+        self.enter_section();
+    }
+}
+
+crate::impl_joined!(ItemEntity, ArmorStand, Painting, Cushion, ItemFrame);
 horizon_mod_runtime::impl_attachment_lifetime!(
     ItemEntity,
     ExperienceOrb,
@@ -4963,6 +5074,7 @@ mod orb_lava_tests {
             fall_distance: 0.0,
             rotation: [0.0, 0.0],
             join: Default::default(),
+            section_order: 0,
             no_gravity: false,
             id: 1,
             position: at,
@@ -5095,9 +5207,44 @@ mod orb_lava_tests {
         });
     }
 
+    /// An `Invulnerable` orb refuses its burn too (`ExperienceOrb.hurtServer`'s
+    /// `isInvulnerableToBase`): the 20th tick asks the hook for `on_fire`, and a
+    /// refusal keeps the health while the fire burns on.
     #[test]
     #[ignore = "daily"]
-    fn an_invulnerable_orb_keeps_its_health_but_still_emits_lava_sound() {
+    fn an_invulnerable_orb_keeps_its_health_on_fire() {
+        with_fixture(|world, facts, collision, fluids, _| {
+            for refuses in [true, false] {
+                let mut orb = sample_orb(Vec3::new(20.5, 30.0, 20.5), 5);
+                orb.fire_ticks = 20;
+                let mut asked = Vec::new();
+                orb.tick_among_with_hook(
+                    world,
+                    facts,
+                    collision,
+                    None,
+                    true,
+                    &mut || 0.0,
+                    None,
+                    fluids,
+                    crate::test_resources::server_loop_context(),
+                    &mut |_, _| {},
+                    &[],
+                    &mut |_, damage| {
+                        asked.push(damage.to_string());
+                        refuses
+                    },
+                );
+                assert_eq!(asked, ["minecraft:on_fire"]);
+                assert_eq!(orb.health, if refuses { 5 } else { 4 });
+                assert_eq!(orb.fire_ticks, 19);
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn an_invulnerable_orb_keeps_its_health_and_makes_no_lava_sound() {
         with_fixture(|world, facts, collision, fluids, assets| {
             let lava = assets.registry.default_state("minecraft:lava").unwrap();
             world.set(20, 4, 20, lava).unwrap();
@@ -5117,7 +5264,8 @@ mod orb_lava_tests {
                     crate::test_resources::server_loop_context(),
                     &mut |_, _| sounds += 1,
                     &[],
-                    &mut |_| {
+                    &mut |_, damage| {
+                        assert_eq!(damage, "minecraft:lava");
                         calls += 1;
                         true
                     },
@@ -5126,7 +5274,9 @@ mod orb_lava_tests {
             );
             assert_eq!(orb.health, 5);
             assert_eq!(calls, 1);
-            assert_eq!(sounds, 1);
+            // Entity.lavaHurt plays the burn (and draws its pitch) only for a
+            // hurt hurtServer took.
+            assert_eq!(sounds, 0);
         });
     }
 

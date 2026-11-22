@@ -13,7 +13,7 @@ use horizon_shader_api::{check::CheckedStage, stages::GROUP};
 use super::displace::{Displacement, MAX_SECTIONS};
 use super::external::{DisplacementPrepare, Near, OpaqueCopy, TerrainLayers};
 use super::native_post::kept::StageReads;
-use super::native_post::trace::{TerrainTrace, Traced};
+use super::native_post::trace::{TerrainTrace, TraceShape, Traced};
 use super::native_post::{NativeFrame, NativePost, present_constants};
 use super::wgsl_prefix::{TERRAIN, prefixed, section};
 
@@ -138,7 +138,7 @@ fn horizon_material_out(pos: vec3<f32>, uv: vec2<f32>, layer: u32, color: vec4<f
     @location(0) position: vec3<f32>, @location(1) uv: vec2<u32>,
     @location(2) layer: u32, @location(3) color: vec4<f32>, @location(4) light: vec2<u32>
 ) -> HorizonMaterialOut {
-    let origin = horizon_terrain_slot_origins[horizon_terrain_block_slots[vertex >> 8u]];
+    let origin = horizon_terrain_slot_origins[horizon_terrain_block_slots[vertex >> 6u]];
     return horizon_material_vertex(position, horizon_terrain_terrain_uv(uv, origin.w), layer,
         color, light, origin, vertex, vertex & 3u);
 }
@@ -229,6 +229,16 @@ struct HorizonMaterialSolid {
     // Its four floats' bits (`SURFACE_FORMAT` is an integer format).
     @location(1) surface: vec4<u32>,
 }
+struct HorizonMaterialMsaa {
+    @location(0) color: vec4<f32>,
+    @location(1) surface: vec4<u32>,
+    @builtin(sample_mask) coverage: u32,
+}
+var<private> horizon_material_coverage: u32;
+@fragment fn horizon_material_fs_msaa(in: HorizonMaterialOut) -> HorizonMaterialMsaa {
+    let solid = horizon_material_solid_sampled(in, true);
+    return HorizonMaterialMsaa(solid.color, solid.surface, horizon_material_coverage);
+}
 @fragment fn horizon_material_fs_solid(in: HorizonMaterialOut) -> HorizonMaterialSolid {
     // `[displacement]`'s grid draws these pixels.
     if length(in.base) < horizon_displace_distance - 0.05 && horizon_displaced_layer(in.layer) {
@@ -237,9 +247,19 @@ struct HorizonMaterialSolid {
     return horizon_material_solid(in);
 }
 fn horizon_material_solid(in: HorizonMaterialOut) -> HorizonMaterialSolid {
+    return horizon_material_solid_sampled(in, false);
+}
+// Multisampled, the cutout leaves the samples it covers (`horizon_material_coverage`) instead
+// of discarding.
+fn horizon_material_solid_sampled(in: HorizonMaterialOut, multisampled: bool) -> HorizonMaterialSolid {
     let color = horizon_material_faded(in, horizon_material_color(in, false));
     // Bit 15 of the layer marks opaque leaves (forceOpaque): no alpha cutout.
-    if !horizon_material_covers(in, color, 0.5) && (in.layer & 0x8000u) == 0u { discard; }
+    if multisampled {
+        // The alpha `horizon_material_covers` cuts on, as the samples it covers.
+        let alpha = select(horizon_terrain_sprite(in.uv, in.layer & 0x7fffu).a, color.a,
+            horizon_material_coverage_pack);
+        horizon_material_coverage = horizon_terrain_cutout_coverage(alpha, (in.layer & 0x8000u) != 0u);
+    } else if !horizon_material_covers(in, color, 0.5) && (in.layer & 0x8000u) == 0u { discard; }
     if horizon_surface.w == 0.0 {
         set_surface(horizon_material_face_normal, 0.0, 0.0);
     }
@@ -280,7 +300,7 @@ fn horizon_look_ao(look: vec2<u32>, corner: u32) -> f32 {
 alias HorizonCorner = horizon_terrain_CornerInputs;
 // A flat draw's origin of the corner: its block's slot's.
 fn horizon_corner_origin(s: horizon_terrain_SectionCorner) -> vec4<f32> {
-    return horizon_terrain_slot_origins[horizon_terrain_block_slots[s.slot >> 8u]];
+    return horizon_terrain_slot_origins[horizon_terrain_block_slots[s.slot >> 6u]];
 }
 ";
 
@@ -329,6 +349,9 @@ pub struct TerrainShape<'a> {
     /// The world target's colour format, and whether it holds linear light (`linear_blend`).
     pub format: wgpu::TextureFormat,
     pub linear: bool,
+    /// The renderer was made with 4x MSAA on (`msaa::Msaa::built`): the pack's solid terrain
+    /// gets four-sample pipelines too.
+    pub msaa: bool,
     /// The pack's tags of each tagged sprite layer, as `(layer, bits)`
     /// (`Manifest::sprite_tags`).
     pub sprite_tags: &'a [(u32, u32)],
@@ -354,6 +377,9 @@ pub struct MaterialPipelines {
     pub solid: wgpu::RenderPipeline,
     pub translucent: wgpu::RenderPipeline,
     pub flat: Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>,
+    /// `solid` and the flat solid pipeline at four samples, for 4x MSAA; none with
+    /// `[displacement]`, which keeps its single-sample path.
+    pub msaa: Option<(wgpu::RenderPipeline, Option<wgpu::RenderPipeline>)>,
     /// `[displacement]`'s grid of the solid terrain near the camera (gfx/displace.rs).
     pub displaced: Option<wgpu::RenderPipeline>,
 }
@@ -400,6 +426,9 @@ pub(super) fn terrain_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
     ];
     entries.extend((5..=11).map(|binding| entry(binding, sprite_array)));
     entries.push(entry(12, texture(wgpu::TextureViewDimension::D2)));
+    // The arrays past the first eight, where a pack needs them (gfx.rs `MORE_SPRITE_ARRAYS`).
+    let more = super::bound_sprite_arrays().saturating_sub(super::SPRITE_ARRAYS);
+    entries.extend((0..more).map(|i| entry(super::MORE_ARRAYS_BINDING + i, sprite_array)));
     entries
 }
 
@@ -637,17 +666,21 @@ impl NativeMaterial {
         {
             return Err(format!("{}: {why}", stage.file));
         }
-        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
         let built = build(
             &stage.source,
             kept.as_ref().map_or(&frame.layout, |k| &k.layout),
         );
-        if let Some(e) = pollster::block_on(scope.pop()) {
+        let internal = pollster::block_on(internal.pop());
+        if let Some(e) = internal.or(pollster::block_on(validation.pop())) {
             return Err(format!("{}: {e}", stage.file));
         }
         let pipelines = built?;
         let scene = stage.scene_source.as_deref().and_then(|source| {
-            let terrain = (shape, (stage.traces_entities(), stage.traces_looks()));
+            let traced = TraceShape::of(shape, stage.traces_entities(), None);
+            let reads = (stage.traces_looks(), stage.traces_lights());
+            let terrain = (&terrain_entries()[..], &traced, reads);
             let own = kept.as_ref().map_or(&[][..], |k| &k.entries);
             TerrainTrace::new(device, frame, terrain, own, |group| build(source, group))
         });
@@ -780,7 +813,8 @@ impl NativeMaterial {
                         vertex: &str,
                         buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
                         fragment: &str,
-                        blend: Option<wgpu::BlendState>| {
+                        blend: Option<wgpu::BlendState>,
+                        samples: u32| {
             let mut constants = constants.clone();
             if staged {
                 let translucent = fragment == "horizon_material_fs_translucent";
@@ -825,7 +859,7 @@ impl NativeMaterial {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: Default::default(),
+                multisample: super::msaa::state(samples),
                 fragment: Some(wgpu::FragmentState {
                     module: &module,
                     entry_point: Some(fragment),
@@ -843,49 +877,83 @@ impl NativeMaterial {
         let blend = Some(wgpu::BlendState::ALPHA_BLENDING);
         let instanced = layout(None);
         let buffers = [Some(vertices.clone()), Some(instances.clone())];
-        let fs_solid = "horizon_material_fs_solid";
         // With flat draws' page groups the solid draws read the page themselves
         // (`SECTION_CORNER`), in either layout of the solid quads, as the renderer's do.
         let paged = shape.flat.map(|group| layout(Some(group)));
-        let solid = match &paged {
-            Some(paged) => {
-                let origins = [None, Some(instances)];
-                pipeline(
-                    paged,
-                    "horizon_material_vs_section",
-                    &origins,
-                    fs_solid,
-                    None,
-                )
-            }
-            None => pipeline(&instanced, "horizon_material_vs", &buffers, fs_solid, None),
+        let origins = [None, Some(instances)];
+        // The solid draws' pipeline, single-sampled or 4x MSAA's (`horizon_material_fs_msaa`).
+        let solid_with = |fragment: &str, samples: u32| match &paged {
+            Some(paged) => pipeline(
+                paged,
+                "horizon_material_vs_section",
+                &origins,
+                fragment,
+                None,
+                samples,
+            ),
+            None => pipeline(
+                &instanced,
+                "horizon_material_vs",
+                &buffers,
+                fragment,
+                None,
+                samples,
+            ),
         };
+        let flat_with = |layout: &wgpu::PipelineLayout, fragment: &str, samples: u32| {
+            pipeline(
+                layout,
+                "horizon_material_vs_section_flat",
+                &[],
+                fragment,
+                None,
+                samples,
+            )
+        };
+        let solid = solid_with("horizon_material_fs_solid", 1);
         let translucent = pipeline(
             &instanced,
             "horizon_material_vs",
             &buffers,
             "horizon_material_fs_translucent",
             blend,
+            1,
         );
-        let flat = paged.map(|layout| {
+        let flat = paged.as_ref().map(|layout| {
             let buffers = [Some(vertices.clone())];
             (
+                flat_with(layout, "horizon_material_fs_solid", 1),
                 pipeline(
-                    &layout,
-                    "horizon_material_vs_section_flat",
-                    &[],
-                    fs_solid,
-                    None,
-                ),
-                pipeline(
-                    &layout,
+                    layout,
                     "horizon_material_vs_flat",
                     &buffers,
                     "horizon_material_fs_translucent",
                     blend,
+                    1,
                 ),
             )
         });
+        // A driver that refuses them costs the pack 4x MSAA, not its load.
+        let msaa_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let msaa_internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+        let msaa = (shape.msaa && displaced.is_none()).then(|| {
+            let solid = solid_with("horizon_material_fs_msaa", super::msaa::SAMPLES);
+            let flat = paged
+                .as_ref()
+                .map(|layout| flat_with(layout, "horizon_material_fs_msaa", super::msaa::SAMPLES));
+            (solid, flat)
+        });
+        let msaa_internal = pollster::block_on(msaa_internal.pop());
+        let msaa = match msaa_internal.or(pollster::block_on(msaa_scope.pop())) {
+            Some(e) => {
+                log::warn!(
+                    "{}: no 4x MSAA pipelines, it draws single-sampled ({e})",
+                    stage.file
+                );
+                None
+            }
+            None => msaa,
+        };
         // The grid's corners come from its group 1, not from vertex buffers.
         let displaced = displaced.map(|d| {
             pipeline(
@@ -894,12 +962,14 @@ impl NativeMaterial {
                 &[],
                 "horizon_material_fs_displaced",
                 None,
+                1,
             )
         });
         Ok(MaterialPipelines {
             solid,
             translucent,
             flat,
+            msaa,
             displaced,
         })
     }
@@ -963,6 +1033,7 @@ impl super::native_pack::NativePack {
             translucent: &pipelines.translucent,
             flat: pipelines.flat.as_ref(),
             displaced: (pipelines.displaced.as_ref()).filter(|_| self.displacement.is_some()),
+            msaa: pipelines.msaa.as_ref(),
             surface: m.writes_surface.then_some(&self.frame.surface_view),
             reads_opaque: self.frame.reads_opaque,
             frame,
@@ -1291,7 +1362,8 @@ mod tests {
             .entry_points
             .iter()
             .filter(|e| e.name.starts_with("horizon_material_fs"));
-        assert_eq!(fragments.count(), 3);
+        // Solid, 4x MSAA's solid, translucent and the displaced grid.
+        assert_eq!(fragments.count(), 4);
     }
 
     /// A pack's own text that happens to hold a `lit_tint` mark's spelling keeps it.
@@ -1365,7 +1437,9 @@ mod tests {
                         .filter(|i| i.entry.starts_with("horizon_material_"))
                         .map(|i| i.total())
                         .collect();
-                    assert_eq!(counts.len(), 6 + 2 * usize::from(displaced));
+                    // Four vertex entries, the solid, translucent and 4x MSAA fragments, and
+                    // the displaced grid's two.
+                    assert_eq!(counts.len(), 7 + 2 * usize::from(displaced));
                     (counts.into_iter().max().unwrap(), text)
                 };
                 let case = format!("vertex {vertex}, displaced {displaced}");

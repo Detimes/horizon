@@ -10,6 +10,7 @@
 //! other `GateBehavior`s shuffle with a random of their own, seeded with
 //! `Brain::shuffle_seed` when the brain is built.
 mod reputation;
+mod restock;
 pub use reputation::murder_witnesses;
 use reputation::targetable;
 
@@ -23,6 +24,7 @@ use horizon_core::{
     geometry::Vec3,
     random::{LegacyRandom, LevelRandom, RandomSource},
 };
+pub(super) use restock::restock_if_due;
 
 /// `MemorySlot.NEVER_EXPIRE`.
 pub(super) const NEVER: i64 = i64::MAX;
@@ -1679,7 +1681,7 @@ impl B {
                         pos: site,
                     });
                 }
-                restock_if_due(m, cx.w);
+                restock_if_due(m, cx.w, cx.events);
                 true
             }
             B::HarvestFarmland {
@@ -3341,18 +3343,6 @@ fn play_work_sound(m: &mut Mob, cx: &mut Bx) {
         }
     }
 }
-/// `WorkAtPoi.start`'s restock.
-pub(super) fn restock_if_due(m: &mut Mob, w: &MobWorld) {
-    if w.professions.state_index(&m.extra.profession).is_none() {
-        return;
-    }
-    let day = w.day_time.div_euclid(24000);
-    if let Some(t) = m.extra.trade.as_mut()
-        && t.should_restock(w.game_time, day)
-    {
-        t.restock(w.game_time);
-    }
-}
 #[cfg(test)]
 #[path = "villager_farming_tests.rs"]
 mod farming_tests;
@@ -3384,6 +3374,7 @@ fn farmland(w: &MobWorld, p: [i32; 3]) -> bool {
         .has_class("FarmlandBlock")
 }
 /// `HarvestFarmland.validPos`: a ripe CropBlock or air above farmland.
+#[horizon_mod_api_macros::replaceable]
 fn farmland_valid(w: &MobWorld, p: [i32; 3]) -> bool {
     super::villager::ripe_crop(w, p)
         || w.facts.is_air(w.world.block(p[0], p[1], p[2])) && farmland(w, [p[0], p[1] - 1, p[2]])
@@ -3410,6 +3401,7 @@ fn seed_crop(w: &MobWorld, item: &str) -> Option<horizon_world::registry::BlockS
 }
 /// `HarvestFarmland.tick` at the farmland: harvest a ripe crop, sow bare
 /// farmland, and move on from a growing crop.
+#[horizon_mod_api_macros::replaceable]
 fn harvest_tick(
     m: &mut Mob,
     cx: &mut Bx,
