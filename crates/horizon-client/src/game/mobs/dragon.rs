@@ -1764,7 +1764,7 @@ impl Game<'_> {
                     return false;
                 };
                 let level = super::entity::damage_level_of!(self, scoped);
-                return matches!(
+                let landed = matches!(
                     d.hurt_from(
                         level,
                         BODY,
@@ -1776,6 +1776,9 @@ impl Game<'_> {
                     ),
                     Hurt::Landed { .. }
                 );
+                // `hurt_from` only queues the phases the hit asked for.
+                self.settle_dragon_phases();
+                return landed;
             }
             return false;
         }
