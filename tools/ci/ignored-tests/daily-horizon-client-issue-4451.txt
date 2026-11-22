@@ -648,6 +648,7 @@ horizon-client game::fishing::fishing_catch_tests::fishing_catch_empty_keeps_dam
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_invalid_drops_keep_the_earlier_listeners_outputs lib daily child-process
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_noop_listener_preserves_randomness lib daily resources
 horizon-client game::fishing::fishing_catch_tests::fishing_catch_replaces_rolled_stack lib daily resources
+horizon-client game::fishing::fishing_catch_tests::player_fish_reports_the_hooked_entity_on_a_reel_in lib daily resources
 horizon-client game::fishing::incoming_block_hit_tests::a_bobber_powers_a_target_block_and_counts_the_hit lib daily resources
 horizon-client game::fishing::incoming_block_hit_tests::a_bobber_rings_a_floor_bell_on_its_side lib daily resources
 horizon-client game::focused_text_field::tests::a_mod_edits_the_focused_box_before_each_character lib daily resources
@@ -1476,6 +1477,7 @@ horizon-client game::native_hooks::death_source_tests::later_cancelled_player_re
 horizon-client game::native_hooks::death_source_tests::player_bow_death_retains_the_incoming_source_and_full_weapon lib daily resources
 horizon-client game::native_hooks::death_source_tests::skeleton_arrow_death_credits_the_skeleton_not_the_player lib daily resources
 horizon-client game::native_hooks::death_source_tests::zombie_ai_melee_armor_hurt_retains_the_real_source lib daily resources
+horizon-client game::native_hooks::detail_hook_tests::the_cancel_of_the_join_reason_hook_comes_back lib daily resources
 horizon-client game::native_hooks::enchanted_block_loot::tests::a_listener_sets_the_level_a_block_table_reads lib daily resources
 horizon-client game::native_hooks::entity_inside::entity_inside_tests::landing_writes_apply_at_the_batch_end lib daily resources
 horizon-client game::native_hooks::entity_inside::sweep_tests::a_killing_write_stops_the_flush lib daily resources

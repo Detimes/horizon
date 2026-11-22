@@ -2086,6 +2086,18 @@ impl Game<'_> {
     ) {
         self.fire_player_fish(player, name, state, cancel);
     }
+    /// `native_player_fish` with `caught`, the entity id the bobber holds on a state-4 reel-in
+    /// (`None` otherwise). Heard right after it, with the same `cancel`.
+    pub(in crate::game) fn native_player_fish_detail(
+        &mut self,
+        player: u128,
+        name: &str,
+        state: i32,
+        caught: Option<u32>,
+        cancel: &mut bool,
+    ) {
+        self.fire_player_fish_detail(player, name, state, caught, cancel);
+    }
     /// A sculk sensor or shrieker received a vibration for `event` at `pos`.
     /// Set `cancel` to suppress its response. Server-side.
     pub(in crate::game) fn native_block_receive_game(
@@ -3907,6 +3919,14 @@ impl Game<'_> {
         canceled: &mut bool,
     ) {
         self.fire_entity_join_level(dimension, entity, kind, pos, loaded_from_disk, canceled);
+    }
+    /// `native_entity_join_level` with `reason`, the spawn reason of a mob a spawn site finalized
+    /// (`None` for every other kind). Heard right after it, with the same `canceled`.
+    pub(in crate::game) fn native_entity_join_level_reason(
+        &mut self,
+        call: mod_api::__private::EntityJoinLevelReasonCall<'_>,
+    ) {
+        self.fire_entity_join_level_reason(call);
     }
     /// An entity mounts or dismounts a vehicle (NeoForge's `EntityMountEvent`, posted from
     /// `Entity.startRiding` and `removeVehicle`): `entity` of type `kind` (`minecraft:player`,
