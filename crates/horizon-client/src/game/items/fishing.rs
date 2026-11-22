@@ -489,7 +489,9 @@ impl Game<'_> {
         let at = [p.position.x, p.position.y, p.position.z];
         if self.hook.is_some() {
             let damage = self.retrieve_hook(stack);
-            self.damage_held(damage);
+            // FishingRodItem.hurtAndBreak(..., hand.asEquipmentSlot()): the
+            // rod in the acting hand breaks, not necessarily the main hand.
+            self.damage_held_in_slot(damage, self.acting_hand_slot());
             let pitch = 0.4 / (self.world.random.next_float() * 0.4 + 0.8);
             self.audio.play(
                 "minecraft:entity.fishing_bobber.retrieve",
@@ -963,7 +965,7 @@ impl Game<'_> {
         // The players a server serves are sent them too.
         self.lan_send_particles(super::lan_particles::QueuedParticle {
             dimension: self.dim.id(),
-            options,
+            options: options.into(),
             state: None,
             at,
             spread,
