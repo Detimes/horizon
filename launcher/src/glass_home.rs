@@ -388,7 +388,7 @@ impl Launcher {
         let running = self.client.is_some();
         let follows = self
             .selected_instance()
-            .is_some_and(|i| i.version.is_none());
+            .is_some_and(|i| i.follows_horizon());
         let stable = self
             .selected_instance()
             .is_some_and(|i| i.channel == horizon_launcher::instances::Channel::Stable);
@@ -454,7 +454,10 @@ impl Launcher {
                 // This instance's mods building (Build and play): the build's overall progress,
                 // the same figure as its card.
                 _ if building => Some((
-                    tr("Building mods").into(),
+                    match self.native_stopping {
+                        true => tr("Stopping the build…").into(),
+                        false => tr("Building mods").into(),
+                    },
                     self.native_progress
                         .map(|p| build_mode::percent(Some(p)) as f32 / 100.),
                 )),
@@ -534,8 +537,10 @@ impl Launcher {
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     cx.stop_propagation();
                     if building {
-                        this.play_after_build = None;
-                        native_mods::cancel();
+                        // A second press while it stops would only stop it again.
+                        if !this.native_stopping {
+                            this.stop_native_build();
+                        }
                     } else {
                         this.stop_pre_launch();
                     }

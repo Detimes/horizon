@@ -74,7 +74,7 @@ pub(super) struct CodeSwitches {
 
 #[derive(Clone, Default)]
 pub(super) struct ModsState {
-    pub(super) active_condition_root: Option<Arc<()>>,
+    pub(super) active_condition_root: Option<Arc<horizon_client::mod_content::RootHold>>,
     pub(super) load_condition_candidate: Option<horizon_world::conditions::LoadConditions>,
     pub(super) load_conditions:
         Arc<std::sync::OnceLock<Result<crate::game::load_conditions::ConditionTable, String>>>,
@@ -1021,6 +1021,13 @@ pub(super) fn content_root(
             .iter()
             .flat_map(|m| m.content.namespaces.iter().cloned())
             .collect(),
+    );
+    super::code_block_owners::stage(
+        overlay.root.prepared(),
+        overlay
+            .mods
+            .iter()
+            .map(|m| (m.id.as_str(), &m.content.namespaces[..])),
     );
     register_mob_effects(&overlay.mods);
     resolve_particle_providers(overlay.root.source())?;

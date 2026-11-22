@@ -67,6 +67,8 @@ impl Renderer {
             capture_copies,
             // The arenas' pages hold their buffers of looks: their state goes with them.
             terrain_looks,
+            // The sections keep their copies for the scene they go with.
+            ray_looks,
             look_groups,
             looks_layout,
         );
@@ -76,6 +78,9 @@ impl Renderer {
         crate::mesher::packed::pack_quads(self.packed_quads);
         if let (Some(flat), Some(old)) = (&mut self.flat, &mut from.flat) {
             flat.take_tables(old);
+        }
+        if let (Some(mesh), Some(old)) = (&mut self.mesh_terrain, &mut from.mesh_terrain) {
+            mesh.take_store(&self.device, old);
         }
         true
     }

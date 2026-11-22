@@ -26,7 +26,10 @@ impl Game<'_> {
         match action {
             // A splitscreen player's title never ends the process (P1's does).
             Action::Quit if self.options.split_guest => {}
-            Action::Quit => event_loop.exit(),
+            Action::Quit => {
+                self.begin_closing_save(true)?;
+                event_loop.set_control_flow(ControlFlow::Poll);
+            }
             Action::Options => self.open_options(true),
             Action::Accessibility => {
                 self.open_options_at(true, horizon_client::options_ui::Page::Accessibility)
@@ -290,6 +293,7 @@ impl Game<'_> {
     }
 
     pub(super) fn close_world(&mut self) -> Result<()> {
+        self.begin_export_drain("stopped");
         self.destroying.clear();
         // Pause-menu and death-screen exits use the normal world-close action.
         // A standalone replay owns a synthetic remote session, so it must go
