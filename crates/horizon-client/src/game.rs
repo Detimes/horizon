@@ -1624,7 +1624,7 @@ struct Game<'a> {
     ender_items: Vec<Option<ItemStack>>,
     ender_open: Option<(i32, i32, i32)>,
     /// The guest who last opened each brewing stand, for `brewing_owner_results`.
-    brew_owners: std::collections::HashMap<(i32, i32, i32), u128>,
+    brew_owners: std::collections::HashMap<(Dim, (i32, i32, i32)), u128>,
     /// Block entity data of broken blocks waiting for their dropped item.
     pending: spill::Pending,
     /// Item entities spawned and block entities removed while the block

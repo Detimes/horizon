@@ -22,6 +22,28 @@ impl Game<'_> {
             self.after_commit(crate::game::transactions::After::GivePickup(uuid));
         }
     }
+    /// `give_acting_stack` for a refunded canceled toss: what does not fit is spawned at `at`
+    /// without asking `item_toss` again, so a listener that cancels cannot loop.
+    pub(in crate::game) fn give_acting_stack_untossed(
+        &mut self,
+        stack: ItemStack,
+        at: [f64; 3],
+        v: [f64; 3],
+        owner: Option<[i32; 4]>,
+    ) {
+        let uuid = self.native_acting_id();
+        self.journal_player(uuid);
+        match self.add_stack_to_inventory(stack) {
+            Some(rest) => {
+                self.spawn_item(rest, at, v, 0);
+                if let Some(item) = self.just_spawned_item() {
+                    item.thrower = None;
+                    item.target = owner;
+                }
+            }
+            None => self.after_commit(crate::game::transactions::After::GivePickup(uuid)),
+        }
+    }
     pub(in crate::game) fn give_pickup(&mut self) {
         let p = self
             .target_position(Target::Player)

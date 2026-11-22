@@ -536,24 +536,14 @@ impl ItemStack {
         }
     }
     /// Dye the stack's colour (`minecraft:dyed_color`, Bukkit's `LeatherArmorMeta.setColor`): `Some(rgb)`
-    /// sets the 24-bit colour (bits above 24 are dropped) and keeps the component's other keys;
+    /// sets the 24-bit colour (bits above 24 are dropped) as the component's plain int;
     /// `None` returns the stack to the item's own colour, recording a removal when the prototype sets it.
     pub fn set_leather_color(&mut self, host: &dyn crate::Host, rgb: Option<u32>) {
         const ID: &str = "minecraft:dyed_color";
         match rgb {
             Some(rgb) => {
-                let own = self
-                    .components()
-                    .and_then(|c| c.as_nbt().get(&JavaString::from(ID)).cloned());
-                let mut color = match own {
-                    Some(Tag::Compound(color)) => color,
-                    _ => Compound::new(),
-                };
-                color.insert(
-                    JavaString::from("rgb"),
-                    Tag::Int((rgb & 0x00FF_FFFF) as i32),
-                );
-                let _ = self.set_component_value(ID, Tag::Compound(color));
+                // The current codec: a bare int (`horizon-items` reads it with `rgb_color_from_tag`).
+                let _ = self.set_component_value(ID, Tag::Int((rgb & 0x00FF_FFFF) as i32));
             }
             None => {
                 let default = host.item_default_component(self.item, ID);
@@ -838,7 +828,9 @@ mod tests {
             );
         }
         assert_eq!(
-            ItemStack::from_nbt(&Shelf, &chain).unwrap().nesting_depth(&Shelf),
+            ItemStack::from_nbt(&Shelf, &chain)
+                .unwrap()
+                .nesting_depth(&Shelf),
             64
         );
     }
@@ -1008,7 +1000,13 @@ mod tests {
         stack.set_leather_color(&TextNbt, Some(0xFF_AA_00_12));
         assert_eq!(
             patch(&stack, "minecraft:dyed_color"),
-            Some(Tag::compound([("rgb", Tag::Int(0x00AA_0012))]))
+            Some(Tag::Int(0x00AA_0012))
+        );
+        // The engine's item data reads the component with this decoder.
+        let stored = patch(&stack, "minecraft:dyed_color").unwrap();
+        assert_eq!(
+            horizon_core::color::rgb_color_from_tag(&stored),
+            Some(0x00AA_0012)
         );
         stack.set_leather_color(&TextNbt, None);
         assert!(stack.components().is_none(), "no prototype: cleared");
@@ -1021,9 +1019,10 @@ mod tests {
         let mut stack = ItemStack::of(ItemKey(0));
         stack.set_tooltip_hidden(&Dressed, true);
         assert_eq!(
-            stack
-                .components()
-                .and_then(|c| c.as_nbt().get(&JavaString::from("minecraft:tooltip_display")).cloned()),
+            stack.components().and_then(|c| c
+                .as_nbt()
+                .get(&JavaString::from("minecraft:tooltip_display"))
+                .cloned()),
             Some(Tag::compound([
                 (
                     "hidden_components",

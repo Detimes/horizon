@@ -1499,6 +1499,7 @@ horizon-client game::native_hooks::incoming_tests::held_durability_retains_the_s
 horizon-client game::native_hooks::ingredient_test::enumeration_tests::ingredient_keys_are_exact_for_tags_shapes_and_refuse_component_predicates lib daily resources
 horizon-client game::native_hooks::item_fall_on_tests::a_dropped_item_lands_on_a_fall_on_part lib daily resources
 horizon-client game::native_hooks::item_fall_on_tests::item_fall_on_returns_progressed_level_loan_after_part_panic lib daily resources
+horizon-client game::native_hooks::item_toss::item_toss_return_tests::a_refund_into_a_full_inventory_does_not_toss_again lib daily resources
 horizon-client game::native_hooks::item_toss::item_toss_return_tests::a_canceled_toss_that_asked_gets_its_stack_back_and_no_item lib daily resources
 horizon-client game::native_hooks::item_toss::item_toss_tests::a_deferred_join_veto_announces_no_item_spawn lib daily resources
 horizon-client game::native_hooks::item_toss::item_toss_tests::a_listener_spawn_does_not_announce_the_toss_it_then_cancels lib daily resources

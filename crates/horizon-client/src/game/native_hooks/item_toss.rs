@@ -43,12 +43,19 @@ impl Game<'_> {
             self.native_item_toss(player, item, &mut canceled);
             self.native_lifecycle.held_joins.pop();
             let asked_back = self.native_lifecycle.return_on_cancel.contains(&id);
-            self.native_lifecycle.return_on_cancel.retain(|&held| held != id);
+            self.native_lifecycle
+                .return_on_cancel
+                .retain(|&held| held != id);
             if canceled {
                 // A canceled toss never enters the world; what was thrown is gone, unless the
                 // listener asked for it back (`item_entity_return_on_cancel`).
                 let back = asked_back
-                    .then(|| self.dropped.iter().find(|d| d.id == id).map(|d| d.stack.clone()))
+                    .then(|| {
+                        self.dropped
+                            .iter()
+                            .find(|d| d.id == id)
+                            .map(|d| d.stack.clone())
+                    })
                     .flatten();
                 if let Some(at) = self.dropped.iter().rposition(|d| d.id == id) {
                     self.remove_dropped(at);
@@ -57,7 +64,7 @@ impl Game<'_> {
                 // What the listeners spawned waited behind the toss.
                 self.native_joins_flush(false, 0);
                 if let Some(stack) = back {
-                    self.give_acting_stack(stack, thrower);
+                    self.give_acting_stack_untossed(stack, at, v, thrower);
                 }
                 return None;
             }
@@ -278,8 +285,57 @@ mod item_toss_return_tests {
                 );
                 let before = game.dropped.len();
                 let stone = ItemStack::new("minecraft:stone", 1);
-                assert!(game.throw_from_eyes(stone, [0.5, 65.0, 0.5], false, true).is_none());
+                assert!(
+                    game.throw_from_eyes(stone, [0.5, 65.0, 0.5], false, true)
+                        .is_none()
+                );
                 assert_eq!(game.dropped.len(), before, "no item joins the world");
+            });
+        });
+    }
+
+    /// Counts tosses; asks for the stack back and cancels each.
+    struct CountingReturn(std::sync::Arc<std::sync::atomic::AtomicU32>);
+    #[mod_api::__subscriptions]
+    impl Hooks for CountingReturn {
+        fn item_toss(&self, host: &mut dyn ServerHost, event: &mut ItemTossEvent) -> Flow {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            assert!(event.item.return_on_cancel(host));
+            Flow::Cancel
+        }
+    }
+
+    /// With a full inventory the refund of a canceled toss is not tossed again: the listener
+    /// hears one toss and the overflow lands in the world as one item.
+    #[test]
+    #[ignore = "daily"]
+    fn a_refund_into_a_full_inventory_does_not_toss_again() {
+        let heard = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let mods = vec![ModEntry::new(
+            "toss_full_probe",
+            Box::new(CountingReturn(heard.clone())),
+        )];
+        with_mods(mods.into(), || {
+            crate::game::native_entity_refs::tests::with_game(|game| {
+                game.options.dedicated = Some(Vec::new());
+                game.player = Some(
+                    horizon_client::motion::PlayerMotion::new(
+                        game.motion,
+                        horizon_core::geometry::Vec3::ZERO,
+                    )
+                    .unwrap(),
+                );
+                for slot in game.inventory.iter_mut() {
+                    *slot = Some(ItemStack::new("minecraft:diamond", 64));
+                }
+                let before = game.dropped.len();
+                let stone = ItemStack::new("minecraft:stone", 1);
+                assert!(
+                    game.throw_from_eyes(stone, [0.5, 65.0, 0.5], false, true)
+                        .is_none()
+                );
+                assert_eq!(heard.load(std::sync::atomic::Ordering::SeqCst), 1);
+                assert_eq!(game.dropped.len(), before + 1, "the overflow lands once");
             });
         });
     }

@@ -86,7 +86,7 @@ impl Game<'_> {
             // BrewingStandBlock.useWithoutItem: BrewingStandMenu. The guest is who the brew is for.
             if let Some(guest) = self.lan.as_ref().and_then(|host| host.hub.guest(conn)) {
                 let uuid = guest.uuid;
-                self.brew_owners.insert(pos, uuid);
+                self.brew_owners.insert((self.dim, pos), uuid);
             }
             ("minecraft:brewing_stand", Slots::Block(pos))
         } else if let Some((other, right)) = self.chest_partner(pos) {

@@ -2398,6 +2398,8 @@ impl Game<'_> {
     ) -> horizon_client::Result<()> {
         let fuel = self.brewing_fuel_remainder(pos);
         let Some(BlockEntity::Brewing(b)) = self.world.block_entities.get_mut(&pos) else {
+            // A stand that is gone takes its opener with it.
+            self.brew_owners.remove(&(self.dim, pos));
             return Ok(());
         };
         let was_idle = b.brew_time <= 0;
@@ -2455,7 +2457,7 @@ impl Game<'_> {
         if out.brewed {
             self.native_brewing_complete(at);
             // The bottles of this brew (slots 0 to 2, empty ones left out) and the guest who opened the stand.
-            let owner = self.brew_owners.get(&pos).copied();
+            let owner = self.brew_owners.get(&(self.dim, pos)).copied();
             let results: Vec<_> = match self.world.block_entities.get(&pos) {
                 Some(BlockEntity::Brewing(b)) => b.items[..3]
                     .iter()
