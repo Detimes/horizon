@@ -67,6 +67,9 @@ pub(super) struct Trip {
     /// Through an End gateway, within the level: its exit, found or built
     /// on arrival.
     gateway: Option<GatewayJob>,
+    /// A server player's gateway trip: who, and where they stood, for the landing hook that follows the
+    /// exit's resolution (a cancel puts them back there).
+    gateway_hook: Option<(u128, String, [i32; 3], [f64; 3])>,
     /// A respawn at this point outside the Overworld, resolved through its
     /// block on arrival.
     respawn: Option<RespawnConfig>,
@@ -290,6 +293,7 @@ impl Game<'_> {
             hold: true,
             missing: None,
             left: None,
+            gateway_hook: None,
         });
     }
     /// A command hold follows the player where a mod sent them (`native_player_teleport` may
@@ -762,14 +766,6 @@ impl Game<'_> {
                 let (id, name) = (player.uuid, player.name.clone());
                 let mut cancel = false;
                 self.native_player_teleport_end_gateway(id, &name, g, &mut cancel);
-                let to = self.gateway_destination(g);
-                self.native_player_teleport_end_gateway_to(
-                    id,
-                    &name,
-                    g,
-                    [to.x, to.y, to.z],
-                    &mut cancel,
-                );
                 if cancel {
                     return;
                 }
@@ -1002,6 +998,7 @@ impl Game<'_> {
             placed: false,
             hold: false,
             left: Some(source),
+            gateway_hook: None,
         });
         if let Err(e) = self.enter_level(source) {
             log::error!("could not reopen {}: {e}", source.id());
@@ -1029,6 +1026,7 @@ impl Game<'_> {
             placed: false,
             hold: false,
             left: None,
+            gateway_hook: None,
         });
     }
 
@@ -1101,6 +1099,7 @@ impl Game<'_> {
             placed: false,
             hold: false,
             left: None,
+            gateway_hook: None,
         });
     }
 
@@ -1136,6 +1135,26 @@ impl Game<'_> {
         };
         let (job, destination) = self.gateway_job(gateway);
         let at = [destination.x, destination.y, destination.z];
+        let guest = self.lan.as_ref().map(|host| {
+            let g = &host.hub.guests[i];
+            (g.uuid, g.name.clone(), g.position)
+        });
+        // An exact exit needs no search: its landing is known now, before the teleport.
+        if let (GatewayJob::Known { exact: true, .. }, Some((id, name, _))) = (job, guest.as_ref())
+            && let Ok(Some(landing)) = self.resolve_gateway(job, destination)
+        {
+            let mut cancel = false;
+            self.native_player_teleport_end_gateway_to(
+                *id,
+                name,
+                gateway,
+                [landing.x, landing.y, landing.z],
+                &mut cancel,
+            );
+            if cancel {
+                return;
+            }
+        }
         // Relative.union(DELTA, ROTATION).
         if let Some(host) = self.lan.as_mut() {
             host.hub.teleport_keeping_motion(i, at);
@@ -1152,6 +1171,8 @@ impl Game<'_> {
             plan: None,
             vehicle: None,
             gateway: Some(job),
+            gateway_hook: guest
+                .map(|(id, name, from)| (id, name, gateway, [from[0], from[1], from[2]])),
             respawn: None,
             consume: false,
             world_spawn: false,
@@ -1284,7 +1305,26 @@ impl Game<'_> {
                 }
             } else if let Some(job) = trip.gateway {
                 match self.resolve_gateway(job, trip.target) {
-                    Ok(Some(at)) => (at, yaw),
+                    Ok(Some(at)) => {
+                        // The landing is resolved: the detail hook sees it, before the teleport.
+                        if let Some((id, name, entrance, from)) = trip.gateway_hook.take() {
+                            let mut cancel = false;
+                            self.native_player_teleport_end_gateway_to(
+                                id,
+                                &name,
+                                entrance,
+                                [at.x, at.y, at.z],
+                                &mut cancel,
+                            );
+                            if cancel {
+                                if let Some(host) = self.lan.as_mut() {
+                                    host.hub.teleport(i, Some(from));
+                                }
+                                continue;
+                            }
+                        }
+                        (at, yaw)
+                    }
                     // The exit search waits for a candidate chunk to load.
                     Ok(None) => {
                         self.server_trips.insert(k, trip);
@@ -1575,6 +1615,7 @@ impl Game<'_> {
                 // its chunks load can strand this trip and freeze its damage cooldown indefinitely.
                 hold: true,
                 left: Some(source),
+                gateway_hook: None,
             });
             if let Err(e) = self.enter_level(source) {
                 log::error!("could not reopen {}: {e}", source.id());

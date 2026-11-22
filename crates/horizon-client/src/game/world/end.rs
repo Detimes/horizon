@@ -1055,6 +1055,7 @@ impl Game<'_> {
 
     /// Where `gateway` leads, read without loading any chunk: the exit, or the search start
     /// ([`GatewayJob::destination`]). For the player's gateway hook, before the trip starts.
+    #[allow(dead_code)]
     pub(super) fn gateway_destination(&self, gateway: [i32; 3]) -> Vec3 {
         self.gateway_job_of(gateway).destination()
     }
