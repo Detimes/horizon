@@ -317,6 +317,7 @@ impl Game<'_> {
             logged_out: false,
             attachments: HashMap::new(),
             far_terrain: None,
+            splash_sound: Default::default(),
             builtin,
             status: lang
                 .get("connect.connecting")
@@ -564,6 +565,7 @@ impl Game<'_> {
             custom_books: false,
             attachments: HashMap::new(),
             far_terrain: None,
+            splash_sound: Default::default(),
             builtin,
             status: "Playing Studio Replay".into(),
             lang,
@@ -710,6 +712,7 @@ impl Game<'_> {
     /// Disconnect and return to the multiplayer screen (DisconnectedScreen), whose Back
     /// leads to the title after a single player world.
     pub(super) fn leave_server_body(&mut self, reason: Option<Text>) -> Result<()> {
+        self.interrupt_export_for_world_exit("export interrupted because the client disconnected");
         // A replay ends with the session it plays on: one that owns its session, left without
         // a reason, closes as Escape closes it, which leaves that session; otherwise the replay
         // ends alone and the leave goes on (a reason to the disconnect screen).
