@@ -138,13 +138,12 @@ impl Game<'_> {
     /// nodes are there too, but a mod's usage was already tried).
     pub(in crate::game) fn native_command_info(&self, label: &str) -> Option<mod_api::CommandInfo> {
         let label = label.strip_prefix('/').unwrap_or(label);
-        let usages: &[mod_api::Command] = self
-            .native_commands
-            .registered
-            .as_ref()
-            .map(|commands| commands.usages.as_slice())
-            .unwrap_or(&[]);
-        mod_command_info(usages, label)
+        let empty = HashMap::new();
+        let (usages, levels) = match &self.native_commands.registered {
+            Some(commands) => (commands.usages.as_slice(), &commands.levels),
+            None => (&[][..], &empty),
+        };
+        mod_command_info(usages, levels, label)
             .or_else(|| vanilla_command_info(&self.ui.dispatcher.0, label))
     }
 
@@ -153,9 +152,8 @@ impl Game<'_> {
     pub(in crate::game) fn native_command_names(&self) -> Vec<String> {
         let mut names = BTreeSet::new();
         if let Some(commands) = &self.native_commands.registered {
-            for command in &commands.usages {
-                names.extend(command.usage.split_whitespace().next().map(str::to_owned));
-            }
+            // Only the roots the tree registered; a usage `command_tree` left out is not one.
+            names.extend(commands.levels.keys().cloned());
         }
         let dispatcher = &self.ui.dispatcher.0;
         names.extend(
@@ -168,15 +166,19 @@ impl Game<'_> {
     }
 }
 
-/// The native mods' command whose root is `label`, among the usages they registered: its usages
-/// in registration order, and the lowest of their levels (the traversal level `command_tree`
-/// uses for the root). None when no usage starts with `label`.
-fn mod_command_info(usages: &[mod_api::Command], label: &str) -> Option<mod_api::CommandInfo> {
+/// The native mods' command whose root is `label`: its usages in registration order, and its
+/// level from `levels` (the registered roots, as `command_tree` returned them). None when
+/// `label` is not a registered root, so a usage the tree left out never answers.
+fn mod_command_info(
+    usages: &[mod_api::Command],
+    levels: &HashMap<String, u8>,
+    label: &str,
+) -> Option<mod_api::CommandInfo> {
+    let level = *levels.get(label)?;
     let mine: Vec<&mod_api::Command> = usages
         .iter()
         .filter(|command| command.usage.split_whitespace().next() == Some(label))
         .collect();
-    let level = mine.iter().map(|command| command.level).min()?;
     Some(mod_api::CommandInfo::new(
         label.to_owned(),
         Vec::new(),
@@ -231,14 +233,33 @@ mod tests {
             mod_api::Command::op("warp set <name:word>", 2),
             mod_api::Command::op("warpadmin", 3),
         ];
-        let info = mod_command_info(&usages, "warp").unwrap();
+        let levels = HashMap::from([("warp".to_owned(), 0), ("warpadmin".to_owned(), 3)]);
+        let info = mod_command_info(&usages, &levels, "warp").unwrap();
         assert_eq!(info.name, "warp");
         assert_eq!(info.usages, ["warp <name:word>", "warp set <name:word>"]);
         assert_eq!(info.level, 0);
         assert!(info.aliases.is_empty());
         assert!(!info.vanilla);
-        assert_eq!(mod_command_info(&usages, "warpadmin").unwrap().level, 3);
-        assert_eq!(mod_command_info(&usages, "missing"), None);
+        assert_eq!(
+            mod_command_info(&usages, &levels, "warpadmin")
+                .unwrap()
+                .level,
+            3
+        );
+        assert_eq!(mod_command_info(&usages, &levels, "missing"), None);
+    }
+
+    #[test]
+    fn a_usage_the_tree_left_out_is_not_answered() {
+        let usages = [
+            mod_api::Command::new("foo <x:bogus>"),
+            mod_api::Command::new("give <x:word>"),
+        ];
+        let arguments = command_arguments();
+        let (_, levels, problems) = command_tree(&usages, |name| name == "give", &arguments);
+        assert_eq!(problems.len(), 2);
+        assert_eq!(mod_command_info(&usages, &levels, "foo"), None);
+        assert_eq!(mod_command_info(&usages, &levels, "give"), None);
     }
 
     #[test]
