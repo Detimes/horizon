@@ -92,7 +92,7 @@ pub(super) fn picked_pack(settings: &horizon_client::settings::Settings) -> &str
 
 /// What a renderer readies for the pick, unless it was refused with no version of it left
 /// drawing (`native_shaders::remember_look`), is missing or its owner is off.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct PickedPack {
     /// It draws flat where the device can (`pack_draws_flat`): the sections are laid out so.
     pub draws_flat: bool,
@@ -120,8 +120,32 @@ impl PickedPack {
     }
 }
 
+/// `follow_frame`'s key for the pick: its path and outcome, which `look` reads from disk; with
+/// no pick, nothing is read (#19216: it asks every frame).
+pub(super) fn pick_key(
+    picked: &str,
+    look: impl FnOnce() -> (std::path::PathBuf, Option<bool>),
+) -> (std::path::PathBuf, Option<bool>) {
+    if picked.is_empty() {
+        return (std::path::PathBuf::new(), Some(false));
+    }
+    look()
+}
+
 pub(super) fn picked_pack_shape(settings: &horizon_client::settings::Settings) -> PickedPack {
     let picked = picked_pack(settings);
+    shape_of(picked, || shape_on_disk(settings, picked))
+}
+
+/// The shape of `picked`, which `look` reads from disk; with no pick, nothing is read.
+fn shape_of(picked: &str, look: impl FnOnce() -> PickedPack) -> PickedPack {
+    if picked.is_empty() {
+        return PickedPack::default();
+    }
+    look()
+}
+
+fn shape_on_disk(settings: &horizon_client::settings::Settings, picked: &str) -> PickedPack {
     let dir = Game::shader_packs_dir();
     let path = if dev_pack().is_some() {
         dir.join(picked)
@@ -280,6 +304,7 @@ mod block_tag_source_tests {
 pub(super) struct PackIds {
     entities: HashMap<String, i32>,
     blocks: BlockIds,
+    layers: std::sync::Arc<horizon_client::mesher::BlockLayerTable>,
     /// `blockEntityId` by block state, filled as states are drawn.
     block_states: RefCell<HashMap<u32, i32>>,
     /// The id of a name the file lacks: 65535, or 0 without the file.
@@ -482,6 +507,28 @@ impl Game<'_> {
                         for note in &ids.notes {
                             log::warn!("shader pack {name}: block.properties: {note}");
                         }
+                        let layer_properties = Properties::parse(
+                            &pack.read_text("block.properties").unwrap_or_default(),
+                            &macros,
+                        );
+                        let layers = horizon_shaders::BlockLayers::parse(&layer_properties);
+                        for note in &layers.notes {
+                            log::warn!("shader pack {name}: block.properties: {note}");
+                        }
+                        let layers = horizon_client::mesher::BlockLayerTable::resolve(
+                            self.pack.assets.registry,
+                            &layers,
+                        )
+                        .with_lava_layers(
+                            ["lava_still", "lava_flow"]
+                                .iter()
+                                .filter_map(|f| {
+                                    let name = format!("minecraft:block/{f}");
+                                    self.pack.render.sprite_layers.get(&name).map(|&l| l as u16)
+                                })
+                                .collect(),
+                        )
+                        .into();
                         let text = pack.read_text("entity.properties");
                         let entities = BlockIds::parse_kind(
                             &Properties::parse(text.as_deref().unwrap_or_default(), &macros),
@@ -495,6 +542,7 @@ impl Game<'_> {
                         let block_items =
                             block_item_ids(self.res.facts(), self.pack.assets.registry, &ids);
                         self.pack_ids = Some(PackIds {
+                            layers,
                             block_items,
                             item_file: text.is_some(),
                             items: items.plain(),
@@ -546,6 +594,7 @@ impl Game<'_> {
                 self.shader_pack_failed(name, dimension, &error);
             }
         }
+        self.sync_block_layers();
         let lerp = |(old, new): (f32, f32)| old + (new - old) * partial;
         let at = camera.floor().as_ivec3();
         let light = self.world.light(at.x, at.y, at.z);
@@ -647,6 +696,23 @@ impl Game<'_> {
             invisible,
             sneaking: p.pose == horizon_client::pose::Pose::Crouching,
             sprinting: p.sprinting,
+        }
+    }
+
+    /// Pack selection, options, load failure and world setup all converge here. A worker
+    /// keeps its immutable table snapshot; changing it invalidates resident/pending meshes.
+    fn sync_block_layers(&mut self) {
+        let layers = self.pack_ids.as_ref().map(|ids| &ids.layers);
+        let changed = match layers {
+            Some(layers) => layers != &self.streaming.block_layers,
+            None => {
+                let empty = horizon_client::mesher::BlockLayerTable::default();
+                *self.streaming.block_layers != empty
+            }
+        };
+        if changed {
+            self.streaming.block_layers = layers.cloned().unwrap_or_default();
+            self.all_sections_changed();
         }
     }
 
@@ -1221,6 +1287,17 @@ mod rendered_item_tests {
 mod native_pack_tests {
     use super::{active_pack, pack_draws_flat, pack_reads_vertices, picked_pack_shape};
     use horizon_client::mod_list::{Installed, ModList, NativePage};
+
+    /// With no pick neither the frame's key nor the shape looks at the disk (`follow_frame`
+    /// asks every frame), so neither depends on whether `shaderpacks/` is there.
+    #[test]
+    fn no_pick_reads_nothing_from_disk() {
+        use super::{PickedPack, pick_key, shape_of};
+        let key = pick_key("", || panic!("the key looks at the disk"));
+        assert_eq!(key, (std::path::PathBuf::new(), Some(false)));
+        let shape = shape_of("", || panic!("the shape looks at the disk"));
+        assert_eq!(shape, PickedPack::default());
+    }
 
     #[test]
     fn unknown_pack_is_optimistic_but_refusal_owner_and_presence_override_it() {
