@@ -67,6 +67,7 @@ mod modpacks_page;
 mod mods_page;
 mod mods_project;
 mod motion;
+mod move_window;
 mod multiplayer_page;
 mod native_consent;
 mod native_log_page;
@@ -270,11 +271,8 @@ struct Launcher {
     whats_new_open: Option<std::collections::HashSet<String>>,
     /// The section the glass Settings list marked when last drawn (`glass_settings`).
     settings_marked: usize,
-    /// About's credit picture was asked for, and what came back.
-    credit_asked: bool,
     /// The Game version dropdown of the instance dialog and sheet is open.
     version_menu: bool,
-    credit_picture: Option<std::sync::Arc<gpui::Image>>,
     /// The instance sheet's Storage: which instance was measured, and its size once known.
     sheet_size: Option<(String, Option<u64>)>,
     /// The Mods page's project card, kept in view beside its list.
@@ -296,8 +294,10 @@ struct Launcher {
     /// The Horizon version being installed because an instance was made or saved to play it: it
     /// becomes the launcher's version only when the launcher has none.
     instance_install: Option<String>,
-    /// One for an instance waiting for the install running now to end.
-    install_next: Option<Release>,
+    /// The displayed instance when a manual install started.
+    manual_install_for: Option<instances::ManualInstallTarget>,
+    /// Downloads requested by instance saves, ordered by when they were queued.
+    install_queue: VecDeque<Release>,
     /// The Stable build Home's Update is installing (`nightly::install_stable`).
     stable_install: Option<Release>,
     /// A Stable build whose download failed: not offered again until the release list is read
@@ -317,6 +317,14 @@ struct Launcher {
     disk: Vec<(String, u64)>,
     storage_report: Option<storage::Report>,
     storage_pending: bool,
+    /// The Settings visit (`storage_visit`) the last count or cleanup started in: a count that
+    /// failed is tried again on the next visit, not on every frame of this one.
+    storage_tried: u64,
+    /// The cleanups lowered cache limits asked for and those that ran: one still owed (a count
+    /// was running, the build lock was busy, a newer limit came) runs before the next count.
+    storage_trims: crate::glass_storage::Trims,
+    /// The running storage work is such a cleanup, settling the requests up to this generation.
+    storage_trimming: Option<u64>,
     /// A Clear the player still has to confirm: `Some(None)` is Clear all.
     storage_confirm: Option<Option<storage::Category>>,
     storage_error: Option<String>,

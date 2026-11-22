@@ -2357,6 +2357,18 @@ fn client_player_reads_answer_from_the_local_players_copy() {
         assert!(abilities.may_fly && abilities.flying && !abilities.invulnerable);
         assert!(!abilities.may_build);
         assert_eq!((abilities.fly_speed, abilities.walk_speed), (0.1, 0.2));
+        // A double jump toggles flight on the client first, and the server sends no
+        // abilities back: the read follows the body (`LocalPlayer.getAbilities()`).
+        game.player.as_mut().unwrap().flying = false;
+        assert_eq!(player.abilities(game).map(|a| a.flying), Some(false));
+        game.handle_packet(C::PlayerAbilities(play::PlayerAbilities {
+            flags: 4,
+            flying_speed: 0.1,
+            walking_speed: 0.2,
+        }))
+        .unwrap();
+        game.player.as_mut().unwrap().flying = true;
+        assert_eq!(player.abilities(game).map(|a| a.flying), Some(true));
 
         // Food from SetHealth; the client keeps no exhaustion.
         game.handle_packet(C::SetHealth(play::SetHealth {
@@ -2405,9 +2417,23 @@ fn client_player_reads_answer_from_the_local_players_copy() {
             )
         );
 
+        // The body's own movement state, which the client keeps itself (`LocalPlayer`).
+        let me = player.entity();
+        assert_eq!(me.is_sprinting(game), Some(false));
+        assert_eq!(me.is_in_water(game), Some(false));
+        let body = game.player.as_mut().unwrap();
+        body.sprinting = true;
+        body.fluids.was_touching_water = true;
+        body.pose = horizon_client::pose::Pose::Crouching;
+        assert_eq!(me.is_sprinting(game), Some(true));
+        assert_eq!(me.is_in_water(game), Some(true));
+        assert_eq!(me.is_in_lava(game), Some(false));
+        assert_eq!(me.is_crouching(game), Some(true));
+
         // Another player: the client isn't sent their state.
         let epoch = player.entity().epoch();
         let other = mod_api::__private::game::player_ref(EntityRef::new(epoch, 8), 43);
+        assert_eq!(other.entity().is_sprinting(game), None);
         assert_eq!(other.game_mode(game), None);
         assert_eq!(other.food(game), None);
         assert_eq!(other.selected_slot(game), None);
@@ -4619,4 +4645,32 @@ fn flint_and_steel_use_on_ends_the_click() {
 
     let done = game.remote_use_block(Hand::Main);
     assert!(done, "flint and steel useOn must end the click");
+}
+
+/// #19952: an unfocused window doesn't pause a world whose level loading
+/// screen is still up over `Screen::Playing` (vanilla's screen is the
+/// `LevelLoadingScreen` then); once the screen closes, it pauses as before.
+#[test]
+#[ignore = "daily"]
+fn an_unfocused_window_waits_for_the_loading_screen_to_pause() {
+    use horizon_client::{level_loading::Reason, motion::PlayerMotion};
+    use horizon_core::geometry::Vec3;
+    super::super::native_entity_refs::tests::with_client_game(|game| {
+        let (client, _server) = horizon_protocol::connection::Pipe::pair();
+        game.connect_local(client, "focus-pause-test").unwrap();
+        game.title = None;
+        game.screen = crate::game::Screen::Playing;
+        game.player = Some(PlayerMotion::new(game.motion, Vec3::new(0.5, 64.0, 0.5)).unwrap());
+        game.remote
+            .as_mut()
+            .unwrap()
+            .level_load
+            .start_client_load(0, Reason::Other);
+        game.focus_lost = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        game.pause_if_inactive();
+        assert_eq!(game.screen, crate::game::Screen::Playing, "loading screen up");
+        game.remote.as_mut().unwrap().level_load.finish();
+        game.pause_if_inactive();
+        assert_eq!(game.screen, crate::game::Screen::Paused, "loading screen closed");
+    });
 }

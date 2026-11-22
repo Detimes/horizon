@@ -32,11 +32,11 @@ fn set_key(tag: &mut Tag, key: &str, value: Tag) {
 /// `SummonCommand.spawnEntity`'s name for a kind no command target stands for:
 /// its entity type's. An item is the exception: `EntityType`'s factory leaves
 /// `ItemStack.EMPTY`, which `ItemEntity.readAdditionalSaveData` discards, and
-/// `ItemEntity.getName` reads that empty stack's `getItemName` — an empty
-/// component, not the type's name.
+/// `ItemEntity.getName` reads that empty stack's item name, which is the
+/// air item's: "Air" (`block.minecraft.air`), not the type's name.
 pub(super) fn summon_type_name(kind: &str) -> Text {
     if kind.trim_start_matches("minecraft:") == "item" {
-        return Text::empty();
+        return Text::translate("block.minecraft.air", &[]);
     }
     Text::translate(&super::entity_name_key(kind), &[])
 }
@@ -243,11 +243,13 @@ impl Game<'_> {
                         _ => None,
                     });
                 let target = who.and_then(|who| self.save_who_uuid(who));
-                let p = self.creatures.projectiles.iter().find(|p| p.id == id)?;
+                let index = self.creatures.projectiles.iter().position(|p| p.id == id)?;
+                let mob_owner = self.projectile_owner_uuid(index);
+                let p = &self.creatures.projectiles[index];
                 let owner = if p.owner == Some(horizon_client::mobs::Who::Player) {
                     player_uuid
                 } else {
-                    None
+                    mob_owner
                 };
                 let in_block = p
                     .arrow
@@ -749,7 +751,7 @@ impl Game<'_> {
                     .find(|o| o.id == id)
                     .ok_or_else(stale)?;
                 orb.rotation = new.rotation;
-                orb.position = new.position;
+                orb.set_position(new.position);
                 orb.previous = new.previous;
                 orb.velocity = new.velocity;
                 orb.value = new.value;
