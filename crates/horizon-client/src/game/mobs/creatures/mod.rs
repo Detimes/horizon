@@ -1058,7 +1058,6 @@ impl Game<'_> {
         spawner: Option<mod_api::SpawnSource>,
     ) -> Finalized {
         let mut group = None;
-        self.native_lifecycle.spawn_reasons.insert(mob.id, reason);
         let (outcome, difficulty) = self.finalize_spawn_event(mob, reason, spawner, &mut group);
         if outcome == Finalized::Done {
             self.finalize_grouped(mob, &difficulty, reason, group);
@@ -1077,9 +1076,6 @@ impl Game<'_> {
         spawner: Option<mod_api::SpawnSource>,
         group: &mut Option<Group>,
     ) -> (Finalized, spawning::LocalDifficulty) {
-        // Natural and spawner mobs carry a provisional id until the pass ends: the reason
-        // travels with the body to its real id (`resolve_spawn_ids`).
-        mob.spawn_reason = Some(reason);
         let at = [mob.position.x, mob.position.y, mob.position.z];
         let difficulty = self.local_difficulty(at);
         if !mod_api::__private::listened(mod_api::HookId::FinalizeSpawn) {

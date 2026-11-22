@@ -2,7 +2,6 @@
 #[doc(hidden)]
 pub mod game;
 pub use crate::game::NbtUpgradeError;
-pub use crate::game::{DataFixError, DataKind};
 pub use crate::game::TerrainColumn;
 pub use crate::game::{
     BlockEdit, BlockRun, Clock, ColumnBlocks, Config, ConfigFile, ConfigKind, CubeFace,

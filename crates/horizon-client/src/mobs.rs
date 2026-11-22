@@ -1589,8 +1589,6 @@ pub struct Mob {
     pub last_damage: Option<(Damage, i64)>,
     pub accepted_hit: Option<std::sync::Arc<crate::health::AcceptedHit>>,
     pub death_canceled: bool,
-    /// Why a spawn site finalized it, until its real id is assigned and the join reads it.
-    pub spawn_reason: Option<mod_api::SpawnReason>,
     /// `DamageSource.getDirectEntity` of `last_damage` when [`Damage`] cannot name it (a
     /// thrown potion, an area effect cloud): its entity type.
     pub last_direct: Option<&'static str>,
@@ -3660,7 +3658,6 @@ impl Mob {
             last_damage: None,
             accepted_hit: None,
             death_canceled: false,
-            spawn_reason: None,
             last_direct: None,
             combat: combat::Tracker::default(),
             removed: false,
