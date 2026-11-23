@@ -746,12 +746,21 @@ impl Game<'_> {
         let Some(Target::Mob(id)) = self.native_entity_target(mob.entity()) else {
             return false;
         };
+        let mut events = Vec::new();
+        {
+            let Some(piglin) = self.mobs.iter_mut().find(|m| m.id == id && !m.removed) else {
+                return false;
+            };
+            if !matches!(piglin.species(), Species::Piglin) {
+                return false;
+            }
+            // `Piglin.finishConversion`: cancel the admiring, drop the inventory.
+            mobs::piglin::finish_conversion_drops(piglin, &mut events);
+        }
+        let _ = self.handle_mob_events(events);
         let Some(from) = self.mobs.iter().find(|m| m.id == id && !m.removed).cloned() else {
             return false;
         };
-        if !matches!(from.species(), Species::Piglin) {
-            return false;
-        }
         self.convert_to(
             &from,
             "minecraft:zombified_piglin",
@@ -1409,7 +1418,8 @@ mod tests {
             let mut expected = LegacyRandom::new(2026);
             let sound_delay = expected.next_int_bound(21).unwrap();
             let alert_delay = 80 + expected.next_int_bound(41).unwrap();
-            game.mobs.iter_mut().find(|m| m.id == 14).unwrap().random = horizon_core::random::EntityRandom::own(LegacyRandom::new(2026));
+            game.mobs.iter_mut().find(|m| m.id == 14).unwrap().random =
+                horizon_core::random::EntityRandom::own(LegacyRandom::new(2026));
             assert!(piglin.set_target(game, Some(other)));
             assert_eq!(piglin.target(game), Some(other));
             let first = state(game, 14);
@@ -1828,7 +1838,12 @@ mod tests {
     #[ignore = "daily"]
     fn mob_zombify_turns_a_piglin_into_a_zombified_piglin_once() {
         with_game(|game| {
-            let piglin = game.res.mob_types().get("minecraft:piglin").unwrap().clone();
+            let piglin = game
+                .res
+                .mob_types()
+                .get("minecraft:piglin")
+                .unwrap()
+                .clone();
             game.mobs.push(Mob::new(12, piglin, Vec3::ZERO, 0.0));
             let mob = game.mob(game.entity(12).unwrap()).unwrap();
             assert!(game.mob_zombify(mob));
@@ -1847,6 +1862,43 @@ mod tests {
             assert!(!game.mob_zombify(mob));
             let zombie_handle = game.mob(game.entity(zombie_id).unwrap()).unwrap();
             assert!(!game.mob_zombify(zombie_handle));
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn mob_zombify_drops_the_admired_item_and_inventory() {
+        with_game(|game| {
+            let piglin = game
+                .res
+                .mob_types()
+                .get("minecraft:piglin")
+                .unwrap()
+                .clone();
+            let mut m = Mob::new(12, piglin, Vec3::ZERO, 0.0);
+            m.extra.inventory = vec![ItemStack::new("minecraft:gold_nugget", 3)];
+            m.extra.set_slot_id(
+                horizon_items::equipment::OFFHAND,
+                Some("minecraft:gold_ingot".into()),
+            );
+            m.extra.using_item = 60;
+            game.mobs.push(m);
+            let mob = game.mob(game.entity(12).unwrap()).unwrap();
+            assert!(game.mob_zombify(mob));
+            let zombie = game
+                .mobs
+                .iter()
+                .find(|m| !m.removed && matches!(m.species(), Species::ZombifiedPiglin))
+                .expect("a zombified piglin stands in its place");
+            assert!(zombie.extra.off_hand_id().is_none(), "no admired ingot");
+            assert!(zombie.extra.inventory.is_empty());
+            let has = |item: &str, count: u32| {
+                game.dropped
+                    .iter()
+                    .any(|d| d.stack.item.as_ref() == item && d.stack.count == count)
+            };
+            assert!(has("minecraft:gold_ingot", 1), "the admired item drops");
+            assert!(has("minecraft:gold_nugget", 3), "the inventory drops");
         });
     }
 

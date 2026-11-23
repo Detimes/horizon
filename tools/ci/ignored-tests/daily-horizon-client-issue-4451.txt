@@ -1818,6 +1818,7 @@ horizon-client game::native_mob_refs::tests::mob_handles_read_write_and_refuse_u
 horizon-client game::native_mob_refs::tests::mob_portal_eligibility_matches_gameplay lib daily resources
 horizon-client game::native_mob_refs::tests::mob_shear_sheds_a_sheeps_wool_once_and_refuses_a_baby lib daily resources
 horizon-client game::native_mob_refs::tests::mob_zombify_turns_a_piglin_into_a_zombified_piglin_once lib daily resources
+horizon-client game::native_mob_refs::tests::mob_zombify_drops_the_admired_item_and_inventory lib daily resources
 horizon-client game::native_mob_refs::tests::piglin_target_write_drives_anger_sound_and_alert lib daily resources
 horizon-client game::native_mob_refs::tests::player_target_round_trips_through_the_mob_binding lib daily resources
 horizon-client game::native_mob_refs::tests::redirected_fake_target_is_refused_with_the_original_target_intact lib daily resources

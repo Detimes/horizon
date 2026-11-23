@@ -536,6 +536,7 @@ pub(super) fn mob_meta_sync(
             if flags != 0 {
                 meta.push((18, serializer::BYTE, Value::Byte(flags)));
             }
+            defaults.push((18, serializer::BYTE, Value::Byte(0)));
         }
         "minecraft:cat" | "minecraft:wolf" => {
             // TamableAnimal.DATA_FLAGS_ID: in the sitting pose 1, tame 4.
@@ -543,6 +544,7 @@ pub(super) fn mob_meta_sync(
             if flags != 0 {
                 meta.push((18, serializer::BYTE, Value::Byte(flags)));
             }
+            defaults.push((18, serializer::BYTE, Value::Byte(0)));
             let (index, registry, name) = if kind == "minecraft:cat" {
                 let v = horizon_client::mobs::tame::CAT_VARIANTS[(e.variant as usize).min(10)];
                 (20, "minecraft:cat_variant", v)
@@ -5240,10 +5242,16 @@ pub(crate) mod world_spawn_sync_tests {
             // RespawnData.of(level.dimension(), ..): the same block set from the
             // End is a changed RespawnData, sent with the End as its dimension.
             game.as_console(|game| {
-                assert!(game.run_command("execute in minecraft:the_end run setworldspawn 100 140 -20"))
+                assert!(
+                    game.run_command("execute in minecraft:the_end run setworldspawn 100 140 -20")
+                )
             });
             let sent = spawns(&rx);
-            assert_eq!(sent.len(), 1, "a spawn that only changes dimension is broadcast");
+            assert_eq!(
+                sent.len(),
+                1,
+                "a spawn that only changes dimension is broadcast"
+            );
             assert_eq!(sent[0].pos.dimension, "minecraft:the_end");
             assert_eq!(sent[0].pos.pos, [100, 140, -20]);
             game.as_console(|game| {
@@ -5846,7 +5854,9 @@ mod merchant_restock_tests {
         game.set_allow_commands(true);
         let rx = super::world_spawn_sync_tests::host_for(&mut game);
         let mut host = game.lan.take().unwrap();
-        host.hub.guests.update(0, |guest| guest.dimension = "minecraft:overworld".into());
+        host.hub
+            .guests
+            .update(0, |guest| guest.dimension = "minecraft:overworld".into());
         game.lan = Some(host);
         assert!(game.run_command(concat!(
             "summon villager 0.5 80 2.5 {NoAI:1b,Silent:1b,Xp:20,",
@@ -5900,9 +5910,13 @@ mod merchant_restock_tests {
         live.offers[0].uses = 0;
         live.offers[0].demand = 12;
         game.lan.as_mut().unwrap().hub.guests.update(0, |guest| {
-            guest.effects.add(horizon_client::effects::EffectInstance::new(
-                "hero_of_the_village", 1000, 0,
-            ));
+            guest
+                .effects
+                .add(horizon_client::effects::EffectInstance::new(
+                    "hero_of_the_village",
+                    1000,
+                    0,
+                ));
         });
         game.merchant_restocked(id);
         let restocked = offers();
