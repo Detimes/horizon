@@ -616,6 +616,7 @@ impl Game<'_> {
         slot: &Slot,
         stack: Option<ItemStack>,
     ) -> bool {
+        let stack = stack.filter(|s| s.count > 0 && &*s.item != "minecraft:air");
         self.equipment_slot_accepts(slot, &stack) && self.slot_set(slot, stack)
     }
     /// Put a stack (or nothing) in a slot; false when the slot cannot take it.
@@ -630,6 +631,7 @@ impl Game<'_> {
         stack: Option<ItemStack>,
         effects: bool,
     ) -> bool {
+        let stack = stack.filter(|s| s.count > 0 && &*s.item != "minecraft:air");
         if matches!(
             s,
             Slot::Inv(_) | Slot::MainHand | Slot::Armor(_) | Slot::Offhand | Slot::Equipment(_)
@@ -856,18 +858,43 @@ impl Game<'_> {
             .as_deref()
             .map(horizon_client::item_data::command_components)
         {
-            Some(Ok(tag)) => {
+            Some(Ok(mut tag)) => {
+                // PatchedDataComponentMap.applyPatch drops values equal to the
+                // prototype. In vanilla, common item components include empty
+                // enchantments; a native mod can change or remove that default.
+                if let Tag::Compound(patch) = &mut tag {
+                    patch.retain(|key, value| {
+                        if !matches!(value, Tag::Compound(levels) if levels.is_empty())
+                            || !key
+                                .0
+                                .iter()
+                                .copied()
+                                .eq("minecraft:enchantments".encode_utf16())
+                        {
+                            return true;
+                        }
+                        self.items()
+                            .component_defaults
+                            .get(id)
+                            .and_then(|prototype| prototype.get(key))
+                            != Some(value)
+                    });
+                }
                 horizon_client::item_data::decode_components_for_item(id, Some(&tag))
             }
             Some(Err(e)) => return Err(CommandError::new(Text::literal(e))),
             None => (0, None),
         };
-        let stack = ItemStack {
+        let mut stack = ItemStack {
             item: id.as_str().into(),
             count,
             damage,
             extra,
         };
+        // The same applyPatch rule for the decoded values: `damage=-0.5f` is the prototype's 0.
+        if let Some(prototype) = self.items().component_defaults.get(id) {
+            horizon_client::item_data::drop_prototype_values(&mut stack, prototype);
+        }
         // ItemInput.createItemStack: a count above the stack's max (its
         // max_stack_size component, else the item's) is refused.
         let max_stack = self.stack_max_size(&stack);
