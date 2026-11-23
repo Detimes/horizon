@@ -307,6 +307,10 @@ fn a_client_cannot_ack_show_or_ask_who_sees() {
 #[ignore = "daily"]
 fn a_revert_sends_the_world_block_back() {
     with_guests(|game| {
+        game.world.chunks.insert(
+            (0, 0),
+            std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
+        );
         let b = game.player(13).unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
         game.lan
@@ -352,6 +356,10 @@ fn a_revert_sends_the_world_block_back() {
 #[ignore = "daily"]
 fn each_revert_refusal_has_its_own_name() {
     with_guests(|game| {
+        game.world.chunks.insert(
+            (0, 0),
+            std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
+        );
         let b = game.player(13).unwrap();
         let level = game.level(game.dim.id()).unwrap();
         assert_eq!(
