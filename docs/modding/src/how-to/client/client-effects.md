@@ -31,7 +31,11 @@ views with distinct IDs are taken, with sides limited to 4096 pixels and the
 device limit, and 4 x 4096 x 4096 pixels in all. `push` refuses any other view
 with a `WorldViewRefusal` naming it and the reason, and logs each refusal once.
 Each view culls the world with its own frustum, and the player's view keeps its
-own culling. These callbacks have no Wire form.
+own culling. Entities and block entities are built for what the camera or any
+view sees; entity occlusion culling (the `entityCulling` setting) proves an entity
+hidden from the player's camera only, so it is off for a frame with views, and an
+entity behind a hill from the player still reaches a view that sees it. These
+callbacks have no Wire form.
 
 For a view seen in another view, such as a portal seen through a portal, push the
 outer view first and add `with_parent(outer_id)` to the inner one. Views nest up to
@@ -87,3 +91,23 @@ Play the accompanying sound through `ClientHost::play_local_sound` with a `Sound
 ## A 360-degree capture of the world
 
 `ClientHost::panorama(PanoramaRequest::equirect("night/view.png", 1024))` looks all the way round from the player's eye and writes the result to `screenshots/panorama/night/view.png` in the game folder. The renderer draws six 90-degree cube faces as world views, one on each of six frames, into a target that is never shown, so the player sees no change and no frame stalls. The picture holds the world only: no HUD, hand, open screen, chat or overlay, and no mod GUI draw. `PanoramaFormat::Cube` writes six files instead, `view_south.png` to `view_down.png`. The call returns a ticket; poll `panorama_status(ticket)` for `Pending`, `Done(files)` or `Failed(reason)` (the last eight finished tickets are kept). It runs only while Agent Control is on and refuses, naming why, with `PanoramaRefusal::AgentControlOff`, `NoRenderer` (`--headless`), `NoWorld` (the title screen), `Busy` (one capture at a time), `Size` (16 to 4096 pixels a face) or `Path` (not a plain relative name).
+
+## Showing another time or weather
+
+`sky_environment` lets a client mod show the local player another time of day or weather, for example noon
+while building, a clear sky for a recording, or night on a server where it is day. It is asked whenever the
+frame reads the sky, with the frame's `partial` tick and the values the frame would draw:
+
+| `SkyEnvironmentEvent` field | Meaning |
+| --- | --- |
+| `partial` | Ticks past the last tick, from 0 to 1 |
+| `day_time` | The level's time of day (or PvP & HUD's view time); write it to show another |
+| `rain` | The rain level from 0 to 1; write it to show more or less rain |
+| `thunder` | The thunder level from 0 to 1; write it to show more or less thunder |
+
+Only the picture follows: the sun, moon and stars, the sky's and fog's colour, the sky's light, clouds, and
+falling rain or snow. The level's own clock and weather, gameplay (crops, mobs, beds) and the server keep
+theirs, and nothing is sent. Rain and thunder count only in a dimension with weather. A level that is not finite
+keeps the level's value, and the others are clamped to 0..=1. The hook may run more than once a frame, so
+give the same answer each time. Only a client of a world (single player's included) asks it, never the game
+that ticks the world. NeoForge has no counterpart; Java mods change `ClientLevel` with a mixin.
