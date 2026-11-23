@@ -212,6 +212,12 @@ impl LevelAccess for GameLevel<'_> {
         }
         !canceled
     }
+    fn structure_grow(&self, source: BlockPos, placed: &[[i32; 3]]) {
+        if self.native_authoritative && mod_api::__private::listened(mod_api::HookId::StructureGrow)
+        {
+            self.native_structure_grow(self.dimension, source, placed);
+        }
+    }
     fn crop_grow_pre(&mut self, pos: BlockPos, state: BlockStateId, vanilla: bool) -> bool {
         if !self.native_authoritative || !mod_api::__private::listened(mod_api::HookId::CropGrowPre)
         {
