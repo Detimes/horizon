@@ -101,6 +101,14 @@ UTF-16 units, values of 32767 and signatures of 1024. A list past a limit is
 refused and the login's own properties are sent. `player_login` follows later and
 can still refuse the player.
 
+`entity.set_swimming(host, swimming)` (`entity_set_swimming`) sets the swimming flag of a server player or a guest, the one the next water update reads, as Paper's `Entity#setSwimming` does. It returns `false` for a mob, which keeps its own swim, and for a stale handle.
+
+`entity.detonate(host)` (`entity_detonate`) explodes an entity now: a primed TNT explodes where it stands with its power, as `PrimedTnt.explode` does, and a creeper is lit and explodes at once, as `Creeper.explodeCreeper` does. The entity is gone after its explosion. It returns `false`, changing nothing, for a stale handle, a kind that does not explode, or when the explosion itself fails.
+
+`entity.set_fall_distance(host, distance)` (`entity_set_fall_distance`) sets the blocks a server player, a guest or a mob has fallen, as Paper's `Entity#setFallDistance` does, so the next landing hurts by that much. It returns `false` for another kind, a client, a stale handle or a value that is not finite; `entity_reset_fall_distance` is the zero.
+
+`entity.set_fuse(host, ticks)` (`entity_set_fuse`) sets the ticks left before a primed TNT explodes, as vanilla's `PrimedTnt.setFuse` and Paper's `TNTPrimed#setFuseTicks` do. A fuse of `0` or less explodes it on its next tick. It returns `false`, changing nothing, for a negative count, a stale handle or an entity that is not primed TNT (a creeper's fuse is its swell, not this).
+
 ## Messages and visibility
 
 Send a message with `player.tell(host, text)`, `player.action_bar(host, text)` or
@@ -145,6 +153,12 @@ Tab list (`hide` lists them out too), and chat is not filtered. The calls return
 anything changed, and refuse with `EntityVisibilityRefusal`: `Client`, `Stale`, `NoConnection` for a
 fake viewer and `StaleEntity` for an entity handle that names nothing or the viewer's own player.
 
+To show an entity to one player only, spawn it with `player.spawn_viewer_entity(host, kind, pos)`.
+Its `AddEntity` goes to that client alone; the level does not hold it, and the other players do not
+see it. Move it with `player.move_viewer_entity(host, id, pos)` and remove it with
+`player.remove_viewer_entity(host, id)`. It has the type's default metadata only, and it is gone
+when the viewer leaves, so a mod that wants it kept re-spawns it on the next join.
+
 The reads `player.latency(host)`, `player.hidden(host)` and `player.nickname(host)`
 return what the calls above set. Latency is the Tab list ping in milliseconds
 (`Option<i32>`, `0` until the first keep-alive answer). `hidden` is the level
@@ -164,6 +178,27 @@ the list shows) and `hide_players` start as vanilla's answer. `hide_players` lea
 is dropped. An answer longer than a client reads (32767 characters) is replaced by the plain one, and so is any answer
 the mods do not finish within half a second. With no listener the request is not put to the game thread at all.
 The legacy ping of pre-1.7 clients is not asked.
+
+## Resource packs
+
+`player.push_resource_pack(host, ResourcePackOffer)` offers one player's client a pack while they play, as
+`ClientboundResourcePackPushPacket` does; `player.pop_resource_pack(host, Some(id))` takes it off again, and `None`
+takes off every pack the server pushed, the `resource-pack` of `server.properties` included. Build the offer with
+`ResourcePackOffer::new(id, url)` and set `sha1` (40 hex digits, or empty for no check), `required` and `prompt`.
+A pack pushed with the id of one the client holds replaces it; other ids stack. The client downloads the zip itself,
+so the URL must be reachable from that player.
+Like vanilla, popping does not retract an offer still waiting in an unanswered consent prompt;
+accepting that prompt can load the pack later. It is not a pending-offer cancellation API.
+
+`resource_pack_status_v2(player, name, pack, status)` hears the answers with the pack's id, including while the
+player is dead; `resource_pack_status(player, name, status)` keeps its three arguments and its firing point.
+`required` changes only
+what the client's screen offers: the server does not disconnect a player who declines a pack a mod pushed (it does
+so only for the `server.properties` pack), so a mod that needs the pack kicks on status 1 or 2 itself. Answers to the
+`server.properties` pack are given before the player has joined and are not heard. Both calls return
+`Result<(), PlayerPackRefusal>`: `Client`, `Stale`, `NoConnection`, and for a push `UrlTooLong` (over 32767
+UTF-16 code units), `HashTooLong` (over 40 UTF-16 code units) and `BadPrompt` (text the boundary refuses); a refused
+call sends nothing. Characters outside the BMP count as two code units.
 
 ## Chat lines and respawn
 
@@ -305,6 +340,19 @@ The inventory menu has no slot for body or saddle. All four player data writes
 are undone by an open transaction abort; equipment effects and overflow drops
 wait for the outermost commit.
 
+## Advancement progress
+
+For mods that carry a player's advancements between servers. Server only. `player.advancements(host)` returns
+the progress as the JSON text `PlayerAdvancements.save` writes (each started advancement's `criteria`, with grant
+dates, and `done`, plus `DataVersion`), or `None` for a stale or unavailable player and on a client.
+`player.set_advancements(host, json)` replaces the whole progress from a JSON object, as a loaded file does:
+advancements and criteria this server lacks are dropped, nothing is awarded (no toast, chat line or reward), and
+the client receives the full tree with its next update. A hook that replaces the progress while a gameplay grant
+runs does not make that grant complete an advancement: what it imported is not rewarded. It returns `false`,
+changing nothing, for input that is not a JSON object, for a grant date that is not a date this server can send
+(a number, other text, a year out of range), and for a player who cannot take it: a stale or unavailable handle, a
+dead or not connected player, a client, or a world with no server list.
+
 ## Player statistics
 
 Statistics are read and replaced whole, not one at a time. `player.statistics(host)` returns all of a player's
@@ -315,3 +363,9 @@ goes back to 0, scoreboard criteria follow the changed values, and the client se
 `player_stat_award` is not heard.
 
 Measuring a client's transaction round trip (a lag-compensating anticheat): send the player a `ping` with `player_send_packet` and hear the answer in `player_pong(player, name, id)`, which carries the number the ping had; the time between the two is finer than the keep-alive average `player_latency` reads. The engine's own pings (a recording's end-of-tick ping, whose id is the server tick) are answered here too, so pick ids that tell apart from small tick numbers. The hook is heard only for a pong that answers a ping the server sent on that connection, once per ping (an unsolicited or repeated pong, or an answer to a ping older than 30 seconds, is dropped), in order with the guest's other packets, with their state swapped in, and cannot cancel; with no listener nothing is queued.
+
+## Entity broadcast range
+
+`ConfigServerHost::entity_range_percent()` (server side) returns the entity broadcast range the server hosts with,
+in percent of vanilla's (`entity-broadcast-range-percentage` of server.properties). It is `100` when no server is
+hosting a world, which is vanilla's default. Read only.
