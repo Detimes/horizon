@@ -191,6 +191,19 @@ fn console_log_text_prefixes_the_mod_and_refuses_bad_ids() {
         Err(ConsoleLogRefusal::ModIdTooLong)
     );
     assert!(console_log_text(&"m".repeat(64), "x").is_ok());
+    // A control character in the id is refused; in the line it becomes a space (one log line).
+    assert_eq!(
+        console_log_text("a\n[server] x", "y"),
+        Err(ConsoleLogRefusal::InvalidModId)
+    );
+    assert_eq!(
+        console_log_text("a\r", "y"),
+        Err(ConsoleLogRefusal::InvalidModId)
+    );
+    assert_eq!(
+        console_log_text("m", "one\ntwo\r\nthree\u{1b}x"),
+        Ok("[m] one two  three x".to_owned())
+    );
     // 4095 bytes of `a`, then `é` (2 bytes): the cut at 4096 falls inside `é`, so 4095 bytes stay.
     let line = format!("{}é", "a".repeat(4095));
     assert_eq!(

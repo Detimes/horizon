@@ -22,6 +22,8 @@ pub enum ConsoleLogRefusal {
     EmptyModId,
     /// The mod id is longer than 64 bytes.
     ModIdTooLong,
+    /// The mod id holds a control character (a line break would forge a second log line).
+    InvalidModId,
 }
 
 impl crate::NoBackend for ConsoleLogRefusal {
