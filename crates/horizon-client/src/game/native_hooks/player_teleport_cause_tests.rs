@@ -68,6 +68,13 @@ mod tests {
         mod_platform::testing::with_mods(mods, || {
             crate::game::native_entity_refs::tests::with_game(|game| {
                 game.lan_acting_uuid = Some(9);
+                game.player = Some(
+                    horizon_client::motion::PlayerMotion::new(
+                        game.motion,
+                        horizon_core::geometry::Vec3::ZERO,
+                    )
+                    .unwrap(),
+                );
                 game.acting_teleport_cause([1.0, 2.0, 3.0], "ender_pearl");
                 let heard = heard.lock().unwrap();
                 assert_eq!(heard.len(), 1);
