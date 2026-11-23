@@ -13,9 +13,8 @@ pub trait Hooks {
     /// `open_menu` keep `menu_clicked`; a crafting table, a station, a trade and a mount's
     /// inventory are not asked yet, and a drag (`mode` 5) is not asked. A spectator's or a dead
     /// player's click is not asked either, as it changes nothing. Server-side.
-    #[notes = r#"## Container clicks with the cursor
-
-`container_click(host, event)` tells a mod about a click in the player's inventory menu or in a block container before the game acts on it, with the cursor stack in `event.carried`. A guard that keeps stacks out of a container, a live inventory view or a grave's menu reads the cursor and the clicked slot here and returns `Flow::Cancel`: nothing moves, and the client is sent the menu and the cursor again, as vanilla answers a click it refuses. `event.player` is the clicking player's UUID, and the usual player helpers reach them (their state is swapped in). The hook is not asked for menus a mod opened (`menu_clicked` hears those after the fact), for a crafting table, station, trade or mount menu, or for a drag."#]
+    ///
+    /// `container_click(host, event)` tells a mod about a click in the player's inventory menu or in a block container before the game acts on it, with the cursor stack in `event.carried`. A guard that keeps stacks out of a container, a live inventory view or a grave's menu reads the cursor and the clicked slot here and returns `Flow::Cancel`: nothing moves, and the client is sent the menu and the cursor again, as vanilla answers a click it refuses. `event.player` is the clicking player's UUID, and the usual player helpers reach them (their state is swapped in). The hook is not asked for menus a mod opened (`menu_clicked` hears those after the fact), for a crafting table, station, trade or mount menu, or for a drag.
     #[hook(
         side = "server",
         contract = "cancel",
