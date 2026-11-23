@@ -104,6 +104,25 @@ pub trait PlayersServerHost {
     #[access(WorldOnly)]
     fn profile_by_uuid(&self, uuid: u128) -> Option<GameProfile>;
     /// Side: server.
+    /// The whole saved player file of the player with this UUID (`players/data/<uuid>.dat`), as the
+    /// vanilla player compound `PlayerDataStorage` loads, so a mod can copy or restore a player who
+    /// is not online. None for no file, a file that does not read, a client, or a remote world. An
+    /// online player reads as of their last save; their live state is `player_ender_chest` and the
+    /// other player reads. Reads only.
+    #[access(WorldOnly)]
+    fn offline_player_data(&self, uuid: u128) -> Option<Compound>;
+    /// Side: server.
+    /// Writes `data` as the saved player file of the player with this UUID, replacing it whole, as
+    /// `write_dat` writes a save. Refuses with nothing written: `NoServer` on a client or a remote
+    /// world, `Online` while the player is connected (write them with the player writes instead),
+    /// `Write` when the file cannot be written. Call it outside a transaction.
+    #[access(WorldOnly)]
+    fn set_offline_player_data(
+        &mut self,
+        uuid: u128,
+        data: Compound,
+    ) -> Result<(), OfflinePlayerDataRefusal>;
+    /// Side: server.
     /// The profile of the player with this name, any case, as
     /// `profile_by_uuid` knows it: an online player's, else an unexpired
     /// user cache entry. Never asked of Mojang, and an unknown name is not
@@ -804,6 +823,29 @@ pub trait PlayersBackendMut {
     /// world epoch and on a client.
     #[access(WorldOnly)]
     fn player_hide(&mut self, player: PlayerRef, level: Option<u8>) -> bool;
+    /// Side: server.
+    /// Sends one viewer different data for an entity than everyone else has
+    /// (`ClientboundSetEntityDataPacket` to that player alone): a custom name, whether it shows
+    /// from afar, the shared flags byte (invisible, glowing, crouching...) or the pose. A
+    /// per-player hologram text, a seat pose only the sitter sees and a marker only one client
+    /// gets are built on it. The server's own state is untouched and nobody else is sent
+    /// anything, so the game's next data change for the entity, or its pairing again after the
+    /// viewer left its range, gives the viewer the real values back; a mod that keeps a view
+    /// sends it again from `player_start_tracking`. The viewer need not track the entity now (its
+    /// client ignores data for one it does not have). Refuses with `EntityViewError`: `Client`,
+    /// `Stale` (the viewer handle), `NoConnection` (a fake viewer), `StaleEntity`, `Empty`
+    /// (nothing to send), `Conflict` (a name and its removal together), `Text` (a name the text boundary
+    /// refuses) and `TooLarge` (a name the network encoding cannot carry: over 65,535 bytes of modified
+    /// UTF-8 or past the network NBT quota; nothing is sent). Each field is replaced on its own: the
+    /// server keeps no per-viewer override, so a later change it sends for one field (the flags, say)
+    /// shows that field's real value again while the other replaced fields stay as sent.
+    #[access(WorldOnly)]
+    fn player_send_entity_data(
+        &mut self,
+        viewer: PlayerRef,
+        entity: EntityRef,
+        data: EntityViewData,
+    ) -> Result<(), EntityViewError>;
     /// Side: server.
     /// Opens a block entity's menu for a connected player (`ServerPlayer.openMenu`).
     /// Returns Stale for an invalidated entity; Ok(false) for a wrong-level player,

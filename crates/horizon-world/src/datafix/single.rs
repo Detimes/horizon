@@ -1,7 +1,7 @@
 //! One block entity's or entity's saved data upgraded on its own, for callers that hold it outside a chunk (a mod
 //! reading a schematic or an old structure): the fixes the chunk loaders run on it, between a depth check of the
 //! input and one of the result.
-use super::{CURRENT, FLATTENING, Ty, block_state_data, key, schema, update};
+use super::{CURRENT, Ty, key, schema, update};
 use horizon_core::nbt::{Compound, JavaString, Tag};
 
 /// The deepest nesting accepted: a list or compound at depth `MAX_DEPTH` (the root compound is at 0) is refused.
@@ -69,21 +69,14 @@ pub fn upgrade_block_entity(data_version: i32, tag: Compound) -> Result<Compound
 }
 
 /// One block state's NBT (`Name`, `Properties`) saved at `data_version`, upgraded as the datafixers upgrade a block
-/// state of a chunk of that version: a state from before the flattening ([`FLATTENING`]) takes its 1.13 name and
-/// properties from `BlockStateData`; any other, or one the table doesn't know, comes back as it was saved. Data of the
-/// current version comes back as it is. Refused as [`upgrade_block_entity`] refuses a version or a depth.
+/// state of a chunk of that version: every fix registered for block states from that version up to [`CURRENT`], so a
+/// state from before the flattening ([`super::FLATTENING`]) takes its 1.13 name and properties from `BlockStateData` and
+/// then the later fixes apply (`grass_path` to `dirt_path`, and 26.1's `Name`/`Properties` to `id`/`properties`). A state the fixes don't change, or can't read, comes
+/// back as it was saved. Data of the current version comes back as it is. Refused as [`upgrade_block_entity`]
+/// refuses a version or a depth, and a result that deep.
 pub fn upgrade_block_state(data_version: i32, tag: Compound) -> Result<Compound, UpgradeError> {
     let tag = checked(data_version, tag)?;
-    if data_version >= FLATTENING {
-        return Ok(tag);
-    }
-    let saved = tag.clone();
-    let upgraded =
-        std::panic::catch_unwind(|| block_state_data::upgrade_block_state_tag(&Tag::Compound(tag)));
-    match upgraded {
-        Ok(Tag::Compound(upgraded)) => Ok(upgraded),
-        _ => Ok(saved),
-    }
+    upgraded(Ty::BlockState, tag, data_version)
 }
 
 /// One entity's NBT saved at `data_version`, upgraded as the entity chunk loader upgrades the entities of a chunk of
@@ -197,10 +190,10 @@ fn dismantle(tag: Tag) {
 
 #[cfg(test)]
 mod block_state_guard_tests {
-    //! The version and depth refusals of `upgrade_block_state`, with literal values. The mapping of a pre-1.13 state
-    //! needs the fixers' resources and is not covered here.
+    //! `upgrade_block_state` with literal values: the refusals and a post-flattening rename. The mapping of a pre-1.13
+    //! state needs the fixers' resources and is not covered here.
     use super::{UpgradeError, upgrade_block_state};
-    use horizon_core::nbt::{Compound, Tag, parse_snbt};
+    use horizon_core::nbt::{Compound, JavaString, Tag, parse_snbt};
 
     fn state() -> Compound {
         match parse_snbt("{Name: \"minecraft:stone\"}").unwrap().0 {
@@ -226,8 +219,20 @@ mod block_state_guard_tests {
     }
 
     #[test]
-    fn the_current_version_and_flattened_states_come_back_unchanged() {
+    fn the_current_version_comes_back_unchanged() {
         assert_eq!(upgrade_block_state(5023, state()), Ok(state()));
-        assert_eq!(upgrade_block_state(1519, state()), Ok(state()));
+    }
+
+    #[test]
+    fn a_flattened_state_gets_the_later_fixes() {
+        let path = match parse_snbt("{Name: \"minecraft:grass_path\"}").unwrap().0 {
+            Tag::Compound(c) => c,
+            other => panic!("expected a compound, got {other:?}"),
+        };
+        let upgraded = upgrade_block_state(2586, path).unwrap();
+        assert_eq!(
+            upgraded.get(&JavaString::from("id")),
+            Some(&Tag::String("minecraft:dirt_path".into()))
+        );
     }
 }
