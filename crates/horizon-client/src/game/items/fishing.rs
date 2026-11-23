@@ -965,7 +965,7 @@ impl Game<'_> {
         // The players a server serves are sent them too.
         self.lan_send_particles(super::lan_particles::QueuedParticle {
             dimension: self.dim.id(),
-            options,
+            options: options.into(),
             state: None,
             at,
             spread,
@@ -1060,7 +1060,7 @@ impl Game<'_> {
                     entity_hit_margin(h.tick_count),
                     self.mobs
                         .iter()
-                        .filter(|m| m.alive())
+                        .filter(|m| m.alive() && Some(m.id) != own_vehicle)
                         .map(|m| (m.id, m.bounds()))
                         .chain(
                             self.creatures
