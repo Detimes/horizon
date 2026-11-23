@@ -258,7 +258,11 @@ pub(super) struct Tracked {
 /// listed got off. Every tracked entity counts, whatever its type, so a
 /// server's item display or marker on a player hides that player's name tag
 /// as vanilla's `isVehicle` does (#5666).
+///
+/// The list is the server's and may be long: it is looked up as a set built
+/// once, not scanned once per entity.
 fn seat_passengers(entities: &mut HashMap<i32, Tracked>, vehicle: u32, passengers: &[i32]) {
+    let passengers = passenger_set(passengers);
     for (id, t) in entities.iter_mut() {
         if passengers.contains(id) {
             t.vehicle = Some(vehicle);
@@ -266,6 +270,11 @@ fn seat_passengers(entities: &mut HashMap<i32, Tracked>, vehicle: u32, passenger
             t.vehicle = None;
         }
     }
+}
+/// The entity ids of a `SetPassengers` list, to look each entity up once
+/// (`handleSetEntityPassengersPacket` does one lookup per listed id).
+pub(super) fn passenger_set(passengers: &[i32]) -> std::collections::HashSet<i32> {
+    passengers.iter().copied().collect()
 }
 /// Smooth an entity toward a new position over three ticks (InterpolationHandler).
 #[derive(Clone, Copy)]
@@ -489,6 +498,9 @@ pub(super) struct Remote {
     pub attachments: HashMap<Holder, ResidentAttachments>,
     /// The server samples far terrain for us, this far at most (`lod_net`).
     pub far_terrain: Option<horizon_client::lod_net::Offer>,
+    /// Where an older release's server last broke a potion, whose sound this client played
+    /// itself (`splash_sound`).
+    pub(super) splash_sound: horizon_protocol::adapter::splash_sound::SplashSound,
     pub(super) builtin: Arc<Builtin>,
     lang: Arc<Language>,
     pub(in crate::game) registries: Arc<Dynamic>,
@@ -767,9 +779,14 @@ pub(super) struct Remote {
     clock_game_time: i64,
     /// `ClientChunkCache.Storage`'s view centre (ClientboundSetChunkCacheCenterPacket).
     chunk_center: (i32, i32),
-    /// Received events a frame left for the next one, in order, and when
-    /// the oldest of them first waited (`poll_remote`).
-    backlog: VecDeque<Received>,
+    /// Received events a frame left for the next one, in order, with each
+    /// item's arrival time so `BACKLOG_LIMIT` tracks the front item's age
+    /// instead of staying overdue for an entire continuous chunk stream.
+    backlog: VecDeque<(Received, Instant)>,
+    /// Arrival time of the front item in `backlog`, kept updated for
+    /// mod-API internals compatibility while per-item timestamps drive
+    /// `BACKLOG_LIMIT`.
+    #[allow(dead_code)]
     backlog_since: Option<Instant>,
     /// `ClientboundTransferPacket`'s target: when the connection ends the
     /// game connects here, the stored cookies carried over (`TransferState`).
@@ -841,7 +858,7 @@ mod use_prediction;
 mod wire;
 
 // The `Game` methods moved into the files above stay here as the mod points they were, by name, module path and
-// signature (docs/layers.md#mod-points-stay-put); each forwards to its body in its file.
+// signature; each forwards to its body in its file.
 impl Game<'_> {
     // connection.rs
     pub(super) fn remote_sound_name(
@@ -896,6 +913,9 @@ impl Game<'_> {
     }
     pub(super) fn leave_server(&mut self, reason: Option<Text>) -> Result<()> {
         self.leave_server_body(reason)
+    }
+    pub(super) fn leave_server_for_transfer(&mut self) -> Result<()> {
+        self.leave_server_for_transfer_body()
     }
 
     // wire.rs
@@ -1245,7 +1265,7 @@ impl Game<'_> {
     }
 
     // tick.rs
-    fn tick_client_load(&mut self) {
+    pub(in crate::game) fn tick_client_load(&mut self) {
         self.tick_client_load_body()
     }
     pub(super) fn tick_remote(&mut self) -> Result<()> {
@@ -1302,6 +1322,14 @@ impl Game<'_> {
     ) {
         self.remote_player_eating_body(item, ticks, at, eye, pitch, yaw)
     }
+    pub(in crate::game) fn send_export_view_position(&mut self) {
+        if !self.replay.playing()
+            && let Some(remote) = &self.remote
+        {
+            self.remote_send_state(remote.last_input);
+        }
+    }
+
     fn remote_send_state(&mut self, input: u8) {
         self.remote_send_state_body(input)
     }
