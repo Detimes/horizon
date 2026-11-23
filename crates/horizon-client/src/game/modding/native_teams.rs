@@ -264,8 +264,8 @@ mod tests {
             assert!(!game.team_set_prefix(team.clone(), Text::literal("[VIP] ")));
             assert!(game.team_set_suffix(team.clone(), Text::literal(" *")));
             let board = game.score.board.team("opts").unwrap();
-            assert_eq!(board.prefix, serde_json::json!("[VIP] "));
-            assert_eq!(board.suffix, serde_json::json!(" *"));
+            assert_eq!(board.prefix, serde_json::json!({"text": "[VIP] "}));
+            assert_eq!(board.suffix, serde_json::json!({"text": " *"}));
             assert!(game.team_set_name_tag_visibility(team.clone(), TeamVisibility::Never));
             assert!(!game.team_set_name_tag_visibility(team.clone(), TeamVisibility::Never));
             assert!(game.team_set_collision_rule(team.clone(), TeamCollisionRule::PushOwnTeam));
