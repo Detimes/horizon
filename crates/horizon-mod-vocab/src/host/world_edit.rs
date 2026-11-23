@@ -45,9 +45,10 @@ pub trait WorldEditServerHost {
     ) -> Result<Compound, NbtUpgradeError>;
     /// Side: server.
     /// A block state's NBT (`{Name, Properties}`) saved at `data_version`, upgraded as the datafixers upgrade a block
-    /// state of a chunk of that version: a state from before 1.13 comes out with its 1.13 name and properties (the
-    /// table of `BlockStateData`); any other comes back unchanged, as does data of exactly the game's version. Pure:
-    /// nothing in the world changes. Refused by name as `upgrade_block_entity_nbt` refuses.
+    /// state of a chunk of that version: every fix registered for block states from that version up to the game's
+    /// DataVersion runs, including pre-1.13 flattening (`BlockStateData`) and post-flattening renames. Data of
+    /// exactly the game's version, or data the fixes can't read, comes back unchanged. Pure: nothing in the world
+    /// changes. Refused by name as `upgrade_block_entity_nbt` refuses.
     #[access(WorldOnly)]
     fn upgrade_block_state_nbt(
         &self,
