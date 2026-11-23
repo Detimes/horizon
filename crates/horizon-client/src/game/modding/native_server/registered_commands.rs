@@ -42,7 +42,21 @@ impl NativeCommandState {
     /// root set one (`Command::denied_message`); `None` keeps vanilla's unknown-command answer.
     pub(in crate::game) fn denied(&self, line: &str) -> Option<&str> {
         let name = line.split(' ').next().unwrap_or_default();
-        self.registered.as_ref()?.denied.get(name).map(String::as_str)
+        self.registered
+            .as_ref()?
+            .denied
+            .get(name)
+            .map(String::as_str)
+    }
+
+    /// The denied text for a player of `permission` typing `line`: only when the player is below
+    /// the root's traversal level, which is its lowest usage level. A player who reaches the root
+    /// is refused further in by the dispatcher, with vanilla's answer.
+    pub(in crate::game) fn denied_for(&self, line: &str, permission: u8) -> Option<&str> {
+        if permission >= self.level(line)? {
+            return None;
+        }
+        self.denied(line)
     }
 }
 
@@ -148,9 +162,7 @@ fn denied_texts(usages: &[mod_api::Command]) -> HashMap<String, String> {
             continue;
         };
         let root = usage.usage.split(' ').next().unwrap_or_default();
-        texts
-            .entry(root.to_owned())
-            .or_insert_with(|| text.clone());
+        texts.entry(root.to_owned()).or_insert_with(|| text.clone());
     }
     texts
 }
@@ -158,6 +170,27 @@ fn denied_texts(usages: &[mod_api::Command]) -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_text_shows_only_when_the_whole_root_is_above_the_player() {
+        let mut state = NativeCommandState::default();
+        state.registered = Some(NativeCommands {
+            levels: HashMap::from([("music".to_owned(), 0), ("mod".to_owned(), 2)]),
+            denied: HashMap::from([
+                ("music".to_owned(), "No.".to_owned()),
+                ("mod".to_owned(), "Staff only.".to_owned()),
+            ]),
+            tree: Value::Null,
+            arguments: CommandArguments::default(),
+            usages: Vec::new(),
+        });
+        // A root with a public and a protected usage has level 0: a level-0 guest typing
+        // `music stop` is refused by the dispatcher, not by the text.
+        assert_eq!(state.denied_for("music stop", 0), None);
+        assert_eq!(state.denied_for("mod ban", 1), Some("Staff only."));
+        assert_eq!(state.denied_for("mod ban", 2), None);
+        assert_eq!(state.denied_for("unknown", 0), None);
+    }
 
     #[test]
     fn the_first_denied_text_of_a_root_answers_for_it() {
@@ -169,7 +202,10 @@ mod tests {
         ];
         let texts = denied_texts(&usages);
         assert_eq!(texts.len(), 1);
-        assert_eq!(texts.get("music").map(String::as_str), Some("Ask a moderator."));
+        assert_eq!(
+            texts.get("music").map(String::as_str),
+            Some("Ask a moderator.")
+        );
         assert_eq!(usages[0].denied, None);
     }
 }

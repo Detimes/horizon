@@ -93,9 +93,9 @@ impl Game<'_> {
                 });
                 return;
             }
-            // `Command::denied_message`: a player below the level gets the mod's text, not
+            // `Command::denied_message`: a player below the root's level gets the mod's text, not
             // vanilla's unknown-command answer.
-            if let Some(text) = self.native_commands.denied(command) {
+            if let Some(text) = self.native_commands.denied_for(command, permission) {
                 host.hub.send_to(
                     conn,
                     &C::SystemChat(play::SystemChat {
