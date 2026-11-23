@@ -16,6 +16,10 @@ Tab, the arrows, Enter and Space work it from the keyboard (Left and Right step 
 
 Every setting applies at once, except worker threads, the graphics API, translucent batching and the sizes battery mode halves the client's pools to (chunk building, the tick's helpers, chunk decoding, saves, network and chunk encoding), which apply at the next start (battery mode's frame cap applies at once). A preset sets the quality settings together; changing one of them turns it into Custom. Display preferences (FOV, framerate, VSync, GUI scale, fullscreen, present mode, pacing) leave the preset as it is.
 
+With VSync off, **Present Mode: Mailbox** uses FIFO on surfaces that do not support Mailbox, so
+the explicit tear-free choice never becomes Immediate. **Auto** still follows vanilla's selection.
+The F3 display shows the mode that the surface actually uses.
+
 Each preset is a fixed table (`graphics_preset.rs`), so picking one gives the same settings whatever was set before:
 
 | | Full Performance | Performance | Balanced | Quality | Ultra |
@@ -130,6 +134,8 @@ Ordinary Overworld atmospheric fog extends with the selected LOD distance. Fog O
 The setting is stored as `lodDistance` in `horizon-graphics.txt`; `0` disables it. Far Detail (Full or Reduced) sets how finely the distant terrain is drawn (Reduced draws about a quarter of the far quads). Existing `renderDistance` in `options.txt` keeps its normal meaning for full chunks.
 
 The block textures' video memory is `textureBudgetMiB` in `horizon-graphics.txt` (no Video Settings row yet): `0`, the default, keeps Horizon's own 256 MiB, which samples a high-resolution resource pack's block textures down (to 128 px); a larger number in MiB (up to 16384) keeps more of it. It applies when resources next load.
+
+The LabPBR maps of a shader pack's resource packs have their own budget, `pbrBudgetMiB` in `horizon-graphics.txt` (no Video Settings row yet): `0`, the default, gives each map set a quarter of `textureBudgetMiB`; a number in MiB (up to 16384) sets it directly, so the maps and the colours can be sized apart. It applies when resources next load.
 
 Dynamic Resolution (`dynamicResolution`, off by default, with `targetFps`, 30 to 240, 60 by default, in `horizon-graphics.txt`) lets the world's resolution move on its own. Resolution Scale becomes the lowest it goes, and the scale rises toward 100% while the GPU keeps the target frame rate, falling back toward the setting when frames take longer. It goes by the median GPU time of a window of frames, and takes a step up only when the frame would still fit if its cost grew with the pixels. Frames of a world still loading don't count. Each change starts the history of TAA and of a shader pack over, so under a shader pack it moves gently (a verdict every 3 seconds, 10% steps, at least 8 seconds between changes); without one it follows the scene within a second (5% steps). At 100% or more it does nothing. F3 and the performance overlay (`res 85%` beside the frame rate) show the scale while it is on, and horizon-ctl's `status` reports it (`resolution_scale`). Turn it off for measurements: it moves the resolution under them.
 

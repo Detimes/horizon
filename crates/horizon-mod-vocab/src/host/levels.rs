@@ -1440,9 +1440,10 @@ pub trait LevelsBackendMut {
     /// `entity_mob_griefing`, `Trigger` only works buttons, levers, doors and
     /// the like); `fire` lights some of the air around whatever it is.
     /// `settings` holds the damage calculator, particles and sound, each
-    /// vanilla's default when `None`. There is no radius limit, as in
-    /// vanilla: a big blast costs the blocks its rays find, and one of 0 or
-    /// below finds none. Refused, with nothing exploded and no hook told, as
+    /// vanilla's default when `None`. Vanilla has no radius limit,
+    /// but a mod's blast takes at most 64 (vanilla's biggest are 6 and 7): a
+    /// big blast costs the blocks its rays find, and one of 0 or below finds
+    /// none. Refused, with nothing exploded and no hook told, as
     /// [`ExplodeError`] says.
     #[access(WorldOnly)]
     fn level_explode(
@@ -1609,7 +1610,8 @@ pub trait LevelsBackendMut {
     /// they award). True once the orbs are awarded, even if a mod keeps a new
     /// one out (`entity_join_level`). False, with no orbs, for 0, a
     /// value that isn't finite, on a client, for a stale handle or a level
-    /// not in place.
+    /// not in place. One call awards at most 1,000,000 points (about 400
+    /// orbs): a larger `amount` is cut to that, so award in several calls.
     #[access(WorldOnly)]
     fn level_award_experience(
         &mut self,
