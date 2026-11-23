@@ -55,10 +55,17 @@ READERS = {
     "horizon-client": HORIZON_CLIENT,
     # Shares horizon-client's sources, so its unit tests run the same reads.
     "horizon-client-lib": HORIZON_CLIENT,
-    # lang.rs embeds the bundled language files.
-    "horizon-client-core": ["crates/horizon-client/assets/horizon/lang"],
+    # lang.rs embeds the bundled language files; its tests read the unformattable keys, and text.rs's the
+    # template cases tools/lang_coverage.py shares.
+    "horizon-client-core": [
+        "crates/horizon-client/assets/horizon/lang", "tests/fixtures/translation_templates.json",
+        "tests/fixtures/translation_text_rules.json", "tools/lang_unicode_tables.json",
+        "tools/lang_unformattable.json",
+    ],
+    # The world's shaders include the HDR look from its pack, and the look pack's tests load the pack.
     "horizon-client-render": [
         "crates/horizon-client/assets/horizon/lang", "crates/horizon-client/assets/horizon/textures/gui",
+        "crates/horizon-shader-api/packs/horizon_hdr",
     ],
     # The daily Character comparator reads the original public-JDK API helper.
     "horizon-core": ["tools/JavaCharacterTables.java"],
@@ -94,6 +101,7 @@ READERS = {
         "crates/horizon-theme/fonts", "crates/horizon-theme/icons", "docs/api/server-reference.md",
         "packaging/executable_link.rs",
     ],
+    "horizon-server-launch": ["docs/hosting.md"],
     "horizon-shader-api": ["docs/api/shaders-reference-0.2.md", "tools/fixtures/shaderpacks"],
     "horizon-world": ["crates/horizon-core", "Cargo.lock"],
     # Commands (tokens, icons, package), not tests: listed so the scan finds nothing unexplained.
@@ -111,6 +119,7 @@ SCANNED = {"horizon-client-core": ["crates"]}
 NOT_READS = {
     "horizon-client": {"crates"}, "horizon-client-lib": {"crates"}, "horizon-mod-package": {"crates"},
     "horizon-mod-vocab": {"."}, "horizon-port-pack": {"mods"}, "horizon-prepare": {"crates"},
+    "horizon-server-launch": {"crates"},
 }
 
 

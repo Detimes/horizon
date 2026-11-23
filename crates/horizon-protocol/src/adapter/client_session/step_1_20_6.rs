@@ -1,6 +1,7 @@
 //! 1.21's packets in 1.20.6's layout for a 1.20.6 client (and 1.20.5): the mirror of `translate`'s `v1_20_6`
-//! (1.20.6 to 1.21). Clientbound: explode's sound holder passes as it is when inline (both releases write the
-//! holder: 0, then the sound event), a registry holder becomes the inline generic explosion sound, projectile_power sends a zero vector (1.21 sends only the power), and
+//! (1.20.6 to 1.21). Clientbound: explode's sound holder passes as it is
+//! when inline (both releases write the holder: 0, then the sound event), a registry holder becomes the inline generic
+//! explosion sound, projectile_power sends a zero vector (1.21 sends only the power), and
 //! merchant_offers' trade items become 1.20.6 stacks, an empty stack for a missing second cost. Serverbound, a 1.20.6
 //! client's use_item gets the head's yaw and pitch, which 1.21 reads and 1.20.6 does not send.
 //!
