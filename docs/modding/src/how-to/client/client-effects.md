@@ -31,7 +31,11 @@ views with distinct IDs are taken, with sides limited to 4096 pixels and the
 device limit, and 4 x 4096 x 4096 pixels in all. `push` refuses any other view
 with a `WorldViewRefusal` naming it and the reason, and logs each refusal once.
 Each view culls the world with its own frustum, and the player's view keeps its
-own culling. These callbacks have no Wire form.
+own culling. Entities and block entities are built for what the camera or any
+view sees; entity occlusion culling (the `entityCulling` setting) proves an entity
+hidden from the player's camera only, so it is off for a frame with views, and an
+entity behind a hill from the player still reaches a view that sees it. These
+callbacks have no Wire form.
 
 For a view seen in another view, such as a portal seen through a portal, push the
 outer view first and add `with_parent(outer_id)` to the inner one. Views nest up to
@@ -105,3 +109,23 @@ std::thread::spawn(move || {
 ```
 
 A wasm mod calls `push_voice` through the host each time; a sink reports `Unavailable` there.
+
+## Showing another time or weather
+
+`sky_environment` lets a client mod show the local player another time of day or weather, for example noon
+while building, a clear sky for a recording, or night on a server where it is day. It is asked whenever the
+frame reads the sky, with the frame's `partial` tick and the values the frame would draw:
+
+| `SkyEnvironmentEvent` field | Meaning |
+| --- | --- |
+| `partial` | Ticks past the last tick, from 0 to 1 |
+| `day_time` | The level's time of day (or PvP & HUD's view time); write it to show another |
+| `rain` | The rain level from 0 to 1; write it to show more or less rain |
+| `thunder` | The thunder level from 0 to 1; write it to show more or less thunder |
+
+Only the picture follows: the sun, moon and stars, the sky's and fog's colour, the sky's light, clouds, and
+falling rain or snow. The level's own clock and weather, gameplay (crops, mobs, beds) and the server keep
+theirs, and nothing is sent. Rain and thunder count only in a dimension with weather. A level that is not finite
+keeps the level's value, and the others are clamped to 0..=1. The hook may run more than once a frame, so
+give the same answer each time. Only a client of a world (single player's included) asks it, never the game
+that ticks the world. NeoForge has no counterpart; Java mods change `ClientLevel` with a mixin.
