@@ -749,13 +749,15 @@ impl Game<'_> {
             self.tick_chunks.wait(key);
         }
         // The saved list is consumed: later saves take the scheduler's ticks.
-        if loaded && let Some(c) = self.world.chunks.get_mut(&key) {
-            let c = Arc::make_mut(c);
-            if let Some(s) = c.saved.as_mut() {
-                let s = Arc::make_mut(s);
-                s.block_ticks.clear();
-                s.fluid_ticks.clear();
-            }
+        if loaded {
+            self.world.chunks.mutate_chunk(key, |c| {
+                let c = Arc::make_mut(c);
+                if let Some(s) = c.saved.as_mut() {
+                    let s = Arc::make_mut(s);
+                    s.block_ticks.clear();
+                    s.fluid_ticks.clear();
+                }
+            });
         }
         // PistonMovingBlockEntity.loadAdditional: blocks saved mid-move carry
         // on moving; later saves take them from the level (arismoko/horizon#3310).
@@ -771,7 +773,7 @@ impl Game<'_> {
         for &(pos, piston) in &pistons {
             self.restore_moving_piston(pos, piston, saved.as_deref());
         }
-        if let Some(c) = self.world.chunks.get_mut(&key) {
+        self.world.chunks.mutate_chunk(key, |c| {
             let c = Arc::make_mut(c);
             if let Some(s) = c.saved.as_mut() {
                 Arc::make_mut(s).block_entities.retain(|tag| {
@@ -779,7 +781,7 @@ impl Game<'_> {
                     !pistons.iter().any(|(p, _)| [p.x, p.y, p.z] == at)
                 });
             }
-        }
+        });
     }
     /// `PistonMovingBlockEntity.loadAdditional`, for a `minecraft:piston`
     /// entity whose block is still a moving piston.
@@ -2227,10 +2229,11 @@ impl Game<'_> {
         keys.contains(&chunk_of(o.position)).then(|| {
             let raw = anon_raw(&self.persist, "minecraft:experience_orb", o.position);
             let uuid = saved_uuid(&self.persist, o.id);
-            let tag = with_raw(
+            let mut tag = with_raw(
                 with_raw(entity_nbt::orb_to_nbt(o, uuid), raw.as_ref()),
                 self.persist.raw.get(&o.id),
             );
+            self.save_portal_cooldown(o.id, &mut tag);
             (chunk_of(o.position), tag)
         })
     }
