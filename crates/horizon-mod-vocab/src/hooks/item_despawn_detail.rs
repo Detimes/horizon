@@ -1,5 +1,5 @@
 //! The `item_despawn_detail` hook: declarations the mod API generator reads (see `hooks/mod.rs`).
-// catalog-order: 0352
+// catalog-order: 0360
 
 pub trait Hooks {
     /// A dropped item entity reached its 6000-tick lifetime and is about to be removed (Bukkit's
