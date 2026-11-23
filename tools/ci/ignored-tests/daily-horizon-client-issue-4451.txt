@@ -103,6 +103,7 @@ horizon-client game::boat_leads::tests::non_guest_holder_branches_keep_their_exi
 horizon-client game::boat_passengers::boat_callback_review_tests::boat_ejection_does_not_snap_a_rider_discarded_by_its_callback lib daily resources
 horizon-client game::boat_passengers::boat_callback_review_tests::boat_ejection_preserves_a_later_passengers_callback_reparenting lib daily resources
 horizon-client game::boat_passengers::off_level_tests::retained_boat_passenger_occupies_a_seat_without_being_positioned lib daily resources
+horizon-client game::boat_passengers::server_passenger_order_tests::a_servers_client_seats_its_boat_players_in_the_servers_order lib daily resources
 horizon-client game::boat_passengers::tests::a_mod_growing_a_mob_during_vehicle_ticks_keeps_it_in_collision_queries lib daily resources
 horizon-client game::boat_passengers::tests::a_vehicle_knows_its_mob_riders_as_soon_as_they_board lib daily resources
 horizon-client game::boat_passengers::tests::a_vehicles_box_query_matches_a_walk_over_every_mob lib daily resources
@@ -319,6 +320,7 @@ horizon-client game::commands::terrain_cmds::loot_slot_tests::item_commands_bypa
 horizon-client game::commands::terrain_cmds::loot_slot_tests::item_replace_jukebox_accepts_music_disc_cat lib daily resources
 horizon-client game::commands::terrain_cmds::loot_slot_tests::loot_empty_replace_jukebox_preserves_music_disc_13 lib daily resources
 horizon-client game::commands::terrain_cmds::loot_slot_tests::loot_replace_furnace_fuel_refuses_non_fuel lib daily resources
+horizon-client game::commands::terrain_cmds::loot_slot_tests::loot_replace_clears_empty_position_and_writes_following_real_item lib daily resources
 horizon-client game::commands::terrain_cmds::loot_slot_tests::loot_replace_kill_fills_an_accepting_slot_and_leaves_a_refusing_one lib daily resources
 horizon-client game::commands::terrain_cmds::loot_slot_tests::loot_replace_mine_fills_an_accepting_slot_and_leaves_a_refusing_one lib daily resources
 horizon-client game::commands::vehicle_kill_tests::kill_spills_explicit_vehicle_contents_after_menu_writeback lib daily resources
@@ -2302,6 +2304,7 @@ horizon-client game::remote::tables::tests::a_servers_block_and_item_tags_replac
 horizon-client game::remote::tests::a_mod_chat_line_shows_locally_and_sends_nothing lib daily resources
 horizon-client game::remote::tests::a_reconfiguring_client_plays_menu_music_and_never_indexes_past_the_biomes lib daily resources
 horizon-client game::remote::tests::a_servers_client_takes_its_speed_from_the_attributes_not_the_effect lib daily resources
+horizon-client game::remote::tests::a_standalone_replay_resolves_the_recorded_world_clock lib daily resources
 horizon-client game::remote::tests::an_unfocused_window_waits_for_the_loading_screen_to_pause lib daily resources
 horizon-client game::remote::tests::block_alias_survival_consumption_and_client_prediction lib daily resources
 horizon-client game::remote::tests::client_camera_entity_returns_to_player_after_removal lib daily resources

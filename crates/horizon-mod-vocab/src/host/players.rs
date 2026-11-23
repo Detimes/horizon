@@ -897,6 +897,32 @@ pub trait PlayersBackendMut {
     #[access(WorldOnly)]
     fn player_send_map(&mut self, player: PlayerRef, map_id: i32, colors: &[u8]) -> bool;
     /// Side: server.
+    /// Opens `dialog` on the player's screen: a dialog as a data pack's file
+    /// writes it (`type`, `title`, `body`, `inputs`, `buttons`), sent inline,
+    /// as `/dialog show` does for one written out
+    /// (`ServerPlayer.openDialog`). The dialog is checked as the client reads it
+    /// (`Dialog.DIRECT_CODEC`) and as the wire carries it, since a client that
+    /// cannot read it leaves the game: one it would refuse, or whose tag is
+    /// too deep to send, sends nothing. The player's own hooks may call it,
+    /// the packet going after the hook. False for a player not here, a fake
+    /// player, on a client and for such a dialog.
+    #[access(WorldOnly)]
+    fn player_show_dialog(&mut self, player: PlayerRef, dialog: &Compound) -> bool;
+    /// Side: server.
+    /// Opens the dialog `id` of the `minecraft:dialog` registry (a world
+    /// pack's included, `mymod:shop`, or a vanilla one with or without
+    /// `minecraft:`) on the player's screen, as `/dialog show` does. False
+    /// for an id the registry doesn't have, and as `player_show_dialog`.
+    #[access(WorldOnly)]
+    fn player_show_dialog_id(&mut self, player: PlayerRef, id: &str) -> bool;
+    /// Side: server.
+    /// Closes the dialog the player's client shows (`/dialog clear`,
+    /// `ServerPlayer.closeDialog`); nothing happens when it shows none. The
+    /// server is never told that a player closed a dialog themselves, so it
+    /// cannot read whether one is open. False as `player_show_dialog`.
+    #[access(WorldOnly)]
+    fn player_clear_dialog(&mut self, player: PlayerRef) -> bool;
+    /// Side: server.
     /// Stores a server player's `Abilities` and tells their client
     /// (`ServerPlayer.onUpdateAbilities`). They stay as written until the
     /// player's game mode changes (`GameType.updatePlayerAbilities`), and are
@@ -1278,6 +1304,37 @@ pub trait PlayersBackendMut {
         pos: [i32; 3],
         state: BlockState,
     ) -> Result<(), PlayerWorldRefusal>;
+    /// Side: server.
+    /// Offers that player's client a resource pack while they play
+    /// (`ClientboundResourcePackPushPacket`; Paper's `Player.sendResourcePacks`). The client
+    /// downloads `pack.url`, checks it against `pack.sha1` when that is not empty, and asks the
+    /// player (with `pack.prompt` when it is set) unless the pack is already loaded or accepted.
+    /// A pack with the id of one the client holds replaces it; other ids stack, the newest on
+    /// top. Its answers come to `resource_pack_status_v2` with `pack` as `pack.id`. `required` only changes
+    /// what the client's screen offers: the server does not disconnect a player who declines
+    /// (only the `server.properties` pack does), so a mod acts on a status 1 itself. Refuses,
+    /// sending nothing, with `PlayerPackRefusal`: `Client`, `Stale`, `NoConnection`, `UrlTooLong`
+    /// (over 32767 UTF-16 code units), `HashTooLong` (over 40 UTF-16 code units) and `BadPrompt`
+    /// (text the boundary refuses).
+    #[access(WorldOnly)]
+    fn player_push_resource_pack(
+        &mut self,
+        player: PlayerRef,
+        pack: ResourcePackOffer,
+    ) -> Result<(), PlayerPackRefusal>;
+    /// Side: server.
+    /// Takes the resource pack `id` off that player's client
+    /// (`ClientboundResourcePackPopPacket`; Paper's `Player.removeResourcePack`), or with None
+    /// every pack the server pushed to them, the `server.properties` pack included. An id the
+    /// client does not hold is ignored by the client. Like vanilla, this does not cancel an
+    /// offer still waiting in a consent prompt: accepting that prompt can load the pack later.
+    /// Refuses, sending nothing, with `PlayerPackRefusal`: `Client`, `Stale` and `NoConnection`.
+    #[access(WorldOnly)]
+    fn player_pop_resource_pack(
+        &mut self,
+        player: PlayerRef,
+        id: Option<u128>,
+    ) -> Result<(), PlayerPackRefusal>;
     /// Side: server.
     /// Writes `state` at `pos` in `level` for the player, for a state the mod already chose
     /// (an editor's or a schematic's). It is `level_set_block` with a placement's flags

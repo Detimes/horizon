@@ -523,16 +523,12 @@ impl Game<'_> {
             }),
         })
     }
-    /// Biome facts at a position for finalizeSpawn and variant rules.
+    /// Biome facts at `level.getBiome(pos)` (zoomed) for finalizeSpawn and variants.
     pub(super) fn biome_facts(&self, x: i32, y: i32, z: i32) -> BiomeFacts {
-        biome_facts::biome_facts_in(
-            &self.world,
-            world_biomes!(self),
-            self.res.mob_data(),
-            x,
-            y,
-            z,
-        )
+        let Some(id) = self.zoomed_biome_id([x, y, z]) else {
+            return BiomeFacts::default();
+        };
+        biome_facts::biome_facts_of(&self.world, world_biomes!(self), self.res.mob_data(), id)
     }
     /// Create a mob of `kind` at a position, finalized like a natural spawn.
     pub(super) fn spawn_mob(
@@ -1009,6 +1005,8 @@ impl Game<'_> {
                 });
                 // Set apart: one json! with every key goes past the default macro recursion
                 // limit, and horizon-client can't raise it (#8169).
+                // `sitting` is the saved order; clients only learn the rendered pose.
+                state["sitting_pose"] = m.extra.sitting_pose.into();
                 state["head"] = m.extra.head_id().into();
                 state["body"] = m.extra.body_id().into();
                 state["warden"] = serde_json::json!(horizon_client::mobs::warden::describe(m));
@@ -2966,10 +2964,11 @@ impl Game<'_> {
                     pickup_delay,
                 } => {
                     // `thrownItem.setThrower(the mob)`.
-                    self.spawn_item(stack, at, motion, pickup_delay);
-                    let thrower = self.mob_uuid(mob);
-                    if let Some(thrown) = self.just_spawned_item() {
-                        thrown.thrower = Some(thrower);
+                    if let Some(id) = self.spawn_item(stack, at, motion, pickup_delay) {
+                        let thrower = self.mob_uuid(mob);
+                        if let Some(thrown) = self.dropped_item_mut(id) {
+                            thrown.thrower = Some(thrower);
+                        }
                     }
                 }
                 MobEvent::DropStack { mob, stack, at } => {
@@ -4431,6 +4430,8 @@ impl Game<'_> {
         let mut impacts: Vec<Impact> = Vec::new();
         let mut vehicle_winds = self.vehicle_winds();
         let targets = self.projectile_targets();
+        // A stand without gravity has `noPhysics`: hurting projectiles skip it.
+        let free_stands = self.armor_stands.iter().any(|a| a.no_gravity);
         let breezes: Vec<u32> = self
             .mobs
             .iter()
@@ -4544,6 +4545,22 @@ impl Game<'_> {
                             };
                             targets.extend_from_slice(&winds);
                             horizon_client::arrows::tick(p, &scene, &targets)
+                        }
+                        (false, with_guests, no_winds) if free_stands => {
+                            let mut targets = if with_guests {
+                                pw_guests.targets.to_vec()
+                            } else {
+                                pw.targets.to_vec()
+                            };
+                            if !no_winds {
+                                targets.extend_from_slice(&winds);
+                            }
+                            self.drop_no_physics_stands(&p.kind, &mut targets);
+                            p.tick(&ProjWorld {
+                                w: if with_guests { pw_guests.w } else { pw.w },
+                                targets: &targets,
+                                border,
+                            })
                         }
                         (false, false, true) => p.tick(&pw),
                         (false, true, true) => p.tick(&pw_guests),
@@ -5322,6 +5339,14 @@ impl Game<'_> {
         {
             return Ok(());
         }
+        // An armor stand or an item frame (`projectile_targets.rs`).
+        if let Hit::Entity {
+            who: Who::Mob(id), ..
+        } = hit
+            && (self.projectile_hits_stand(p, id) || self.arrow_hits_frame(p, id))
+        {
+            return Ok(());
+        }
         if matches!(
             p.kind,
             ProjectileKind::WindCharge | ProjectileKind::BreezeWindCharge
@@ -5401,24 +5426,6 @@ impl Game<'_> {
             ) {
                 return Ok(());
             }
-        }
-        if p.arrow.is_some()
-            && let Hit::Entity {
-                who: Who::Mob(id), ..
-            } = hit
-            && self.item_frames.iter().any(|f| f.id == id)
-        {
-            // AbstractArrow.onHitEntity on an item frame: spent when the
-            // frame took the hit, turned back when a fixed one refused it.
-            let by_player = p.owner == Some(Who::Player);
-            let hurt = self.projectile_hurts_frame(id, by_player, by_player && self.creative);
-            let outcome = if hurt {
-                EntityHit::Hurt
-            } else {
-                EntityHit::Refused
-            };
-            self.finish_arrow_hit(p.clone(), outcome);
-            return Ok(());
         }
         if p.arrow.is_some()
             && let Hit::Entity {
@@ -7190,7 +7197,7 @@ impl Game<'_> {
                 .send_particles(&options, at, spread, 0.2, count);
             self.lan_send_particles(super::lan_particles::QueuedParticle {
                 dimension: self.dim.id(),
-                options,
+                options: options.into(),
                 state: None,
                 at,
                 spread,
@@ -7311,15 +7318,15 @@ impl Game<'_> {
                         as f64
                         * 0.1;
                 }
-                self.spawn_item_own(
+                if let Some((id, _)) = self.spawn_item_own(
                     ItemStack {
                         count: 1,
                         ..stack.clone()
                     },
                     [feet[0], feet[1] + 1.0, feet[2]],
                     if wool { 10 } else { 0 },
-                );
-                if let Some(e) = self.just_spawned_item() {
+                ) && let Some(e) = self.dropped_item_mut(id)
+                {
                     e.velocity = e
                         .velocity
                         .add_vector(Vec3::new(spread[0], spread[1], spread[2]));
@@ -7456,6 +7463,9 @@ impl Game<'_> {
         let Some(p) = self.player.as_ref() else {
             return Ok(false);
         };
+        // SnowballItem / EggItem / EnderpearlItem.playSound: the player's
+        // feet (getX/getY/getZ), not the eye the projectile starts from.
+        let feet = [p.position.x, p.position.y, p.position.z];
         // Projectile.shootFromRotation adds getKnownMovement: what the thrower last moved.
         let on_ground = p.ground.on_ground;
         let velocity = self.known_player_movement();
@@ -7477,7 +7487,7 @@ impl Game<'_> {
             _ => "minecraft:entity.ender_pearl.throw",
         };
         let pitch = 0.4 / (self.world.random.next_float() * 0.4 + 0.8);
-        self.audio.play(sound, Some(eye), 0.5, pitch);
+        self.audio.play(sound, Some(feet), 0.5, pitch);
         self.swing_arm();
         if !self.creative
             && let Some(s) = self.held_mut().as_mut()
@@ -7927,7 +7937,7 @@ impl Game<'_> {
     ) {
         // The coarse mob bounds pay off only in dense async scenes; otherwise,
         // keep the existing exact mesh-culling path.
-        if self.settings.horizon.entity_culling == EntityCullingMode::Asynchronous
+        if self.entity_culling_mode() == EntityCullingMode::Asynchronous
             && self
                 .occlusion
                 .asynchronous()
