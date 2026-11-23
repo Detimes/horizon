@@ -1,5 +1,5 @@
 //! The `living_heal_cause` hook: declarations the mod API generator reads (see `hooks/mod.rs`).
-// catalog-order: 0352
+// catalog-order: 0353
 
 pub trait Hooks {
     /// A living entity healed by `amount` after `living_heal` let the heal
