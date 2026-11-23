@@ -388,8 +388,8 @@ fn translucent_pulled(info: &wgpu::AdapterInfo, multi_draw: bool, flat_page_grou
 /// Whether the adapter is one of Apple's tiled GPUs: the only ones where a
 /// discard costs hidden-surface removal enough to split solid terrain into
 /// opaque and cutout passes. Metal is just the API on a Mac — Intel and AMD
-/// Macs use it too, with no tiled-memory discard penalty. `graphics::lod_capped`
-/// names Apple's GPUs this way already because Metal reports no PCI vendor.
+/// Macs use it too, with no tiled-memory discard penalty. Metal reports no PCI
+/// vendor, so the name is what tells Apple's GPUs apart.
 fn tiled_solid_gpu(info: &wgpu::AdapterInfo) -> bool {
     info.backend == wgpu::Backend::Metal && info.name.starts_with("Apple")
 }
@@ -2707,7 +2707,6 @@ impl Renderer {
         let mut bound = BoundArrays::set(&BOUND_SPRITE_ARRAYS, bound_arrays);
         let info = adapter.get_info();
         surface_setup::log_sprite_split(&info, split, layers);
-        crate::graphics::suggest_reduced_far_detail(crate::graphics::lod_capped(&info));
         let size = window.inner_size();
         let max_side = device.limits().max_texture_dimension_2d;
         let configured = match (&surface, configured) {
@@ -6665,6 +6664,7 @@ impl Renderer {
             let (peak, black) = hdr.metadata();
             horizon_hdr::set_metadata(device, surface, peak, black);
         }
+        surface_setup::log_configured(config, None);
         Ok(())
     }
     /// Configures the window surface again. One that fails is still the one
@@ -7201,6 +7201,13 @@ impl Renderer {
     pub fn shader_pack_loading(&self) -> bool {
         self.pack_loading.is_some()
     }
+    /// The finalized classic pack's material-map demand, even while no maps are loaded.
+    pub fn shader_pack_material_maps(&self) -> bool {
+        self.pack_post
+            .as_ref()
+            .and_then(|(_, post)| post.as_ref())
+            .is_some_and(pack_post::PackPost::needs_material_maps)
+    }
     /// The game won't give this renderer the pack whose world it holds (`world_held`): its
     /// load failed. Unless a pack of Horizon's runs, the world follows no pack again.
     pub fn release_world(&mut self) {
@@ -7215,6 +7222,7 @@ impl Renderer {
         self.pack_post = None;
         self.replace_executor(None);
         self.pack_atlas = None;
+        self.pack_material_atlases = None;
         self.separate_ao = false;
     }
     /// Sets whether shader pack terrain inputs pass vertex alpha to `hz_Color.a` (`separateAo=true`).
@@ -13269,8 +13277,7 @@ mod tests {
 
     /// The two solid passes and the tiled culling gate are for Apple's GPUs only:
     /// Metal is merely the API on an Intel or AMD Mac, which has no tiled-memory
-    /// discard penalty. The name is the discriminator Metal leaves us, the same
-    /// one `graphics::lod_capped` uses.
+    /// discard penalty. The name is the discriminator Metal leaves us.
     #[test]
     fn tiled_solid_passes_are_for_apple_gpus_on_metal_only() {
         let metal = |name: &str| {
