@@ -129,7 +129,12 @@ impl<L: LevelAccess + ?Sized> PlacementContext for LevelFeatureWorld<'_, '_, L> 
         position: [i32; 3],
         state: BlockStateId,
     ) -> Result<(), PlacementQueryError> {
-        self.sim.level.set_raw(pos(position), state);
+        let at = pos(position);
+        let changed = self.sim.state(at) != state;
+        self.sim.level.set_raw(at, state);
+        if changed {
+            self.placed.push(position);
+        }
         Ok(())
     }
     /// LevelChunk.setBlockState without neighbour or shape updates.
@@ -138,7 +143,9 @@ impl<L: LevelAccess + ?Sized> PlacementContext for LevelFeatureWorld<'_, '_, L> 
         position: [i32; 3],
         state: BlockStateId,
     ) -> Result<(), PlacementQueryError> {
-        self.sim.set_block(pos(position), state, 2 | 16);
+        if self.sim.set_block(pos(position), state, 2 | 16) {
+            self.placed.push(position);
+        }
         Ok(())
     }
     fn collision_full_block(

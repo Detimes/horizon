@@ -390,7 +390,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
     /// `StructureGrowEvent`: a feature grew from `source` and placed `cells` (the blocks it
     /// changed, in order). Asked once the blocks are in the world, and only when it placed.
     fn structure_grew(&mut self, source: BlockPos, placed: bool, cells: &[[i32; 3]]) {
-        if placed {
+        if placed && !cells.is_empty() {
             self.level.structure_grow(source, cells);
         }
     }
