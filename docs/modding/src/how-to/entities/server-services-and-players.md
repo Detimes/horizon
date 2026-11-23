@@ -186,6 +186,27 @@ The legacy ping of pre-1.7 clients is not asked.
 `player.chat(host, message)` makes a player say a line in public chat, as Paper's `Player#chat` does for plain text: the line is shown to every player who is on, under the player's display name and the server's chat format, as an unsigned line (clients show it as not verified). It does not go through the chat event, the chat filter or `chat_recipient`, so use it for a line a mod itself writes (a menu's chat action, a scripted greeting), not for a player's own typing. A leading `/` is refused as `PlayerChatRefusal::Command`: a command runs with `entity.run_command`. The other refusals are `Stale` (the handle's player is not on, or is a fake player), `Empty`, `TooLong` (over 256 characters) and `IllegalCharacter` (a control character, DEL or `§`); each changes nothing.
 `player.show_title(host, title, subtitle, fade_in, stay, fade_out)` puts a title and a subtitle on one player's screen, as `/title` does. The calls go out in vanilla's order: the timings, then the subtitle, then the title. Pass `None` for a line to leave it out; the other line stays as the client has it. The timings are game ticks, and a negative one keeps the client's current value for it (`/title ... times` skips a negative timing the same way). The text is checked before anything is sent (`TextFormError` over 512 nodes deep), and the call returns `false` for a player who is not on.
 
+## Resource packs
+
+`player.push_resource_pack(host, ResourcePackOffer)` offers one player's client a pack while they play, as
+`ClientboundResourcePackPushPacket` does; `player.pop_resource_pack(host, Some(id))` takes it off again, and `None`
+takes off every pack the server pushed, the `resource-pack` of `server.properties` included. Build the offer with
+`ResourcePackOffer::new(id, url)` and set `sha1` (40 hex digits, or empty for no check), `required` and `prompt`.
+A pack pushed with the id of one the client holds replaces it; other ids stack. The client downloads the zip itself,
+so the URL must be reachable from that player.
+Like vanilla, popping does not retract an offer still waiting in an unanswered consent prompt;
+accepting that prompt can load the pack later. It is not a pending-offer cancellation API.
+
+`resource_pack_status_v2(player, name, pack, status)` hears the answers with the pack's id, including while the
+player is dead; `resource_pack_status(player, name, status)` keeps its three arguments and its firing point.
+`required` changes only
+what the client's screen offers: the server does not disconnect a player who declines a pack a mod pushed (it does
+so only for the `server.properties` pack), so a mod that needs the pack kicks on status 1 or 2 itself. Answers to the
+`server.properties` pack are given before the player has joined and are not heard. Both calls return
+`Result<(), PlayerPackRefusal>`: `Client`, `Stale`, `NoConnection`, and for a push `UrlTooLong` (over 32767
+UTF-16 code units), `HashTooLong` (over 40 UTF-16 code units) and `BadPrompt` (text the boundary refuses); a refused
+call sends nothing. Characters outside the BMP count as two code units.
+
 ## Chat lines and respawn
 
 Keeping a public chat line from some players (an ignore list, a chat channel, a party chat): the `chat_recipient`
@@ -328,6 +349,19 @@ The inventory menu has no slot for body or saddle. All four player data writes
 (`set_inventory_slot`, `set_ender_chest_slot`, `give_stack`, `set_persistent_data`)
 are undone by an open transaction abort; equipment effects and overflow drops
 wait for the outermost commit.
+
+## Advancement progress
+
+For mods that carry a player's advancements between servers. Server only. `player.advancements(host)` returns
+the progress as the JSON text `PlayerAdvancements.save` writes (each started advancement's `criteria`, with grant
+dates, and `done`, plus `DataVersion`), or `None` for a stale or unavailable player and on a client.
+`player.set_advancements(host, json)` replaces the whole progress from a JSON object, as a loaded file does:
+advancements and criteria this server lacks are dropped, nothing is awarded (no toast, chat line or reward), and
+the client receives the full tree with its next update. A hook that replaces the progress while a gameplay grant
+runs does not make that grant complete an advancement: what it imported is not rewarded. It returns `false`,
+changing nothing, for input that is not a JSON object, for a grant date that is not a date this server can send
+(a number, other text, a year out of range), and for a player who cannot take it: a stale or unavailable handle, a
+dead or not connected player, a client, or a world with no server list.
 
 ## Player statistics
 
