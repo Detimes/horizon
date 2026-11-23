@@ -130,7 +130,18 @@ fn component_value(tag: &horizon_core::nbt::Tag) -> crate::server::json::Json {
         Tag::Byte(b) => Json::Bool(*b != 0),
         Tag::Int(i) => Json::Number(i.to_string()),
         Tag::Long(i) => Json::Number(i.to_string()),
+        Tag::Short(i) => Json::Number(i.to_string()),
+        Tag::Float(bits) => finite_number(f64::from(f32::from_bits(*bits))),
+        Tag::Double(bits) => finite_number(f64::from_bits(*bits)),
         _ => Json::Null,
+    }
+}
+fn finite_number(value: f64) -> crate::server::json::Json {
+    use crate::server::json::Json;
+    if value.is_finite() {
+        Json::Number(value.to_string())
+    } else {
+        Json::Null
     }
 }
 
@@ -2581,6 +2592,22 @@ impl KeepAliveWatch {
 #[cfg(test)]
 mod tests {
     include!("profession_join_tests.rs");
+
+    /// A float, double or short in a component (a translate `with` argument) is a JSON number.
+    #[test]
+    fn component_json_keeps_numeric_arguments() {
+        use horizon_core::nbt::Tag;
+        let with = Tag::List(vec![
+            Tag::Float(2.5f32.to_bits()),
+            Tag::Double(1.0f64.to_bits()),
+            Tag::Short(7),
+        ]);
+        let tag = Tag::compound([("translate", Tag::String("k".into())), ("with", with)]);
+        assert_eq!(
+            component_json(&tag),
+            r#"{"translate":"k","with":[2.5,1,7]}"#
+        );
+    }
 
     /// Bodies shared between players reach each of them as the same bytes, in the order
     /// they were sent among the player's own.

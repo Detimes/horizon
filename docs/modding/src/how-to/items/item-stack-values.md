@@ -65,7 +65,7 @@ own) and `stack.lore(host)` (the lines, top first; a line that is not one text c
 styles. A prototype's default name is not the stack's own: ask `host.item_default_component`. The model
 data of `minecraft:custom_model_data` reads with `stack.custom_model_data_floats()` (the first is Bukkit's
 `getCustomModelData`) and `stack.custom_model_data_strings()`; a stack with none gives empty lists, and
-`stack.components().is_none()` says a stack has no component overrides at all (Bukkit's `hasItemMeta` false).
+`stack.components().is_none()` says a stack has no component overrides besides its damage (Bukkit's `hasItemMeta` false once `damage_component()` is none too).
 
 ## Game boundaries
 

@@ -491,7 +491,13 @@ impl ItemStack {
         floats
             .iter()
             .filter_map(|tag| match tag {
+                // Vanilla's float codec takes any numeric tag.
+                Tag::Byte(v) => Some(f32::from(*v)),
+                Tag::Short(v) => Some(f32::from(*v)),
+                Tag::Int(v) => Some(*v as f32),
+                Tag::Long(v) => Some(*v as f32),
                 Tag::Float(bits) => Some(f32::from_bits(*bits)),
+                Tag::Double(bits) => Some(f64::from_bits(*bits) as f32),
                 _ => None,
             })
             .collect()
@@ -516,7 +522,11 @@ impl ItemStack {
     /// This stack's own value of component `id` as raw NBT, None when its patch has none (a prototype
     /// default is not read) or the patch removes it.
     fn component_value(&self, id: &str) -> Option<&Tag> {
-        self.components()?.as_nbt().get(&JavaString::from(id))
+        let patch = self.components()?.as_nbt();
+        if patch.contains_key(&JavaString::from(format!("!{id}").as_str())) {
+            return None;
+        }
+        patch.get(&JavaString::from(id))
     }
     /// Encode the item NBT escape using this host's canonical id, never a process-local key.
     /// Returns None when id metadata is unavailable. Only components present on the
@@ -699,6 +709,48 @@ mod tests {
             .unwrap();
         assert_eq!(stack.custom_model_data_floats(), [1.5, 7.0]);
         assert_eq!(stack.custom_model_data_strings(), ["gem".to_owned()]);
+    }
+
+    /// A patch holding a component and its removal marker reads as removed; model-data floats
+    /// take any numeric tag.
+    #[test]
+    fn removal_markers_hide_components_and_floats_take_any_number() {
+        let mut stack = ItemStack::of(ItemKey(0));
+        let mut data = Compound::new();
+        data.insert(
+            JavaString::from("floats"),
+            Tag::List(vec![
+                Tag::Int(1),
+                Tag::Double(2.5f64.to_bits()),
+                Tag::String("x".into()),
+            ]),
+        );
+        let mut patch = Compound::new();
+        patch.insert(
+            JavaString::from("minecraft:custom_name"),
+            Tag::String("Sword".into()),
+        );
+        patch.insert(
+            JavaString::from("minecraft:lore"),
+            Tag::List(vec![Tag::String("a".into())]),
+        );
+        patch.insert(
+            JavaString::from("minecraft:custom_model_data"),
+            Tag::Compound(data),
+        );
+        stack.set_components(patch.clone()).unwrap();
+        assert_eq!(stack.custom_model_data_floats(), [1.0, 2.5]);
+        for id in ["custom_name", "lore", "custom_model_data"] {
+            patch.insert(
+                JavaString::from(format!("!minecraft:{id}").as_str()),
+                Tag::Compound(Compound::new()),
+            );
+        }
+        stack.set_components(patch).unwrap();
+        assert_eq!(stack.display_name(&TextNbt), None);
+        assert!(stack.lore(&TextNbt).is_empty());
+        assert!(stack.custom_model_data_floats().is_empty());
+        assert!(stack.custom_model_data_strings().is_empty());
     }
 
     /// [`TextNbt`] over an item whose prototype supplies a name and a lore.
