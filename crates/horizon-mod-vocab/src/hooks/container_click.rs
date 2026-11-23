@@ -21,8 +21,7 @@ pub trait Hooks {
         contract = "cancel",
         out = "canceled",
         cancellable = true,
-        neoforge = "none (NeoForge has no event for a container click)",
-        paper = "InventoryClickEvent"
+        neoforge = "none (NeoForge has no event for a container click)"
     )]
     fn container_click(
         player: u128,
