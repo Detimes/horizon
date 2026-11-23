@@ -173,17 +173,19 @@ mod tests {
 
     #[test]
     fn the_text_shows_only_when_the_whole_root_is_above_the_player() {
-        let mut state = NativeCommandState::default();
-        state.registered = Some(NativeCommands {
-            levels: HashMap::from([("music".to_owned(), 0), ("mod".to_owned(), 2)]),
-            denied: HashMap::from([
-                ("music".to_owned(), "No.".to_owned()),
-                ("mod".to_owned(), "Staff only.".to_owned()),
-            ]),
-            tree: Value::Null,
-            arguments: CommandArguments::default(),
-            usages: Vec::new(),
-        });
+        let state = NativeCommandState {
+            registered: Some(NativeCommands {
+                levels: HashMap::from([("music".to_owned(), 0), ("mod".to_owned(), 2)]),
+                denied: HashMap::from([
+                    ("music".to_owned(), "No.".to_owned()),
+                    ("mod".to_owned(), "Staff only.".to_owned()),
+                ]),
+                tree: Value::Null,
+                arguments: CommandArguments::default(),
+                usages: Vec::new(),
+            }),
+            ..NativeCommandState::default()
+        };
         // A root with a public and a protected usage has level 0: a level-0 guest typing
         // `music stop` is refused by the dispatcher, not by the text.
         assert_eq!(state.denied_for("music stop", 0), None);
