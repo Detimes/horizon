@@ -71,6 +71,10 @@ pub struct SavedBody {
     /// tags the host's own save keeps.
     pub invulnerable: bool,
     pub invulnerable_time: i32,
+    /// `current_impulse_context_reset_grace_time` and `current_explosion_impact_pos`
+    /// (LivingEntity): a wind charge's launch goes on measuring its fall from the
+    /// impact point after a rejoin.
+    pub impulse: horizon_world::living_fall::ImpulseContext,
 }
 
 impl SavedBody {
@@ -87,6 +91,7 @@ impl SavedBody {
             ticks_frozen: motion.ticks_frozen,
             invulnerable: motion.health.permanently_invulnerable,
             invulnerable_time: motion.health.invulnerable_time,
+            impulse: motion.impulse,
         }
     }
     /// Put it on a new body.
@@ -101,6 +106,7 @@ impl SavedBody {
         motion.ticks_frozen = self.ticks_frozen;
         motion.health.permanently_invulnerable = self.invulnerable;
         motion.health.invulnerable_time = self.invulnerable_time;
+        motion.impulse = self.impulse;
     }
 }
 
@@ -232,6 +238,10 @@ pub struct Guest {
     /// the player away and they are still at the chunk it left. The hold ends (back to `None`) at
     /// an accepted move or teleport ack, a passenger or vehicle move, a camera change, a placement.
     pub held_ticket_chunk: Option<(i32, i32)>,
+    /// A mod's view centre for this player (`PlayerRef::set_view_center`): the chunk their chunk
+    /// tracking follows in place of their own, in their own level, without moving them. `None`:
+    /// their own chunk, as in vanilla. Ends at a respawn, a level change and when they leave.
+    pub view_center: Option<(i32, i32)>,
     pub previous_position: [f64; 3],
     pub yaw: f32,
     pub pitch: f32,
@@ -588,6 +598,8 @@ pub struct Guest {
     pub advancements_changed: std::collections::BTreeSet<usize>,
     /// The server's scoreboard as this player's client has it (lan/scoreboard.rs).
     pub scoreboard: super::scoreboard::View,
+    /// Whether this guest has received its initial `updateEntireScoreboard` sync.
+    pub scoreboard_synced: bool,
     /// Recipes unlocked since the client was last told
     /// (`ServerRecipeBook.addRecipes` sends them).
     pub recipes_unlocked: Vec<String>,
@@ -724,6 +736,17 @@ impl Guest {
                 .is_some_and(|(cx, cz)| super::hub::tracked(cx, cz, self.view_distance, x, z))
     }
 
+    /// Whether this guest is currently tracking entity `id` in `dimension` (in its own level or
+    /// through a viewed level).
+    pub fn tracks_entity(&self, dimension: &str, id: i32) -> bool {
+        (self.dimension == dimension && self.tracker.is_tracking(id))
+            || self
+                .viewed
+                .views
+                .get(dimension)
+                .is_some_and(|view| view.tracker.is_tracking(id))
+    }
+
     fn with_defaults(
         kind: GuestKind,
         j: GuestInit,
@@ -768,6 +791,7 @@ impl Guest {
             recipe_sync: Default::default(),
             position,
             held_ticket_chunk: None,
+            view_center: None,
             previous_position: position,
             yaw: 0.0,
             pitch: 0.0,
@@ -926,6 +950,7 @@ impl Guest {
             advancements_visible: Vec::new(),
             advancements_changed: Default::default(),
             scoreboard: Default::default(),
+            scoreboard_synced: false,
             recipes_unlocked: Vec::new(),
         }
     }
@@ -1104,6 +1129,11 @@ impl Guest {
             (self.position[0].floor() as i32) >> 4,
             (self.position[2].floor() as i32) >> 4,
         )
+    }
+    /// The chunk this player's chunk tracking is centred on (`ChunkMap.move`'s section): a mod's
+    /// view centre, else their own chunk.
+    pub fn view_chunk(&self) -> (i32, i32) {
+        self.view_center.unwrap_or_else(|| self.chunk())
     }
     pub fn creative(&self) -> bool {
         self.game_mode == CREATIVE

@@ -71,6 +71,24 @@ pub(super) fn touching_orbs(
 }
 
 impl Game<'_> {
+    /// `Player.aiStep`'s `pickupArea`, shared by item and orb pickup:
+    /// standing, the player's box inflated by (1, 0.5, 1); riding, the union
+    /// with the vehicle's box inflated by (1, 0, 1).
+    fn pickup_area(&self, p: &horizon_client::motion::PlayerMotion) -> Aabb {
+        let w = f64::from(p.dimensions.width) / 2.0;
+        let own = Aabb::new(
+            Vec3::new(p.position.x - w, p.position.y, p.position.z - w),
+            Vec3::new(
+                p.position.x + w,
+                p.position.y + f64::from(p.dimensions.height),
+                p.position.z + w,
+            ),
+        );
+        match self.riding_box() {
+            Some(vehicle) => own.union_bounds(vehicle).inflate(Vec3::new(1.0, 0.0, 1.0)),
+            None => own.inflate(Vec3::new(1.0, 0.5, 1.0)),
+        }
+    }
     pub(super) fn tick_items(&mut self) -> FxHashMap<u32, Vec3> {
         let mut round = self.item_update_round();
         let original_moves = self.tick_dropped_items(&mut round);
@@ -110,8 +128,13 @@ impl Game<'_> {
             horizon_client::entities::ObstacleGrid::new(self.item_entity_collisions());
         let mut nearby = Vec::new();
         let mut bubble_tops = Vec::new();
+        let each_item = round.each("minecraft:item");
+        let update_hook = each_item
+            && merging
+            && mod_api::__private::has_part_hook(mod_api::HookId::OnEntityItemUpdate);
         let mut moves = ahead::Moves::work_out(self, &items, &obstacles, round, |item| {
-            !self.joined_during_entity_pass(item.id)
+            !each_item
+                && !self.joined_during_entity_pass(item.id)
                 && ticking(
                     item.position.x.floor() as i32,
                     item.position.z.floor() as i32,
@@ -121,7 +144,8 @@ impl Game<'_> {
         // where it lay, for adding to the level once its own tick is done.
         let mut destroyed: Vec<(ItemStack, Vec3)> = Vec::new();
         let item_type = horizon_threads::work::entity_id("minecraft:item");
-        for i in 0..items.len() {
+        let original_len = items.len();
+        for i in 0..original_len {
             horizon_threads::work::set_entity(item_type);
             if removed[i] {
                 // Merged into an earlier item before its own tick: it never ticked.
@@ -140,6 +164,41 @@ impl Game<'_> {
                 || round.halted(items[i].id)
             {
                 continue;
+            }
+            let tick_item_id = items[i].id;
+            macro_rules! finish_each_item {
+                () => {
+                    if each_item {
+                        self.put_back_dropped(items);
+                        self.native_entity_tick_post(self.dim.id(), tick_item_id, "minecraft:item");
+                        items = self.dropped.lift();
+                        if items.len() > removed.len() {
+                            removed.resize(items.len(), false);
+                        }
+                    }
+                };
+            }
+            if each_item {
+                self.put_back_dropped(items);
+                let mut canceled = false;
+                self.native_entity_tick_pre(self.dim.id(), tick_item_id, "minecraft:item", &mut canceled);
+                let halted = !canceled
+                    && update_hook
+                    && self
+                        .dropped
+                        .iter()
+                        .position(|it| it.id == tick_item_id)
+                        .is_some_and(|idx| self.item_update_halts(idx));
+                if halted {
+                    self.native_entity_tick_post(self.dim.id(), tick_item_id, "minecraft:item");
+                }
+                items = self.dropped.lift();
+                if items.len() > removed.len() {
+                    removed.resize(items.len(), false);
+                }
+                if canceled || halted || i >= items.len() || items[i].id != tick_item_id {
+                    continue;
+                }
             }
             self.tick_saved_invulnerable_time(items[i].id);
             let item = &mut items[i];
@@ -209,11 +268,13 @@ impl Game<'_> {
                 removed[i] = true;
                 cells.remove(i, item.previous);
                 destroyed.extend(burning.spilled.into_iter().map(|s| (s, start)));
+                finish_each_item!();
                 continue;
             }
             if discarded {
                 removed[i] = true;
                 cells.remove(i, item.previous);
+                finish_each_item!();
                 continue;
             }
             if merging && !no_physics {
@@ -253,10 +314,17 @@ impl Game<'_> {
                 if !live {
                     removed[i] = true;
                     cells.remove(i, to);
+                    finish_each_item!();
                     continue;
                 }
             }
             if start.y >= void {
+                // Entity.applyEffectsFromBlocks asks `isInRain` after the block
+                // contacts, which may have ignited the item this tick, so the
+                // question is asked every tick. Like Level.precipitationAt, skip
+                // the position checks when the rain level is too low.
+                let in_rain = self.weather_levels(1.0).0 > 0.2
+                    && self.in_rain(item.position, item.bounds().max_position().y);
                 let environment = item.environment_tick_with_hook(
                     &mut self.world,
                     self.res.facts(),
@@ -265,6 +333,7 @@ impl Game<'_> {
                         &self.pack.item_renderer.models,
                         &self.health_resources.damage,
                     ),
+                    in_rain,
                     |world, damage| item_refuses!(self, item_id, saved, world, damage),
                 );
                 let at = item.position;
@@ -279,10 +348,23 @@ impl Game<'_> {
                         pitch,
                     );
                 }
+                // Entity.playEntityOnFireExtinguishedSound: water or rain put the
+                // burning item out; a server plays the hiss at it, with the two
+                // pitch draws of the item's own random.
+                if environment.extinguished && merging {
+                    let pitch = 1.6 + (item.random.next_float() - item.random.next_float()) * 0.4;
+                    self.audio.play(
+                        "minecraft:entity.generic.extinguish_fire",
+                        Some([at.x, at.y, at.z]),
+                        0.7,
+                        pitch,
+                    );
+                }
                 if !environment.alive {
                     removed[i] = true;
                     cells.remove(i, at);
                     destroyed.extend(environment.spilled.into_iter().map(|s| (s, at)));
+                    finish_each_item!();
                     continue;
                 }
             }
@@ -328,11 +410,13 @@ impl Game<'_> {
             if !alive || removed[i] {
                 removed[i] = true;
                 cells.remove(i, item.position);
+                finish_each_item!();
                 continue;
             }
             if merging && let Some(original) = original {
                 original_moves.insert(item.id, original);
             }
+            finish_each_item!();
         }
         for pos in bubble_tops {
             self.bubble_column_particles(pos);
@@ -349,19 +433,9 @@ impl Game<'_> {
             self.spawn_destroyed_contents(destroyed);
             return original_moves;
         }
-        let w = f64::from(p.dimensions.width) / 2.0;
-        let (min, max) = (
-            [
-                p.position.x - w - 1.0,
-                p.position.y - 0.5,
-                p.position.z - w - 1.0,
-            ],
-            [
-                p.position.x + w + 1.0,
-                p.position.y + f64::from(p.dimensions.height) + 0.5,
-                p.position.z + w + 1.0,
-            ],
-        );
+        let area = self.pickup_area(p);
+        let (lo, hi) = (area.min_position(), area.max_position());
+        let (min, max) = ([lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]);
         let feet = [p.position.x, p.position.y, p.position.z];
         let own = self.level.ensure_player_uuid();
         self.native_player_pickups(&mut items, (min, max), feet, own);
@@ -629,21 +703,7 @@ impl Game<'_> {
         // Player.aiStep: standing, the pickup area is the player's box
         // inflated by (1, 0.5, 1); riding, the union with the vehicle's box
         // inflated by (1, 0, 1).
-        let bounds = player.map(|p| {
-            let w = f64::from(p.dimensions.width) / 2.0;
-            let own = Aabb::new(
-                Vec3::new(p.position.x - w, p.position.y, p.position.z - w),
-                Vec3::new(
-                    p.position.x + w,
-                    p.position.y + f64::from(p.dimensions.height),
-                    p.position.z + w,
-                ),
-            );
-            match self.riding_box() {
-                Some(vehicle) => own.union_bounds(vehicle).inflate(Vec3::new(1.0, 0.0, 1.0)),
-                None => own.inflate(Vec3::new(1.0, 0.5, 1.0)),
-            }
-        });
+        let bounds = player.map(|p| self.pickup_area(p));
         let mut orbs = self.orbs.lift();
         #[cfg(test)]
         crate::game::entity::taken_pass_tests::after_take(self);
@@ -791,6 +851,64 @@ impl Game<'_> {
         let random = spill::prepare_item_random(None);
         self.add_item_entity_prepared(stack, position, Some(velocity), 0, Some(random))
             .map(|(id, _)| id)
+    }
+
+    /// `ItemEntity.makeFakeItem`: `setNeverPickUp` and `age = 5999`, so the item
+    /// can't be picked up and is gone on its next tick. `/give` spawns one when
+    /// the whole stack fitted, from `Player.createItemStackToDrop`'s motion.
+    fn spawn_item_fake(&mut self, stack: ItemStack, position: [f64; 3], velocity: [f64; 3]) {
+        // `new ItemEntity(level, x, y, z, stack)` draws its default motion from
+        // its own random before `createItemStackToDrop` replaces it; then
+        // `makeFakeItem` sets the pickup delay and the age.
+        let mut random = spill::prepare_item_random(None);
+        random.state.age = 5999;
+        self.add_item_entity_prepared(stack, position, Some(velocity), 32767, Some(random));
+    }
+
+    /// `GiveCommand` when the whole stack fitted: one item flashes out of the
+    /// player's head (`createItemStackToDrop(stack, false, false)` then
+    /// `makeFakeItem`), and the pickup sound plays at the player, its pitch
+    /// from two draws of the player's random.
+    pub(super) fn give_flash(
+        &mut self,
+        item: &str,
+        damage: u32,
+        extra: Option<Box<horizon_client::item_data::StackData>>,
+        at: [f64; 3],
+    ) {
+        let eye = self.eye_position().unwrap_or([
+            at[0],
+            at[1] + self.target_eye_height(super::commands::Target::Player),
+            at[2],
+        ]);
+        // `createItemStackToDrop` draws the spread, and `giveItem` then the
+        // sound's pitch, from the player's own random: six draws of one stream,
+        // as `throw_from_eyes` does. A `/give` whose target this game does not
+        // hold keeps a fresh one rather than losing the draws.
+        fn flash_draws(
+            r: &mut impl horizon_core::random::RandomSource,
+            yaw: f32,
+            pitch: f32,
+        ) -> ([f64; 3], f32) {
+            let velocity = horizon_client::entities::drop_motion(r, yaw, pitch, false);
+            let sound = ((r.next_float() - r.next_float()) * 0.7 + 1.0) * 2.0;
+            (velocity, sound)
+        }
+        let (velocity, pitch) = match self.player.as_mut() {
+            Some(player) => flash_draws(&mut player.random, self.yaw, self.pitch),
+            None => flash_draws(&mut horizon_client::random_source::entity(), self.yaw, self.pitch),
+        };
+        let stack = ItemStack {
+            item: item.into(),
+            count: 1,
+            damage,
+            extra,
+        };
+        // `new ItemEntity(level, getX(), getEyeY() - 0.3F, getZ(), stack)`.
+        let y = eye[1] - f64::from(0.3f32);
+        self.spawn_item_fake(stack, [eye[0], y, eye[2]], velocity);
+        self.audio
+            .play("minecraft:entity.item.pickup", Some(at), 0.2, pitch);
     }
 
     pub(super) fn add_item_entity(
@@ -1105,6 +1223,12 @@ mod escape_tests {
 #[path = "tests/item_cactus_damage_tests.rs"]
 mod item_cactus_damage_tests;
 #[cfg(test)]
+#[path = "tests/give_fake_item_tests.rs"]
+mod give_fake_item_tests;
+#[cfg(test)]
+#[path = "tests/item_rain_fire_tests.rs"]
+mod item_rain_fire_tests;
+#[cfg(test)]
 #[path = "tests/thrown_items_tests.rs"]
 mod thrown_items_tests;
 
@@ -1201,5 +1325,43 @@ mod orb_pickup_tests {
             game.player.as_mut().unwrap().random.next_int(),
             -1_690_734_402
         );
+    }
+}
+
+#[cfg(test)]
+mod pickup_area_tests {
+    use crate::game::game_tests::tests::server_game;
+    use horizon_core::geometry::Vec3;
+
+    /// `Player.aiStep`: riding, an item beside the mount is inside the pickup
+    /// area (the union with the vehicle's box, inflated by (1, 0, 1)); standing,
+    /// the same spot is outside the player's box inflated by (1, 0.5, 1).
+    #[test]
+    #[ignore = "daily"]
+    fn an_item_beside_the_mount_is_in_reach_only_while_riding() {
+        let mut resources = None;
+        let mut game = server_game(&mut resources);
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.world.chunks.insert(
+            (0, 0),
+            std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
+        );
+        let feet = Vec3::new(8.5, 70.0, 8.5);
+        game.player = Some(horizon_client::motion::PlayerMotion::new(game.motion, feet).unwrap());
+        assert!(game.run_command("summon horse 8.5 70 8.5 {NoAI:1b,Silent:1b}"));
+        let horse = game
+            .mobs
+            .iter()
+            .find(|m| &*m.kind.id == "minecraft:horse")
+            .unwrap()
+            .id;
+        // The horse is 1.3965 wide, so its box starts at x 7.80: riding reaches
+        // x 6.80, standing (the player is 0.6 wide) only x 7.2.
+        let beside = Vec3::new(7.0, 70.5, 8.5);
+        let player = game.player.clone().unwrap();
+        assert!(!game.pickup_area(&player).contains(beside));
+        game.riding = Some(horse);
+        assert!(game.pickup_area(&player).contains(beside));
     }
 }

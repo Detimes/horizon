@@ -121,6 +121,7 @@ impl TryIntoEngine<()> for mod_api::Block {
             }),
             id: self.id.clone(),
             template: self.template.clone(),
+            growing_plant: None,
             pick_item: self.pick_item.clone(),
             properties: self.properties.try_into_engine(&())?,
             shapes: self
@@ -175,6 +176,7 @@ impl TryIntoEngine<()> for mod_api::Block {
             thickness: self.thickness,
             wood_type: self.wood_type.clone(),
             wall_block: self.wall_block.clone(),
+            attachment_direction: self.attachment_direction.clone(),
             sign_text_color: self.sign_text_color.clone(),
             sign_text_glow: self.sign_text_glow,
             base_block: self.base_block.clone(),

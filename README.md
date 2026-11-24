@@ -37,7 +37,7 @@
 <h2 align="center">What you get</h2>
 
 - **Vanilla Minecraft:** survival, creative and hardcore in every dimension, with the same terrain, mobs, villagers and redstone. Your saves open as they are.
-- **Multiplayer:** vanilla and Horizon servers, LAN, and invite codes for playing your world with friends. You can [host a server](https://playhorizon.dev/docs/hosting) too.
+- **Multiplayer:** play on vanilla and Horizon servers or over LAN, or share your world with friends by invite code. You can [host a server](https://playhorizon.dev/docs/hosting) too.
 - **Mods:** Horizon's own mod system, with mods like zoom and a minimap, and shader packs. Browse the [catalogue](https://playhorizon.dev/mods) or [make a mod](https://playhorizon.dev/docs/make-a-mod).
 - **Beyond vanilla:** terrain up to 1,024 chunks away, HDR, controller support, graphics presets and dynamic lights.
 - **Dedicated server:** Server software for high performance, low memory usage, and near instant startup. See [the server benchmark](docs/performance/server-vs-vanilla.md).
@@ -68,10 +68,19 @@
 
 <p align="center">
   <a href="https://blacksmith.sh"><img src="docs/media/readme/blacksmith.png" alt="CI powered by Blacksmith" width="280"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://coderabbit.link/horizon">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/media/readme/coderabbit-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="docs/media/readme/coderabbit-light.png">
+      <img src="docs/media/readme/coderabbit-light.png" alt="Code reviews by CodeRabbit" width="220">
+    </picture>
+  </a>
 </p>
 
 <p align="center">
   <a href="docs/native-client.md#run-from-a-checkout"><b>Build guide</b></a> ·
+  <a href="docs/README.md"><b>Developer docs</b></a> ·
   <a href="CONTRIBUTING.md"><b>Contributing</b></a> ·
   <a href="GOVERNANCE.md"><b>Governance</b></a> ·
   <a href="https://opencollective.com/horizonrust"><b>Sponsor</b></a>

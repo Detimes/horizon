@@ -103,8 +103,13 @@ impl Game<'_> {
                 cookies,
                 lan,
                 realm,
+                quick_play,
             }) => {
-                self.connect_server_with_options(&address, &name, cookies, lan, realm)?;
+                if quick_play {
+                    self.connect_quick_play(&address, &name)?;
+                } else {
+                    self.connect_server_with_options(&address, &name, cookies, lan, realm)?;
+                }
             }
             Some(PendingWorldEntry::StudioReplay(path)) => {
                 let path_str = path.to_string_lossy().to_string();
@@ -148,9 +153,14 @@ impl Game<'_> {
                 })
                 .unwrap_or_default();
             let data_source = self.pack.data_changes.clone();
+            let data_pack_validation_failed =
+                horizon_client::lang::get("dataPack.validation.failed");
             let job = horizon_guest_stack::builder()
                 .name("world-creation".into())
                 .spawn(move || {
+                    overrides
+                        .validate_fill_layers(registry)
+                        .map_err(|e| format!("{data_pack_validation_failed}: {e}"))?;
                     horizon_client::vanillagen::shared_data_from(
                         &dir,
                         &overrides,
@@ -282,7 +292,7 @@ impl Game<'_> {
         self.native_data_pack_files(&mut contributed);
         let files = functions::overlay_files(stack, contributed);
         let inventory = horizon_mod_package::enabled::EnabledMods::read(root)?;
-        let conditions = self.registered_load_conditions(&inventory)?;
+        let conditions = self.registered_load_conditions(&inventory, stack)?;
         let overlay = horizon_world::loot::PackOverlay {
             conditions: &conditions,
             files: &files,

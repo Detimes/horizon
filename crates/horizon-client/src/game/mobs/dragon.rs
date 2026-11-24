@@ -42,7 +42,7 @@ use horizon_core::{
     random::{LegacyRandom, RandomSource},
 };
 use horizon_protocol::entity_data::Value;
-use mod_api::DragonPhase;
+use mod_api::{DragonPhase, DragonRef};
 use rays::dragon_rays;
 
 /// `HealOrHarmMobEffect.applyInstantaneousEffect` at an `AreaEffectCloud`'s
@@ -146,8 +146,9 @@ pub(super) struct Fight {
     crystals_placed: bool,
     /// The respawn sequence (`DragonRespawnStage`) and its tick count.
     respawn: Option<(Respawn, i32)>,
-    /// The four crystals on the exit portal driving the respawn.
-    respawn_crystals: Vec<Vec3>,
+    /// `respawnCrystals`: the crystals on the exit portal driving the
+    /// respawn, as `EntityReference`s (their UUIDs).
+    respawn_crystals: Vec<RespawnCrystal>,
     /// The player behind the blast under way, whose `explosion` damage
     /// source names them: a crystal's (`EndCrystal.hurtServer`) or a large
     /// fireball's (`Explosion.getIndirectSourceEntity`, its owner).
@@ -156,7 +157,7 @@ pub(super) struct Fight {
     /// `player_killed_entity` trigger's `killing_blow`): its damage type and
     /// whether a player was behind it.
     last_blow: Option<(DamageKind, bool)>,
-    dirty: bool,
+    pub(super) dirty: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Respawn {
@@ -164,6 +165,79 @@ enum Respawn {
     Preparing,
     Pillars,
     Summoning,
+}
+/// One of `EnderDragonFight.respawnCrystals`: an `EntityReference` to an end
+/// crystal, by its UUID. Files older Horizon builds wrote kept the crystal's
+/// block under `horizon_respawn_crystals` instead: such an entry is matched by
+/// position, and saved by the UUID of the crystal it finds there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RespawnCrystal {
+    Uuid([i32; 4]),
+    At(Vec3),
+}
+impl RespawnCrystal {
+    /// `EntityReference.getEntity`'s match: `uuid` is the crystal's own.
+    fn is(&self, c: &Crystal, uuid: Option<[i32; 4]>) -> bool {
+        match self {
+            Self::Uuid(u) => uuid == Some(*u),
+            Self::At(p) => p.distance_squared(c.position) < 0.01,
+        }
+    }
+}
+/// `EnderDragonFight.CODEC`'s `respawn_crystals` (`EntityReference.codec()`:
+/// each a UUID as 4 ints), then the blocks older Horizon builds saved under
+/// `horizon_respawn_crystals`.
+fn respawn_crystals_from_nbt(data: Option<&Tag>) -> Vec<RespawnCrystal> {
+    let mut list = Vec::new();
+    if let Some(Tag::List(v)) = data.and_then(|d| d.get("respawn_crystals")) {
+        list.extend(v.iter().filter_map(|t| match t {
+            Tag::IntArray(u) if u.len() == 4 => {
+                Some(RespawnCrystal::Uuid([u[0], u[1], u[2], u[3]]))
+            }
+            _ => None,
+        }));
+    }
+    if let Some(Tag::IntArray(v)) = data.and_then(|d| d.get("horizon_respawn_crystals")) {
+        list.extend(v.as_chunks::<3>().0.iter().map(|b| {
+            RespawnCrystal::At(Vec3::new(
+                f64::from(b[0]) + 0.5,
+                f64::from(b[1]),
+                f64::from(b[2]) + 0.5,
+            ))
+        }));
+    }
+    list
+}
+/// The fight's keys for its respawn crystals: `respawn_crystals` as
+/// `EnderDragonFight.CODEC` writes it (`optionalFieldOf(.., List.of())`
+/// leaves an empty list out), and the older blocks no loaded crystal stands
+/// on yet under `horizon_respawn_crystals`.
+fn respawn_crystals_to_nbt(list: &[RespawnCrystal]) -> Vec<(&'static str, Tag)> {
+    let uuids: Vec<Tag> = list
+        .iter()
+        .filter_map(|r| match r {
+            RespawnCrystal::Uuid(u) => Some(Tag::IntArray(u.to_vec())),
+            RespawnCrystal::At(_) => None,
+        })
+        .collect();
+    let blocks: Vec<i32> = list
+        .iter()
+        .filter_map(|r| match r {
+            RespawnCrystal::At(p) => {
+                Some([p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32])
+            }
+            RespawnCrystal::Uuid(_) => None,
+        })
+        .flatten()
+        .collect();
+    let mut out = Vec::new();
+    if !uuids.is_empty() {
+        out.push(("respawn_crystals", Tag::List(uuids)));
+    }
+    if !blocks.is_empty() {
+        out.push(("horizon_respawn_crystals", Tag::IntArray(blocks)));
+    }
+    out
 }
 impl Fight {
     /// `EnderDragonFight.tick`'s ticket condition: the fight's boss bar has a
@@ -425,6 +499,13 @@ pub(in crate::game) struct Dragon {
     pub(super) flame_ended: bool,
     flame_count: i32,
     sitting_damage: f32,
+    /// Phases a hit asked for (the dying flight, taking off from the fountain): there is no
+    /// hook host inside a hit, so the game asks mods and applies them as soon as the hit
+    /// is over ([`Game::settle_dragon_phases`]).
+    phase_requests: Vec<Phase>,
+    /// True from the moment `dragon_change_phase` listeners are asked until the change
+    /// commits: a change asked meanwhile is not asked of the hook again.
+    changing_phase: bool,
     /// `LivingEntity.equipment`: nothing in the fight reads it; it is kept
     /// for mods and saves.
     pub equipment: horizon_items::equipment::Equipment,
@@ -644,6 +725,8 @@ impl Dragon {
             flame_ended: false,
             flame_count: 0,
             sitting_damage: 0.0,
+            phase_requests: Vec::new(),
+            changing_phase: false,
             equipment: Default::default(),
             live: Default::default(),
             growl: 100,
@@ -881,7 +964,7 @@ impl Dragon {
             } else {
                 // handleKillingBlow: dying flight first.
                 self.health = 1.0;
-                self.set_phase(Phase::Dying {
+                self.request_phase(Phase::Dying {
                     target: None,
                     time: 0,
                 });
@@ -909,7 +992,7 @@ impl Dragon {
             self.sitting_damage += before - self.health.max(0.0);
             if self.sitting_damage > 0.25 * MAX_HEALTH {
                 self.sitting_damage = 0.0;
-                self.set_phase(Phase::Takeoff {
+                self.request_phase(Phase::Takeoff {
                     first: true,
                     path: None,
                     target: None,
@@ -1048,10 +1131,23 @@ impl Dragon {
         DragonPhase::from_id(self.phase.id()).expect("the phases are the vanilla ones")
     }
     /// `EnderDragonPhaseManager.setPhase`: nothing when it is the phase it
-    /// holds (a strafing dragon too), else the new phase begins fresh.
+    /// holds (a strafing dragon too), else the new phase begins fresh. No mod is asked:
+    /// the game goes through `Game::change_dragon_phase_to`; the tests set up with this.
+    #[allow(dead_code)]
     pub(super) fn set_native_phase(&mut self, phase: DragonPhase) {
         if phase != self.native_phase() {
             self.set_phase(Phase::from_id(phase.id()));
+        }
+    }
+    /// Asks for a phase from inside a hit; see `phase_requests`.
+    fn request_phase(&mut self, phase: Phase) {
+        self.phase_requests.push(phase);
+    }
+    /// Applies the requested phases at once, asking no mod (the tests' hits).
+    #[cfg(test)]
+    fn settle_phases(&mut self) {
+        for phase in std::mem::take(&mut self.phase_requests) {
+            self.set_phase(phase);
         }
     }
     fn set_phase(&mut self, phase: Phase) {
@@ -1170,21 +1266,7 @@ impl Game<'_> {
                 }
                 _ => None,
             },
-            respawn_crystals: match data.and_then(|d| d.get("horizon_respawn_crystals")) {
-                Some(Tag::IntArray(v)) => v
-                    .as_chunks::<3>()
-                    .0
-                    .iter()
-                    .map(|b| {
-                        Vec3::new(
-                            f64::from(b[0]) + 0.5,
-                            f64::from(b[1]),
-                            f64::from(b[2]) + 0.5,
-                        )
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            },
+            respawn_crystals: respawn_crystals_from_nbt(data),
             exit_portal: match data.and_then(|d| d.get("exit_portal_location")) {
                 Some(Tag::IntArray(v)) if v.len() == 3 => Some([v[0], v[1], v[2]]),
                 _ => None,
@@ -1216,6 +1298,14 @@ impl Game<'_> {
             fight.crystals_placed = true;
             fight.needs_scan = false;
         }
+        if let Some(Tag::IntArray(v)) = data.and_then(|d| d.get("horizon_pending_gateways")) {
+            self.end.pending_gateways = v
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|b| [b[0], b[1], b[2]])
+                .collect();
+        }
         self.fight = fight;
     }
     fn end_portal_active(&self) -> bool {
@@ -1230,7 +1320,18 @@ impl Game<'_> {
         if !self.fight.loaded || !self.fight.dirty {
             return;
         }
-
+        // A crystal found where an older file put one is saved by its UUID.
+        for i in 0..self.fight.respawn_crystals.len() {
+            if let RespawnCrystal::At(p) = self.fight.respawn_crystals[i]
+                && let Some(id) = self
+                    .crystals
+                    .iter()
+                    .find(|c| c.position.distance_squared(p) < 0.01)
+                    .map(|c| c.id)
+            {
+                self.fight.respawn_crystals[i] = RespawnCrystal::Uuid(self.uuid_for(id));
+            }
+        }
         let f = &self.fight;
         let b = |v: bool| Tag::Byte(i8::from(v));
         let mut data = vec![
@@ -1244,21 +1345,25 @@ impl Game<'_> {
         if let Some(p) = f.exit_portal {
             data.push(("exit_portal_location", Tag::IntArray(p.to_vec())));
         }
+        if !self.end.pending_gateways.is_empty() {
+            data.push((
+                "horizon_pending_gateways",
+                Tag::IntArray(
+                    self.end
+                        .pending_gateways
+                        .iter()
+                        .flat_map(|p| [p[0], p[1], p[2]])
+                        .collect(),
+                ),
+            ));
+        }
         if let Some(u) = f.dragon_uuid {
             data.push(("dragon_uuid", Tag::IntArray(u.to_vec())));
         }
         if let Some((stage, _)) = f.respawn {
             data.push(("respawn_stage", Tag::String(stage.name().into())));
-            data.push((
-                "horizon_respawn_crystals",
-                Tag::IntArray(
-                    f.respawn_crystals
-                        .iter()
-                        .flat_map(|p| [p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32])
-                        .collect(),
-                ),
-            ));
         }
+        data.extend(respawn_crystals_to_nbt(&f.respawn_crystals));
         let tag = Tag::compound([
             ("data", Tag::compound(data)),
             ("DataVersion", Tag::Int(horizon_world::DATA_VERSION)),
@@ -1520,12 +1625,7 @@ impl Game<'_> {
         }
         let c = self.crystals.remove(index);
         // Read before the blast, which can take other respawn crystals.
-        let respawn_crystal = self.fight.respawn.is_some()
-            && self
-                .fight
-                .respawn_crystals
-                .iter()
-                .any(|p| p.distance_squared(c.position) < 0.01);
+        let respawn_crystal = self.fight.respawn.is_some() && self.is_respawn_crystal(&c);
         if damage == CrystalDamage::Direct {
             let at = [c.position.x, c.position.y, c.position.z];
             // The blast's damage source carries the player, so the dragon
@@ -1750,7 +1850,7 @@ impl Game<'_> {
                     return false;
                 };
                 let level = super::entity::damage_level_of!(self, scoped);
-                return matches!(
+                let landed = matches!(
                     d.hurt_from(
                         level,
                         BODY,
@@ -1762,6 +1862,9 @@ impl Game<'_> {
                     ),
                     Hurt::Landed { .. }
                 );
+                // `hurt_from` only queues the phases the hit asked for.
+                self.settle_dragon_phases();
+                return landed;
             }
             return false;
         }
@@ -1945,6 +2048,10 @@ impl Game<'_> {
             origin.from,
             true,
         );
+        self.settle_dragon_phases();
+        let Some(d) = self.dragon.as_mut() else {
+            return hurt;
+        };
         // LivingEntity.hurtServer: damage that is applied sets lastHurtByPlayer
         // (100 ticks); a hit the damage cooldown absorbs returns before that.
         if counts
@@ -2267,14 +2374,15 @@ impl Game<'_> {
             && matches!(d.phase, Phase::Holding { .. })
         {
             let target = players.iter().find(|p| p.who == who).copied();
-            if let Some(t) = target {
-                d.set_phase(Phase::Strafe {
+            if let Some(t) = target
+                && self.change_dragon_phase(Phase::Strafe {
                     charge: 0,
                     path: None,
                     target: None,
                     clockwise: false,
                     player: Some(t.who),
-                });
+                })
+            {
                 self.strafe_begin(t.position);
             }
         }
@@ -2363,7 +2471,7 @@ impl Game<'_> {
                     });
                     self.dragon.as_mut().expect("dragon").phase = phase;
                     if let Some(n) = next {
-                        self.dragon.as_mut().expect("dragon").set_phase(n);
+                        self.change_dragon_phase(n);
                     }
                     return;
                 };
@@ -2650,11 +2758,11 @@ impl Game<'_> {
         }
         let d = self.dragon.as_mut().expect("dragon");
         d.phase = phase;
-        if let Some(n) = next {
-            d.set_phase(n);
-            if let Some(at) = strafe_at {
-                self.strafe_begin(at);
-            }
+        if let Some(n) = next
+            && self.change_dragon_phase(n)
+            && let Some(at) = strafe_at
+        {
+            self.strafe_begin(at);
         }
     }
     /// `getHeadLookVector`.
@@ -3188,6 +3296,69 @@ impl Game<'_> {
     /// a quarter duration scale): shrinking, puffing particles, harming players and mobs.
     /// `DragonSittingFlamingPhase.end`: the flame cloud goes once the
     /// phase is left.
+    /// `EnderDragonPhaseManager.setPhase`, with mods asked first (`dragon_change_phase`):
+    /// they may cancel the change or begin another phase instead. A phase the dragon
+    /// already holds is no change and is not asked about (`set_phase` keeps its rule for
+    /// it). The dying flight is never offered: it always happens, and a listener's
+    /// replacement with `Dying` is refused (the asked phase stays). A change asked while the
+    /// hook runs for this dragon (a listener hurting it, say) is applied at once without
+    /// asking again, so a listener cannot recurse; the guard holds until the outer change
+    /// commits. A mod's own `set_phase` never comes here. True when the dragon now begins a
+    /// phase.
+    fn change_dragon_phase(&mut self, wanted: Phase) -> bool {
+        let Some(d) = self.dragon.as_mut() else {
+            return false;
+        };
+        if d.phase.id() == wanted.id() || d.changing_phase || matches!(wanted, Phase::Dying { .. })
+        {
+            d.set_phase(wanted);
+            return true;
+        }
+        let (id, current) = (d.id, d.native_phase());
+        let asked = DragonPhase::from_id(wanted.id()).expect("the phases are the vanilla ones");
+        let (mut new_phase, mut cancel) = (asked, false);
+        if self.native_authoritative()
+            && mod_api::__private::listened(mod_api::HookId::DragonChangePhase)
+            && let Some(epoch) = self.native_lifecycle.epoch()
+        {
+            let dragon = DragonRef::new(mod_api::EntityRef::new(epoch, id));
+            if let Some(d) = self.dragon.as_mut() {
+                d.changing_phase = true;
+            }
+            self.native_dragon_change_phase(dragon, current, &mut new_phase, &mut cancel);
+            if let Some(d) = self.dragon.as_mut() {
+                d.changing_phase = false;
+            }
+        }
+        if new_phase == DragonPhase::Dying {
+            new_phase = asked;
+        }
+        // A listener cannot remove the dragon, but it may have hurt it dead meanwhile.
+        let Some(d) = self.dragon.as_mut() else {
+            return false;
+        };
+        // Nor may the outer change overwrite the dying flight a nested hit began.
+        if cancel || matches!(d.phase, Phase::Dying { .. }) || new_phase == d.native_phase() {
+            return false;
+        }
+        d.set_phase(if new_phase == asked {
+            wanted
+        } else {
+            Phase::from_id(new_phase.id())
+        });
+        true
+    }
+    /// Asks mods about, then applies, the phases a hit requested (`Dragon::request_phase`).
+    fn settle_dragon_phases(&mut self) {
+        let requests = self
+            .dragon
+            .as_mut()
+            .map(|d| std::mem::take(&mut d.phase_requests))
+            .unwrap_or_default();
+        for phase in requests {
+            self.change_dragon_phase(phase);
+        }
+    }
     pub(super) fn end_dragon_flame(&mut self) {
         if self
             .dragon
@@ -4188,7 +4359,8 @@ impl Game<'_> {
         let room = Aabb::new(Vec3::new(x, y, z), Vec3::new(x + 1.0, y + 2.0, z + 1.0));
         !self.entity_in(room)
     }
-    /// `EndCrystalItem.useOn`: on obsidian or bedrock with room above.
+    /// `EndCrystalItem.useOn`: on obsidian or bedrock with a free cell above
+    /// holding no entity (its FAIL is a `false`).
     pub(super) fn place_end_crystal(
         &mut self,
         hit: &super::Hit,
@@ -4242,42 +4414,40 @@ impl Game<'_> {
     pub(super) fn kill_crystal(&mut self, id: u32) {
         if let Some(i) = self.crystals.iter().position(|c| c.id == id) {
             let c = self.crystals[i].clone();
-            let respawn = self.fight.respawn.is_some()
-                && self
-                    .fight
-                    .respawn_crystals
-                    .iter()
-                    .any(|p| p.distance_squared(c.position) < 0.01);
+            let respawn = self.fight.respawn.is_some() && self.is_respawn_crystal(&c);
             self.crystal_destroyed(i, &c, None, respawn);
             self.crystals.retain(|crystal| crystal.id != id);
             self.entity_killed_event([c.position.x, c.position.y, c.position.z], false);
         }
     }
-    /// Any entity touching `room` (`Level.getEntities(null, box)`).
+    /// Any entity touching `room` (`Level.getEntities(null, box)`): every kind,
+    /// no spectators, none removed (`Entity.setRemoved` leaves the level at once).
     fn entity_in(&self, room: Aabb) -> bool {
-        let touches = |lo: Vec3, hi: Vec3| {
-            let (a, b) = (room.min_position(), room.max_position());
-            lo.x < b.x && hi.x > a.x && lo.y < b.y && hi.y > a.y && lo.z < b.z && hi.z > a.z
+        use super::entity::{Entity as _, with_entity};
+        let touches = |b: Aabb| b.intersects(room);
+        let extents = |(lo, hi): ([f64; 3], [f64; 3])| {
+            Aabb::new(
+                Vec3::new(lo[0], lo[1], lo[2]),
+                Vec3::new(hi[0], hi[1], hi[2]),
+            )
         };
-        // Level.getEntities: the host's player and every guest in the level.
-        let player = self
-            .fight_players()
-            .iter()
-            .any(|p| !p.spectator && touches(p.bounds.min_position(), p.bounds.max_position()));
-        player
-            || self.crystals.iter().any(|c| {
-                touches(
-                    Vec3::new(c.position.x - 1.0, c.position.y, c.position.z - 1.0),
-                    Vec3::new(c.position.x + 1.0, c.position.y + 2.0, c.position.z + 1.0),
-                )
+        // A remote dragon's copy in the mob list is never moved (`move_entity`
+        // leaves the dragon to its own state), so it would hold a box where it
+        // spawned for ever: the dragon's own boxes are checked above instead.
+        let dragon = self.dragon.as_ref().map(|d| d.id).filter(|id| *id != 0);
+        self.fight_players().iter().any(|p| !p.spectator && touches(p.bounds))
+            || self.crystals.iter().any(|c| touches(c.bounds()))
+            // Level.getEntities also checks each dragon part separately.
+            || self.dragon.as_ref().is_some_and(|d| {
+                touches(d.whole_box()) || (0..8).any(|i| touches(d.part_box(i)))
             })
-            || self.mobs.iter().any(|m| {
-                let w = f64::from(m.width()) / 2.0;
-                let h = f64::from(m.height());
-                touches(
-                    Vec3::new(m.position.x - w, m.position.y, m.position.z - w),
-                    Vec3::new(m.position.x + w, m.position.y + h, m.position.z + w),
-                )
+            || self.paintings.iter().any(|p| touches(extents(p.bounds())))
+            || self.item_frames.iter().any(|f| touches(extents(f.bounds())))
+            || self.cushions.iter().any(|c| touches(extents(c.bounds())))
+            || self.entity_handles().any(|h| {
+                with_entity!(self, h, e => !e.is_removed()
+                    && Some(e.id()) != dragon
+                    && touches(e.bounds()))
             })
     }
     /// `EnderDragonFight.tryRespawn`: a crystal on each side of the portal.
@@ -4301,7 +4471,7 @@ impl Game<'_> {
             // new AABB(center.relative(direction, 3)): the block cube.
             let cell = [origin[0] + d[0] * 3, origin[1] + 1, origin[2] + d[1] * 3];
             let lo = Vec3::new(f64::from(cell[0]), f64::from(cell[1]), f64::from(cell[2]));
-            let hits: Vec<Vec3> = self
+            let hits: Vec<u32> = self
                 .crystals
                 .iter()
                 .filter(|c| {
@@ -4313,7 +4483,7 @@ impl Game<'_> {
                         && p.z + 1.0 > lo.z
                         && p.z - 1.0 < lo.z + 1.0
                 })
-                .map(|c| c.position)
+                .map(|c| c.id)
                 .collect();
             if hits.is_empty() {
                 return;
@@ -4333,7 +4503,11 @@ impl Game<'_> {
         }
         let _ = self.place_podium(origin, false);
         self.fight.respawn = Some((Respawn::Start, 0));
-        self.fight.respawn_crystals = found;
+        // `EntityReference.of(crystal)`: each crystal by its UUID.
+        self.fight.respawn_crystals = found
+            .into_iter()
+            .map(|id| RespawnCrystal::Uuid(self.uuid_for(id)))
+            .collect();
         self.fight.dirty = true;
     }
     fn block_name_at(&self, p: [i32; 3]) -> std::sync::Arc<str> {
@@ -4343,10 +4517,20 @@ impl Game<'_> {
             .name
             .clone()
     }
+    /// `respawnCrystals.contains(EntityReference.of(crystal))`.
+    fn is_respawn_crystal(&self, c: &Crystal) -> bool {
+        let uuid = self.persist.uuids.get(&c.id).copied();
+        self.fight.respawn_crystals.iter().any(|r| r.is(c, uuid))
+    }
     fn respawn_beams(&mut self, target: Option<[i32; 3]>) {
-        let list = self.fight.respawn_crystals.clone();
+        let ids: Vec<u32> = self
+            .crystals
+            .iter()
+            .filter(|c| self.is_respawn_crystal(c))
+            .map(|c| c.id)
+            .collect();
         for c in &mut self.crystals {
-            if list.iter().any(|p| p.distance_squared(c.position) < 0.01) {
+            if ids.contains(&c.id) {
                 c.beam = target;
             }
         }
@@ -4370,11 +4554,8 @@ impl Game<'_> {
         let Some((stage, time)) = self.fight.respawn else {
             return;
         };
-        let alive = self.fight.respawn_crystals.iter().any(|p| {
-            self.crystals
-                .iter()
-                .any(|c| p.distance_squared(c.position) < 0.01)
-        });
+        // The references that still find their crystal.
+        let alive = self.crystals.iter().any(|c| self.is_respawn_crystal(c));
         if !alive {
             self.abort_respawn();
             return;
@@ -4617,11 +4798,11 @@ impl Game<'_> {
         self.reset_spike_crystals();
         self.fight.respawn = None;
         let list = std::mem::take(&mut self.fight.respawn_crystals);
-        for p in list {
+        for r in list {
             if let Some(i) = self
                 .crystals
                 .iter()
-                .position(|c| c.position.distance_squared(p) < 0.01)
+                .position(|c| r.is(c, self.persist.uuids.get(&c.id).copied()))
             {
                 let c = self.crystals.remove(i);
                 self.world.modified.insert((

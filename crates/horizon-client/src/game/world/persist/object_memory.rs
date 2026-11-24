@@ -85,6 +85,7 @@ impl Game<'_> {
         let bob = own.next_float() * std::f32::consts::PI * 2.0;
         own.next_float();
         if let Some(mut e) = entity_nbt::item_entity_from_nbt(&tag, self.next_entity, bob) {
+            self.clean_stack(&mut e.stack);
             e.random = own;
             if let Some(state) = transferred {
                 self.adopt_transferred_entity_state(e.id, state);
@@ -132,6 +133,7 @@ impl Game<'_> {
         {
             if let Some(a) = p.arrow.as_mut() {
                 a.last_state = in_block.and_then(|t| self.state_from_nbt(&t));
+                self.clean_stack(&mut a.pickup_item);
             }
             self.claim_owner(&mut p);
             // An arrow that came through a portal keeps its
@@ -224,10 +226,13 @@ impl Game<'_> {
 
     pub(in crate::game) fn load_falling_transferred(
         &mut self,
-        tag: Tag,
+        mut tag: Tag,
         uuid: Option<[i32; 4]>,
         transferred: Option<crate::game::entity_initialization::TransferredEntityState>,
     ) {
+        // `Entity.load` reads `Tags` into the entity's set; the retained
+        // compound below is the only copy of them this kind keeps.
+        Self::normalize_loaded_tags(&mut tag);
         if let Some((state, position, velocity, age, fall_distance)) =
             entity_nbt::falling_block_from_nbt(&tag)
             && let Some(state) =
@@ -342,10 +347,26 @@ impl Game<'_> {
             // getShortOr uses NumericTag.shortValue: floor floating values
             // to int before short narrowing; integer tags narrow directly.
             let fuse = tnt_fuse(&tag);
+            // A fresh load: Entity.load's angles. A portal arrival:
+            // teleportSetPosition's `setYRot`/`setXRot` of the turned angles,
+            // with no `% 360` on the yaw.
+            let rotation = if used_portal {
+                let [yaw, pitch] = entity_nbt::rotation(&tag);
+                [
+                    if yaw.is_finite() { yaw } else { 0.0 },
+                    if pitch.is_finite() {
+                        (pitch % 360.0).clamp(-90.0, 90.0)
+                    } else {
+                        0.0
+                    },
+                ]
+            } else {
+                entity_nbt::loaded_rotation(&tag)
+            };
             self.tnts.push(crate::game::tnt::PrimedTnt {
                 used_portal,
                 attachment_lifetime: Default::default(),
-                rotation: [0.0, 0.0],
+                rotation,
                 join: Default::default(),
                 no_gravity: entity_nbt::flag(&tag, "NoGravity"),
                 id,
@@ -366,7 +387,9 @@ impl Game<'_> {
                     .get("block_state")
                     .and_then(|v| entity_nbt::state_from_nbt(self.pack.assets.registry, v)),
             });
-            // `Entity.load`: the `PortalCooldown` of one that just came through.
+            // `Entity.load`: the `PortalCooldown` of one that just came through,
+            // which `handlePortal` counts down every tick.
+            self.restore_portal_cooldown(id, &tag);
             if let Some(state) = transferred {
                 self.adopt_transferred_entity_state(id, state);
             }
@@ -412,6 +435,10 @@ impl Game<'_> {
                     tag.get("Items"),
                     crate::game::boats::CHEST_SLOTS,
                 );
+                b.items
+                    .iter_mut()
+                    .flatten()
+                    .for_each(|stack| self.clean_stack(stack));
             }
             b.velocity = velocity;
             // AbstractBoat.readAdditionalSaveData: the lead's holder.
@@ -451,6 +478,10 @@ impl Game<'_> {
         let riders = passenger_graph::take_passengers(&mut tag);
         let id = self.next_entity + 1;
         if let Some(mut c) = crate::game::minecarts::Minecart::from_nbt(&tag, id, kind) {
+            c.items
+                .iter_mut()
+                .flatten()
+                .for_each(|stack| self.clean_stack(stack));
             crate::game::minecarts::forget_unreadable_display(&mut c, |t| {
                 self.state_from_nbt(t).is_some()
             });
@@ -516,6 +547,7 @@ impl Game<'_> {
             Some(self.pack.assets.registry),
             own,
         )?;
+        m.clean_saved_stacks(&tag, &self.items().component_defaults);
         self.resolve_loaded_profession(&mut m);
         if horizon_client::mobs::camel::is_camel(m.species()) {
             horizon_client::mobs::camel::finish_load(&mut m, self.world.game_time);

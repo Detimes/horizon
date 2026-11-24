@@ -2383,7 +2383,13 @@ mod hub_tests {
             "entities": {},
         }))
         .unwrap();
-        let done = crate::lan::import::import_player(hub, &attributes, uuid, request)?;
+        let done = crate::lan::import::import_player(
+            hub,
+            &attributes,
+            &Default::default(),
+            uuid,
+            request,
+        )?;
         if done.place {
             hub.confirm_arrival(uuid, done.handover)?;
         }
@@ -2955,6 +2961,7 @@ mod hub_tests {
                 ticks_frozen: 60,
                 invulnerable: false,
                 invulnerable_time: 0,
+                impulse: Default::default(),
             });
             let mut extra = Tag::Compound(Default::default());
             if let Tag::Compound(map) = &mut extra {
@@ -3013,6 +3020,7 @@ mod hub_tests {
             ticks_frozen: 0,
             invulnerable: false,
             invulnerable_time: 0,
+            impulse: Default::default(),
         };
         {
             let value = Some(mine);
@@ -3061,6 +3069,7 @@ mod hub_tests {
                     ticks_frozen: 0,
                     invulnerable: false,
                     invulnerable_time: 0,
+                    impulse: Default::default(),
                 });
             }),
         ];

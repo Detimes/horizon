@@ -1,5 +1,30 @@
 use super::{args::*, vanilla, *};
 
+#[test]
+fn tag_remove_local_completion_does_not_wait_for_server() {
+    let mut tree = vanilla::game_dispatcher().clone();
+    let input = "tag @s remove ";
+    let registries = reg();
+    let parse = tree.parse(input, &registries);
+    let (_, suggestions, ask) = tree.client_suggestions_asking(&parse, input.len(), &registries);
+    assert!(!ask);
+    assert!(suggestions.is_empty());
+    let (parent, _, _) = parse.context.suggestion_context(input.len());
+    assert!(
+        tree.smart_usage(parent, registries.permission)
+            .iter()
+            .any(|(_, usage)| usage == "<name>")
+    );
+
+    let name = tree.nodes[parent].children[0];
+    tree.nodes[name].suggests = Some(Suggests::AskServer);
+    let parse = tree.parse(input, &registries);
+    assert!(
+        tree.client_suggestions_asking(&parse, input.len(), &registries)
+            .2
+    );
+}
+
 fn reg() -> Registries {
     let mut r = Registries {
         permission: 4,
@@ -1625,6 +1650,64 @@ fn a_greedy_custom_argument_takes_the_rest_of_the_line() {
             value: "hello there".into(),
         })
     );
+}
+
+#[test]
+fn a_token_custom_argument_takes_one_space_free_token_and_the_arguments_after_it_still_parse() {
+    let argument = ArgType::Custom(CustomArgument::new(
+        "example:account",
+        CustomArgumentKind::Token,
+        |input| Ok(input.to_owned()),
+        |_, _| Vec::new(),
+    ));
+    let mut dispatcher = Dispatcher::new();
+    let eco = dispatcher.literal(0, "eco");
+    let give = dispatcher.literal(eco, "give");
+    let who = dispatcher.argument(give, "who", argument);
+    let amount = dispatcher.argument(
+        who,
+        "amount",
+        ArgType::Integer {
+            min: 0,
+            max: i32::MAX,
+        },
+    );
+    dispatcher.executes(amount, "test");
+
+    let registries = reg();
+    for (line, token) in [
+        ("eco give * 5", "*"),
+        ("eco give ** 5", "**"),
+        ("eco give mod:acct/1 5", "mod:acct/1"),
+    ] {
+        let parsed = dispatcher.parse(line, &registries);
+        let (context, _) = parsed.executable().unwrap_or_else(|_| panic!("{line}"));
+        assert_eq!(
+            context.get("who"),
+            Some(&Arg::Custom {
+                kind: "example:account".into(),
+                value: token.into(),
+            }),
+            "{line}"
+        );
+        assert_eq!(context.get("amount"), Some(&Arg::Int(5)), "{line}");
+    }
+    // A missing token is not a command.
+    assert!(
+        dispatcher
+            .parse("eco give ", &registries)
+            .executable()
+            .is_err()
+    );
+}
+
+#[test]
+fn read_token_stops_at_a_space_and_is_empty_at_one() {
+    let mut reader = Reader::new("a*:/b rest");
+    assert_eq!(reader.read_token(), "a*:/b");
+    assert_eq!(reader.cursor, 5);
+    assert_eq!(reader.read_token(), "");
+    assert_eq!(reader.cursor, 5);
 }
 
 #[test]

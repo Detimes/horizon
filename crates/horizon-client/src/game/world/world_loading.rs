@@ -169,9 +169,12 @@ impl WorldRequest {
             )
             .into());
         }
-        horizon_client::save::upgrade_older_world_with(&save_root, upgrade)?;
+        upgrade_world(&save_root, options, upgrade)?;
         horizon_client::save::migrate_legacy(&save_root)?;
         let session_lock = horizon_client::save::SessionLock::acquire(&save_root)?;
+        // A world Paper saved keeps the seed, rules, weather and clocks under the Overworld only.
+        horizon_world::datafix::files::adopt_dimension_saved_data(&save_root)
+            .map_err(|e| format!("reading {}'s saved data: {e}", save_root.display()))?;
         // RandomSequences: the world's data/minecraft/random_sequences.dat.
         let rand_sequences = super::trading::read_random_sequences(&save_root);
         let existing = Level::read_with_registry(&save_root, rule_registry.clone());
@@ -377,6 +380,75 @@ impl WorldRequest {
             loot,
             owner_migration,
         })
+    }
+}
+
+/// Opens an old dedicated-server world while reporting the management protocol's world-upgrade
+/// lifecycle. Integrated worlds keep their existing progress path because there is no supervisor
+/// management server to notify.
+pub(in crate::game) fn upgrade_world(
+    save_root: &std::path::Path,
+    options: &Options,
+    upgrade: &horizon_world::datafix::progress::UpgradeProgress,
+) -> Result<()> {
+    let notify = options.execution_role.is_dedicated_server()
+        && horizon_client::save::needs_world_upgrade(save_root);
+    if !notify {
+        return horizon_client::save::upgrade_older_world_with(save_root, upgrade);
+    }
+
+    crate::game::dedicated::record_world_upgrade("world_upgrade_started", serde_json::json!({}));
+    crate::game::dedicated::record_world_upgrade(
+        "world_upgrade_progress",
+        serde_json::json!({ "progress": 0.0 }),
+    );
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let result = std::thread::scope(|scope| {
+        let _stop_on_panic = crate::game::dedicated::StopUpgradeWatcher::new(&stop);
+        let watcher = horizon_guest_stack::builder()
+            .spawn_scoped(scope, || {
+                let mut last_progress = 0.0;
+                let mut last_sent = std::time::Instant::now();
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let progress = upgrade.total_file_fix_stats().progress();
+                    let now = std::time::Instant::now();
+                    if progress > last_progress
+                        && now.duration_since(last_sent) >= std::time::Duration::from_secs(1)
+                    {
+                        crate::game::dedicated::record_world_upgrade(
+                            "world_upgrade_progress",
+                            serde_json::json!({ "progress": progress }),
+                        );
+                        last_progress = progress;
+                        last_sent = now;
+                    }
+                }
+            })
+            .expect("world upgrade progress watcher");
+        let result = horizon_client::save::upgrade_older_world_with(save_root, upgrade);
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        watcher.join().expect("world upgrade progress watcher");
+        result
+    });
+
+    match result {
+        Ok(()) => {
+            crate::game::dedicated::record_world_upgrade(
+                "world_upgrade_finished",
+                serde_json::json!({}),
+            );
+            Ok(())
+        }
+        Err(error) => {
+            // Do not expose the server's filesystem path through the management protocol.
+            log::error!("dedicated world upgrade failed: {error}");
+            crate::game::dedicated::record_world_upgrade(
+                "world_upgrade_failed",
+                serde_json::json!({ "reason": "World upgrade failed" }),
+            );
+            Err(error)
+        }
     }
 }
 
@@ -1045,6 +1117,16 @@ pub(super) fn make_streaming(
         shape,
     );
     save.enable_trusted_fluid_load();
+    if let Some(tables) = same_world.and_then(|open| open.tables.get()) {
+        let _ = save.tables.set(Arc::clone(tables));
+    } else if let Some(registry) =
+        super::chat::command_export(&options.resources, options.dedicated.is_none())
+    {
+        let pack_items = res.core.item_data.defaults().entries().keys().cloned();
+        let tables = horizon_client::save::SaveTables::new(&pack.assets)
+            .with_component_registry(registry, pack_items);
+        let _ = save.tables.set(Arc::new(tables));
+    }
     // One section palette budget per world, not one per level.
     if let Some(open) = same_world {
         save.share_section_palettes(open);
@@ -1355,6 +1437,7 @@ pub(super) fn make_streaming(
     streaming.biome_blend = settings.biome_blend;
     streaming.smooth_lighting = settings.smooth_lighting;
     streaming.cutout_leaves = settings.cutout_leaves;
+    streaming.better_grass_mode = settings.better_grass_mode();
     streaming.opaque_ice = settings.horizon.opaque_ice;
     streaming.leaf_culling = settings
         .horizon

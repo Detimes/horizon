@@ -3599,6 +3599,10 @@ fn signs_take_their_form_wood_and_wall_block_from_their_declaration() {
                 "data/signs/horizon/block/road_sign.json",
                 r#"{"template": "minecraft:stone"}"#,
             ),
+            (
+                "data/signs/horizon/block/notice_with_vanilla_wall.json",
+                r#"{"template": "minecraft:oak_sign"}"#,
+            ),
         ],
     );
     let root = resource_root_fixture(
@@ -3671,7 +3675,218 @@ fn signs_take_their_form_wood_and_wall_block_from_their_declaration() {
     // Vanilla's pair stays as it was.
     let oak = behaviours.item_binding("minecraft:oak_sign").unwrap();
     assert_eq!(oak.wall_block, id("minecraft:oak_wall_sign"));
+    let fallback = behaviours
+        .item_binding("signs:notice_with_vanilla_wall")
+        .unwrap();
+    assert_eq!(fallback.wall_block, oak.wall_block);
+    assert_eq!(fallback.attachment, oak.attachment);
     let _ = fs::remove_dir_all(&scratch);
+}
+
+#[test]
+fn content_wall_pairs_place_each_forms_own_state() {
+    use horizon_core::{
+        geometry::{Direction, Vec3},
+        position::BlockPos,
+        random::LegacyRandom,
+    };
+    use horizon_world::{
+        level::{
+            Behaviours, LevelAccess, LevelEvent, PlaceContext, PlaceOutcome, PlacementContext,
+            Ticks,
+        },
+        loot::PackOverlay,
+        registry::BlockStateId,
+    };
+    use std::cell::RefCell;
+
+    let Some(base) = prepared() else {
+        return;
+    };
+    let scratch =
+        std::env::temp_dir().join(format!("horizon-mod-wall-pairs-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    let m = folder_mod(
+        &scratch.join("sconce"),
+        &[
+            ("horizon-mod.toml", &manifest("sconce", "")),
+            (
+                "data/sconce/horizon/block/floor.json",
+                r#"{"template":"minecraft:redstone_torch","wall_block":"sconce:wall"}"#,
+            ),
+            (
+                "data/sconce/horizon/block/wall.json",
+                r#"{"template":"minecraft:redstone_wall_torch","item":false}"#,
+            ),
+            (
+                "data/sconce/horizon/block/ceiling.json",
+                r#"{"template":"minecraft:lantern","wall_block":"sconce:ceiling_wall","attachment_direction":"up"}"#,
+            ),
+            (
+                "data/sconce/horizon/block/ceiling_wall.json",
+                r#"{"template":"minecraft:stone","item":false}"#,
+            ),
+        ],
+    );
+    let root = resource_root_fixture(&base, Path::new(""), &[m], &scratch.join("cache")).unwrap();
+    let registry = horizon_world::level::data::load_registry(&root).unwrap();
+    let facts = BlockFacts::load(&root, &registry).unwrap();
+    let b = Behaviours::load(&registry, &root).unwrap();
+    let default = |name| registry.default_state(name).unwrap();
+    let defaults = horizon_world::item_defaults::read(&root).unwrap();
+    let items = Items::load(&root, &registry, &facts, &PackOverlay::NONE, &defaults).unwrap();
+    for (wall, owner) in [
+        ("sconce:wall", "sconce:floor"),
+        ("sconce:ceiling_wall", "sconce:ceiling"),
+    ] {
+        let fact = facts.get(default(wall));
+        assert_eq!(&*fact.item, owner);
+        assert_eq!(&*fact.pick_item, owner);
+        assert_eq!(items.get(owner).unwrap().block, Some(default(owner)));
+        assert!(b.item_binding(wall).is_none());
+    }
+    assert_eq!(
+        b.item_binding("sconce:floor").unwrap().attachment,
+        Some(Direction::Down)
+    );
+    assert_eq!(
+        b.item_binding("sconce:ceiling").unwrap().attachment,
+        Some(Direction::Up)
+    );
+
+    let floor = default("sconce:floor");
+    let wall = default("sconce:wall");
+    let ceiling = default("sconce:ceiling");
+    let ceiling_wall = default("sconce:ceiling_wall");
+    let floor_chosen = b.table.set_bool(floor, b.props.lit, false);
+    let wall_chosen = b.table.set_bool(
+        b.table.set_dir(wall, b.props.facing, Direction::East),
+        b.props.lit,
+        false,
+    );
+    let ceiling_chosen = b.table.set_bool(ceiling, b.props.hanging, true);
+    assert_ne!(floor_chosen, floor);
+    assert_ne!(wall_chosen, wall);
+    assert_ne!(ceiling_chosen, ceiling);
+
+    // The same LevelAccess seam used by native block parts: each form may
+    // answer with one of its own states, before the common survival check.
+    struct Level {
+        air: BlockStateId,
+        blocks: std::collections::HashMap<BlockPos, BlockStateId>,
+        random: LegacyRandom,
+        answers: [(BlockStateId, BlockStateId); 3],
+        asked: RefCell<Vec<BlockStateId>>,
+    }
+    impl horizon_world::level::BlockEntityNeighbors for Level {}
+    impl LevelAccess for Level {
+        fn block_state(&self, pos: BlockPos) -> BlockStateId {
+            self.blocks.get(&pos).copied().unwrap_or(self.air)
+        }
+        fn set_raw(&mut self, pos: BlockPos, state: BlockStateId) -> Option<BlockStateId> {
+            Some(self.blocks.insert(pos, state).unwrap_or(self.air))
+        }
+        fn is_loaded(&self, _: BlockPos) -> bool {
+            true
+        }
+        fn random(&mut self) -> &mut LegacyRandom {
+            &mut self.random
+        }
+        fn game_time(&self) -> i64 {
+            0
+        }
+        fn emit(&mut self, _: LevelEvent) {}
+        fn before_state_for_placement(
+            &self,
+            state: BlockStateId,
+            _: &PlacementContext,
+            _: horizon_world::fluid::FluidState,
+            answer: &mut Option<Option<BlockStateId>>,
+        ) {
+            self.asked.borrow_mut().push(state);
+            if let Some((_, chosen)) = self.answers.iter().find(|(s, _)| *s == state) {
+                *answer = Some(Some(*chosen));
+            }
+        }
+    }
+    let at = BlockPos::new(0, 70, 0);
+    let stone = default("minecraft:stone");
+    for (item, clicked, face, pitch, support, expected_wall, expected) in [
+        (
+            "sconce:floor",
+            BlockPos::new(0, 69, 0),
+            Direction::Up,
+            80.0,
+            true,
+            wall,
+            Some(floor_chosen),
+        ),
+        (
+            "sconce:floor",
+            BlockPos::new(-1, 70, 0),
+            Direction::East,
+            0.0,
+            true,
+            wall,
+            Some(wall_chosen),
+        ),
+        (
+            "sconce:ceiling",
+            BlockPos::new(0, 71, 0),
+            Direction::Down,
+            -80.0,
+            true,
+            ceiling_wall,
+            Some(ceiling_chosen),
+        ),
+        (
+            "sconce:ceiling",
+            BlockPos::new(-1, 70, 0),
+            Direction::East,
+            0.0,
+            true,
+            ceiling_wall,
+            Some(ceiling_wall),
+        ),
+        ("sconce:floor", at, Direction::Up, 80.0, false, wall, None),
+    ] {
+        let mut level = Level {
+            air: facts.air,
+            blocks: Default::default(),
+            random: LegacyRandom::new(1),
+            answers: [
+                (floor, floor_chosen),
+                (wall, wall_chosen),
+                (ceiling, ceiling_chosen),
+            ],
+            asked: RefCell::default(),
+        };
+        if support {
+            level.blocks.insert(clicked, stone);
+        }
+        let ctx = PlaceContext {
+            clicked_pos: clicked,
+            face,
+            hit: Vec3::new(f64::from(clicked.x) + 0.5, f64::from(clicked.y) + 0.5, 0.5),
+            inside: false,
+            yaw: 0.0,
+            pitch,
+            sneaking: false,
+            item: item.into(),
+            can_use_game_master_blocks: false,
+        };
+        let outcome = b.place_block(&mut level, &mut Ticks::default(), &ctx);
+        match expected {
+            Some(chosen) => assert!(
+                matches!(outcome, PlaceOutcome::Placed { pos, state } if pos == at && state == chosen),
+                "{item} on {face:?}"
+            ),
+            None => assert!(matches!(outcome, PlaceOutcome::Failed)),
+        }
+        assert_eq!(level.block_state(at), expected.unwrap_or(facts.air));
+        assert_eq!(level.asked.borrow().first(), Some(&expected_wall));
+    }
+    fs::remove_dir_all(scratch).unwrap();
 }
 
 /// A fence gate of a mod is a vanilla `FenceGateBlock` through its template, with
@@ -4385,6 +4600,54 @@ fn roots_unused_for_a_day_are_removed() {
     assert!(!roots.join(STAMP).exists() && !roots.join("assets").exists());
     assert!(current.exists() && recent.exists());
     fs::remove_dir_all(&scratch).unwrap();
+}
+
+/// The content generator writes family metadata to both rows, and the world
+/// behaviour loader consumes those rows as one custom head/body pair.
+#[test]
+#[ignore = "daily"]
+fn declared_growing_plant_family_reaches_world_behaviours() {
+    let Some(base) = prepared() else { return };
+    let scratch = std::env::temp_dir().join(format!(
+        "horizon-growing-plant-family-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&scratch);
+    let manifest = manifest("testmod", "");
+    let m = folder_mod(
+        &scratch.join("mod"),
+        &[
+            ("horizon-mod.toml", &manifest),
+            (
+                "data/testmod/horizon/block/vines_head.json",
+                r#"{"template":"minecraft:weeping_vines","growing_plant":{"head":"testmod:vines_head","body":"testmod:vines_body","direction":"down","kelp":true}}"#,
+            ),
+            (
+                "data/testmod/horizon/block/vines_body.json",
+                r#"{"template":"minecraft:weeping_vines_plant","item":false}"#,
+            ),
+        ],
+    );
+    let root = resource_root_fixture(&base, Path::new(""), &[m], &scratch.join("cache")).unwrap();
+    let assets = Assets::load(&root).unwrap();
+    let registry = assets.registry;
+    let behaviours = horizon_world::level::Behaviours::load(registry, &root).unwrap();
+    let head = registry.default_state("testmod:vines_head").unwrap();
+    let body = registry.default_state("testmod:vines_body").unwrap();
+    let head_id = behaviours.block(head);
+    let body_id = behaviours.block(body);
+
+    for state in [head, body] {
+        let data = behaviours.data(state);
+        assert_eq!(data.growing_plant_head, Some(head_id));
+        assert_eq!(data.growing_plant_body, Some(body_id));
+        assert_eq!(
+            data.growth_direction,
+            horizon_core::geometry::Direction::Down
+        );
+        assert!(data.growing_plant_kelp);
+    }
+    fs::remove_dir_all(scratch).unwrap();
 }
 
 // These fixtures accept every listed content package on both sides. Production
