@@ -12,7 +12,9 @@ use horizon_client::{
 };
 use horizon_core::geometry::Vec3;
 use horizon_protocol::packets::configuration::ClientInformation;
-use mod_api::{Hooks, ModEntry, PlayerChangedDimensionEvent, ServerHost};
+use mod_api::{
+    Flow, Hooks, ModEntry, PlayerChangedDimensionEvent, PlayerTeleportEndGatewayToEvent, ServerHost,
+};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicI32, AtomicUsize},
@@ -246,5 +248,56 @@ fn an_end_gateway_jump_within_the_level_is_not_heard_on_any_server() {
             );
             assert!(heard.lock().unwrap().is_empty(), "{role:?}: {heard:?}");
         });
+    }
+}
+
+struct GatewayCounter(Arc<AtomicUsize>);
+
+#[mod_api::__subscriptions]
+impl Hooks for GatewayCounter {
+    fn player_teleport_end_gateway_to(
+        &self,
+        _: &mut dyn ServerHost,
+        _: &mut PlayerTeleportEndGatewayToEvent<'_>,
+    ) -> Flow {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Flow::Continue
+    }
+}
+
+/// `player_teleport_end_gateway_to` is heard once per crossing, for an exact exit (heard before the
+/// teleport) and a searched one (heard when the landing is resolved).
+#[test]
+#[ignore = "daily"]
+fn an_end_gateway_crossing_fires_the_to_hook_once() {
+    for exact in [true, false] {
+        let count = Arc::new(AtomicUsize::new(0));
+        let mods: mod_api::Mods = vec![ModEntry::new(
+            "gateway-counter",
+            Box::new(GatewayCounter(count.clone())),
+        )]
+        .into();
+        mod_platform::testing::with_mods(mods, || {
+            with_server(ExecutionRole::DedicatedServer, |game| {
+                game.build_registries();
+                run_as_player(
+                    game,
+                    ExecutionRole::DedicatedServer,
+                    &format!(
+                        "setblock 3 64 5 minecraft:end_gateway{{exit_portal:[I;40,64,40],ExactTeleport:{}b}}",
+                        u8::from(exact)
+                    ),
+                );
+                game.start_gateway_trip(CONN, [3, 64, 5]);
+                if !exact {
+                    finish_trip(game, Dim::Overworld);
+                }
+            });
+        });
+        assert_eq!(
+            count.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "exact = {exact}"
+        );
     }
 }
