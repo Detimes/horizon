@@ -12,6 +12,12 @@ impl Game<'_> {
         target: PlayerRef,
         name: Option<Text>,
     ) -> bool {
+        let online = |game: &Self, player| {
+            game.native_acting_player() == Some(player) || game.online_player_record(player).is_some()
+        };
+        if !online(self, viewer) || !online(self, target) {
+            return false;
+        }
         let Some(host) = &mut self.lan else {
             return false;
         };

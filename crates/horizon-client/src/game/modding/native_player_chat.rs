@@ -3,7 +3,7 @@ use super::Game;
 use horizon_client::{lan::data::component_nbt, text::Text};
 use mod_api::{PlayerChatRefusal, PlayerRef};
 
-/// The longest line a client may send (`ServerboundChatPacket`'s 256-character string).
+/// The longest line a client may send (`ServerboundChatPacket`'s `readUtf(256)`, in UTF-16 units).
 const MAX_CHARACTERS: usize = 256;
 
 /// `StringUtil.isAllowedChatCharacter`: no control character, no DEL, no `§`.
@@ -17,7 +17,7 @@ fn refusal(message: &str) -> Option<PlayerChatRefusal> {
         Some(PlayerChatRefusal::Empty)
     } else if message.starts_with('/') {
         Some(PlayerChatRefusal::Command)
-    } else if message.chars().count() > MAX_CHARACTERS {
+    } else if message.encode_utf16().count() > MAX_CHARACTERS {
         Some(PlayerChatRefusal::TooLong)
     } else if !message.chars().all(allowed) {
         Some(PlayerChatRefusal::IllegalCharacter)
@@ -65,6 +65,8 @@ mod tests {
         assert_eq!(refusal("/op me"), Some(PlayerChatRefusal::Command));
         assert_eq!(refusal(&"a".repeat(257)), Some(PlayerChatRefusal::TooLong));
         assert_eq!(refusal(&"a".repeat(256)), None);
+        // The limit counts UTF-16 units, as `readUtf(256)`: 129 emoji are 258 of them.
+        assert_eq!(refusal(&"😀".repeat(129)), Some(PlayerChatRefusal::TooLong));
         assert_eq!(
             refusal("hi\u{7}"),
             Some(PlayerChatRefusal::IllegalCharacter)

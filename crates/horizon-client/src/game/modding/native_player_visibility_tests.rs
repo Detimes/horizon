@@ -376,5 +376,16 @@ fn each_revert_refusal_has_its_own_name() {
             stale(b).revert_block_change(game, level, [1, 70, 1]),
             Err(Refusal::Stale)
         );
+        // A player in another dimension is not sent this level's block.
+        game.lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .guests
+            .update_connection(13, |g| g.dimension = "minecraft:the_nether".into());
+        assert_eq!(
+            b.revert_block_change(game, level, [1, 70, 1]),
+            Err(Refusal::OtherLevel)
+        );
     });
 }

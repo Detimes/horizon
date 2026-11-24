@@ -971,8 +971,7 @@ impl Game<'_> {
         ) else {
             return false;
         };
-        self.player_drop(thrown);
-        true
+        self.player_drop(thrown).is_some()
     }
 
     /// A guest's drop key. A drop the held item's Part refused sends the

@@ -145,7 +145,11 @@ impl Game<'_> {
         if self.native_level_world(level).is_none() {
             return Err(Refusal::StaleLevel);
         }
-        if level.dimension() != self.dim.key() {
+        // The player's own level too: another dimension's player would be sent this level's block.
+        let elsewhere = self
+            .player_dimension_key(player)
+            .is_some_and(|dim| dim != level.dimension());
+        if level.dimension() != self.dim.key() || elsewhere {
             return Err(Refusal::OtherLevel);
         }
         let [x, y, z] = pos;
