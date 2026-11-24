@@ -628,6 +628,7 @@ horizon-client game::fangs::tests::taken_fangs_tick_keeps_survivors_before_both_
 horizon-client game::fence_leash_force_tests::a_fence_leash_pulls_a_pig_as_vanilla_does lib daily resources
 horizon-client game::fertile_part_tests::a_farmland_part_answers_fertility_and_hydration lib daily resources
 horizon-client game::finalize_spawn::tests::finalize_plain_draws_the_level_random_in_vanilla_order lib daily resources
+horizon-client game::finalize_spawn::tests::a_provisional_id_never_stays_in_the_spawn_reasons lib daily resources
 horizon-client game::finalize_spawn::tests::finalize_with_without_listeners_finalizes_like_finalize_plain lib daily resources
 horizon-client game::finalize_spawn::tests::halloween_pumpkins_only_undead_on_halloween lib daily resources
 horizon-client game::finalize_spawn::tests::runtime_spawns_run_the_mob_finalize_spawn lib daily resources

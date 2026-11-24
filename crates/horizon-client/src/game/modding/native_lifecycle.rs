@@ -83,6 +83,11 @@ pub(super) struct NativeLifecycle {
 }
 
 impl NativeLifecycle {
+    /// The ids `spawn_reasons` holds, for the tests that check no provisional id stays in it.
+    #[cfg(test)]
+    pub(in crate::game) fn spawn_reason_ids(&self) -> Vec<u32> {
+        self.spawn_reasons.keys().copied().collect()
+    }
     /// A read is valid only during a tick hook with its current tick context.
     pub(super) fn permits_read(&self, context: &LifecycleContext) -> bool {
         self.read_scope

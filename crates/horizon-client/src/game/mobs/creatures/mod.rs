@@ -1061,7 +1061,11 @@ impl Game<'_> {
         spawner: Option<mod_api::SpawnSource>,
     ) -> Finalized {
         let mut group = None;
-        self.native_lifecycle.spawn_reasons.insert(mob.id, reason);
+        // A provisional id (a spawn pass's `u32::MAX - n`) is no key: the reason rides in
+        // `mob.spawn_reason` and `resolve_spawn_ids` files it under the real id.
+        if mob.id < super::dragon::SPECIAL {
+            self.native_lifecycle.spawn_reasons.insert(mob.id, reason);
+        }
         let (outcome, difficulty) = self.finalize_spawn_event(mob, reason, spawner, &mut group);
         if outcome == Finalized::Done {
             self.finalize_grouped(mob, &difficulty, reason, group);

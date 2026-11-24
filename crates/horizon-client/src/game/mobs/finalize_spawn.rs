@@ -326,6 +326,28 @@ mod tests {
         });
     }
 
+    /// A spawn pass's mob carries a provisional id: its reason rides on the mob and is filed under
+    /// the real id by `resolve_spawn_ids`, so no provisional id ever stays in `spawn_reasons`.
+    #[test]
+    #[ignore = "daily"]
+    fn a_provisional_id_never_stays_in_the_spawn_reasons() {
+        crate::game::native_guest_turn_tests::with_guests(|game| {
+            let provisional = u32::MAX - 3;
+            let mut mob = mob_of(game, provisional, "minecraft:zombie");
+            game.finalize_with(&mut mob, Reason::Natural, None);
+            assert!(mob.spawn_reason.is_some(), "the reason rides on the mob");
+            assert!(game.native_lifecycle.spawn_reason_ids().is_empty());
+            game.resolve_spawn_ids([&mut [mob], &mut []], &[]);
+            let ids = game.native_lifecycle.spawn_reason_ids();
+            assert_eq!(ids.len(), 1);
+            assert!(ids[0] < provisional, "filed under the real id: {ids:?}");
+            // A mob with its final id is filed at once.
+            let mut real = mob_of(game, 77, "minecraft:zombie");
+            game.finalize_with(&mut real, Reason::Natural, None);
+            assert!(game.native_lifecycle.spawn_reason_ids().contains(&77));
+        });
+    }
+
     /// arismoko/horizon#2783: `/summon`, eggs, spawners and natural spawns run
     /// `WitherSkeleton.finalizeSpawn`: attack damage base 4.0, not the
     /// default 2.0.
