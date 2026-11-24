@@ -11,10 +11,16 @@ impl Game<'_> {
             return None;
         }
         let uuid = self.entity_uuid(entity)?;
+        // A player is on the scoreboard by name (`Entity.getScoreboardName`, what `/team join` and
+        // `team_join` with a player write); any other entity by UUID.
+        let name = self
+            .player(uuid)
+            .filter(|player| player.entity() == entity)
+            .and_then(|player| self.player_name(player));
         let key = horizon_protocol::crypto::uuid_string(uuid);
-        self.score
-            .board
-            .players_team(&key)
+        name.iter()
+            .chain(std::iter::once(&key))
+            .find_map(|key| self.score.board.players_team(key))
             .map(|team| team.name.clone())
     }
 }
@@ -38,6 +44,11 @@ mod tests {
                 .add_to_team(&horizon_protocol::crypto::uuid_string(uuid), "red");
             assert_eq!(game.entity_team(a.entity()), Some("red".to_owned()));
             assert_eq!(game.entity_team(b.entity()), None);
+            // A player joined by name, as `/team join` and `ScoreHolder::Player` do, reads its team too.
+            game.score.board.add_team("blue");
+            let name = game.player_name(b).unwrap();
+            game.score.board.add_to_team(&name, "blue");
+            assert_eq!(game.entity_team(b.entity()), Some("blue".to_owned()));
             let stale = mod_api::EntityRef::new(
                 mod_api::WorldEpoch::new(a.entity().epoch().get() + 1),
                 a.entity().id(),
