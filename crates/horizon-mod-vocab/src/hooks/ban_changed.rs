@@ -1,5 +1,5 @@
 //! The `ban_changed` hook: declarations the mod API generator reads (see `hooks/mod.rs`).
-// catalog-order: 0353
+// catalog-order: 0359
 
 pub trait Hooks {
     /// An entry was added to (`added`) or removed from one of the dedicated server's ban lists: the list
