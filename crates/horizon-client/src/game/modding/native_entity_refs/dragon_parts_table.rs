@@ -230,12 +230,13 @@ impl DragonSet {
     pub(in crate::game) fn iter(&self) -> std::slice::Iter<'_, crate::game::dragon::Dragon> {
         self.list.iter()
     }
-    /// The dragon with entity id `id` (never an unassigned one).
+    /// The dragon with entity id `id`; id 0 reaches a dragon whose delayed id
+    /// is not assigned yet, as the former slot's filter did.
     pub(in crate::game) fn get(&self, id: u32) -> Option<&crate::game::dragon::Dragon> {
-        self.list.iter().find(|d| d.id != 0 && d.id == id)
+        self.list.iter().find(|d| d.id == id)
     }
     pub(in crate::game) fn get_mut(&mut self, id: u32) -> Option<&mut crate::game::dragon::Dragon> {
-        self.list.iter_mut().find(|d| d.id != 0 && d.id == id)
+        self.list.iter_mut().find(|d| d.id == id)
     }
     pub(in crate::game) fn is_some(&self) -> bool {
         !self.list.is_empty()
@@ -272,12 +273,12 @@ impl DragonSet {
         if self.is_some() {
             return Err(dragon);
         }
-        self.push(dragon);
+        self.replace(dragon);
         Ok(())
     }
-    /// Retire every dragon and forget their parts.
+    /// Retire every dragon and forget their parts, an extracted dragon's too.
     pub(in crate::game) fn discard(&mut self) {
-        let joins: Vec<_> = self.list.iter().map(|d| d.join).collect();
+        let joins: Vec<_> = self.registered.borrow().iter().map(|e| e.0).collect();
         for join in joins {
             self.unregister(join);
         }
@@ -317,88 +318,6 @@ impl DragonSet {
             self.unregister(join);
         }
         self.list.retire_extracted(id, join);
-    }
-}
-
-/// The table travels with the dimension-owned singleton, including actor loans.
-#[derive(Default)]
-#[allow(dead_code)] // kept: its mod points and internals stay published (#18777)
-pub(in crate::game) struct DragonSlot {
-    slot: horizon_client::join_seq::ResidentSlot<crate::game::dragon::Dragon>,
-    table: std::cell::RefCell<DragonPartsTable>,
-    registered: std::cell::Cell<u32>,
-}
-impl std::ops::Deref for DragonSlot {
-    type Target = horizon_client::join_seq::ResidentSlot<crate::game::dragon::Dragon>;
-    fn deref(&self) -> &Self::Target {
-        &self.slot
-    }
-}
-impl std::ops::DerefMut for DragonSlot {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.slot
-    }
-}
-#[allow(dead_code)]
-impl DragonSlot {
-    fn register(&self, id: u32) {
-        let old = self.registered.replace(id);
-        if old == id {
-            return;
-        }
-        let mut table = self.table.borrow_mut();
-        if old != 0 {
-            for part in old + 1..=old + 8 {
-                table.remove(part);
-            }
-        }
-        if id != 0 {
-            for part in id + 1..=id + 8 {
-                table.insert(part);
-            }
-        }
-    }
-    pub(super) fn parts_table(&self) -> std::cell::Ref<'_, DragonPartsTable> {
-        self.table.borrow()
-    }
-    #[cfg(test)]
-    fn part_ids(&self) -> Vec<u32> {
-        self.table.borrow().iter().collect()
-    }
-    pub(in crate::game) fn replace(&mut self, dragon: crate::game::dragon::Dragon) {
-        self.register(0);
-        self.register(dragon.id);
-        self.slot.replace(dragon);
-    }
-    // Preserve ResidentSlot's ownership-returning refusal contract without allocating.
-    #[allow(clippy::result_large_err)]
-    pub(in crate::game) fn install(
-        &mut self,
-        dragon: crate::game::dragon::Dragon,
-    ) -> Result<(), crate::game::dragon::Dragon> {
-        if self.slot.is_some() {
-            return Err(dragon);
-        }
-        self.replace(dragon);
-        Ok(())
-    }
-    pub(in crate::game) fn discard(&mut self) {
-        self.register(0);
-        self.slot.discard();
-    }
-    pub(in crate::game) fn id_assigned(&self) {
-        self.register(self.slot.as_ref().map_or(0, |d| d.id));
-        self.slot.id_assigned();
-    }
-    pub(in crate::game) fn retire_extracted(
-        &self,
-        id: u32,
-        join: horizon_client::join_seq::JoinSeq,
-    ) {
-        if self.registered.get() == id {
-            self.register(0);
-        }
-        self.slot.retire_extracted(id, join);
     }
 }
 
