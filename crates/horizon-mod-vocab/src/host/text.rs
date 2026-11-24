@@ -23,4 +23,20 @@ pub trait TextHost {
     /// `ChatColor.translateAlternateColorCodes` does.
     #[access(Metadata)]
     fn text_from_legacy(&self, legacy: &str) -> Result<Text, TextFormError>;
+    /// Side: both.
+    /// The text as item components and block entities store it (`ComponentSerialization`
+    /// to NBT): what `minecraft:custom_name` and each `minecraft:lore` line hold. See
+    /// `ItemStack::set_display`.
+    #[access(Metadata)]
+    #[raw_text]
+    fn text_to_nbt(&self, text: &Text) -> Result<Tag, TextFormError>;
+    /// Side: both.
+    /// The text an item component or a block entity stores (`ComponentSerialization` from
+    /// NBT): what `text_to_nbt` writes, read back, so a `minecraft:custom_name` or a
+    /// `minecraft:lore` line comes out as a `Text` with its colours and styles. See
+    /// `ItemStack::display_name` and `ItemStack::lore`. A plain string is a literal text;
+    /// anything that is not one component (an empty list, an object with no content key, a
+    /// number) is `Ok(None)`; nesting past the game's limit is `TooDeep`.
+    #[access(Metadata)]
+    fn text_from_nbt(&self, tag: &Tag) -> Result<Option<Text>, TextFormError>;
 }

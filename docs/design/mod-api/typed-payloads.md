@@ -1,7 +1,7 @@
 # Registered payloads and the typed-payload design
 
 The registered **raw** transport implements [arismoko/horizon#2882](https://github.com/arismoko/horizon/issues/2882).
-Typed registration and token binding over it are [below](#typed-registration-and-tokens-813-step-4b-1);
+Typed registration and token binding over it are [below](#typed-registration-and-tokens-arismokohorizon813-step-4b-1);
 configuration snapshots remain work for [arismoko/horizon#813](https://github.com/arismoko/horizon/issues/813).
 The transport contract is detailed in [Registered raw custom payload transport](../raw-custom-payload-transport.md).
 
@@ -96,6 +96,12 @@ finished with nothing received on `horizon:payloads`, payloads on channels the c
 declared are dropped instead of refused: they are never decoded or delivered to a mod.
 Such payloads arriving during configuration, before its finish, still refuse. A required
 local declaration the server lacks still refuses admission.
+In the initial configuration each end first names its build on `horizon:build` (one
+string, `Nightly 2026-11-18 · 0c02067`): the server before its Query, the client before
+its first message on `horizon:payloads`. A refusal then says which builds met
+("This server runs Horizon X; your game is Horizon Y.", which side to update when two
+nightlies or two releases meet, and the raw-protocol cause below it); an end that never named its build is
+older than this. Vanilla clients discard the payload, as they discard the Query.
 This is not a build authentication mechanism. Non-Horizon vanilla peers retain
 optional admission. Peers with no mod declarations exchange only protocol metadata and
 an Offer of the engine's optional declarations (below); there is no per-tick scan of

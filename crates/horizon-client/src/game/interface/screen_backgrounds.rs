@@ -53,6 +53,20 @@ impl Game<'_> {
         self.native_dimension_transition_screen_draw(screen, reason, progress, batch);
         true
     }
+    /// The cause of the currently selected mod screen's client load.
+    pub(super) fn dimension_transition_cause(
+        &self,
+        screen: &str,
+    ) -> Option<mod_api::DimensionTransitionCause> {
+        let load = &self.remote.as_ref()?.level_load;
+        let selected =
+            horizon_client_render::dimension_transition::screen(load.transition_screen()?)?;
+        if selected == screen {
+            load.transition_cause()
+        } else {
+            None
+        }
+    }
     /// `LevelLoadingScreen.extractBackground`.
     pub(super) fn draw_level_loading_background(
         &self,
@@ -130,13 +144,12 @@ impl Game<'_> {
         partial: f32,
     ) -> Option<horizon_client::gfx::BorderDraw> {
         use horizon_client::border_render::{self, BorderRenderer};
-        // The wall and its fade span the full-detail radius, as vanilla's
-        // `LevelRenderer` and `Camera` derive them, never the far-terrain LOD
-        // distance: the wall's texture coordinates are f32, and at LOD depths
-        // one ulp of the v coordinate is wider than a whole texture tile, so
-        // the forcefield striping collapses into moiré. The wall therefore
-        // ends inside the world far terrain draws, before its fog.
-        let distance = f64::from(self.streaming.radius * 16);
+        // The wall and its fade span the effective render distance, never the
+        // streaming radius's margin nor the far-terrain LOD distance: the
+        // wall's texture coordinates are f32, and at LOD depths one ulp of the
+        // v coordinate is wider than a whole texture tile.
+        let radius = self.effective_render_distance();
+        let distance = f64::from(radius * 16);
         border_render::extract(
             &self.border,
             partial,
@@ -152,8 +165,7 @@ impl Game<'_> {
             self.border_section = Some(section);
         }
         // `Camera.depthFar`, from the same radius, caps the wall's height.
-        let depth_far =
-            horizon_client::camera::depth_far(self.streaming.radius, self.settings.cloud_range);
+        let depth_far = horizon_client::camera::depth_far(radius, self.settings.cloud_range);
         if !self
             .border_renderer
             .prepare(&self.border_state, camera, distance, depth_far)
@@ -227,14 +239,14 @@ impl Game<'_> {
         &self,
         batch: &HudBatch,
     ) -> Option<mod_api::ScreenView<'_>> {
-        if self.screen != Screen::Playing
-            || self.screen_over_playing()
-            || self.remote_loading()
-            || !self.screen_render_listened()
-        {
+        if !self.screen_render_listened() || !self.title_screen_render_uncovered() {
             return None;
         }
         self.title_screen_view(batch)
+    }
+
+    pub(super) fn title_screen_render_uncovered(&self) -> bool {
+        self.screen == Screen::Playing && !self.screen_over_playing() && !self.remote_loading()
     }
 }
 

@@ -17,7 +17,8 @@ pub(crate) struct OutputCapabilities {
     /// The device keeps the HUD on a layer of its own (`hud_coverage::supported`).
     pub hud_layer: bool,
     /// HDR output is held back: the last start on this window's graphics driver ended before
-    /// HDR output showed a frame ([`held`]). The mode stays; the output is SDR.
+    /// HDR output showed a frame, or lost the graphics device ([`held`]). The mode stays; the
+    /// output is SDR.
     pub held: bool,
 }
 impl OutputCapabilities {
@@ -171,6 +172,8 @@ pub struct EffectiveOutput {
     /// The running shader pack lights the world itself: Horizon lifts none of it, so Look has
     /// nothing to pick (`with_pack`).
     pub(crate) pack_lights: bool,
+    /// The renderer can draw 4x terrain MSAA (`Renderer::output`).
+    pub(crate) msaa: bool,
     /// What its ray tracing is to a pack that asks for it; `None` before a renderer.
     pub(crate) rays: Option<RayStatus>,
 }
@@ -183,6 +186,10 @@ pub(crate) enum RayStatus {
     /// The GPU and graphics API have ray queries, but the device was opened without them: the
     /// pack picked at the next start gets them.
     Restart,
+    /// The device opened on DirectX 12's FXC, which has no ray queries, because nothing asked
+    /// for them at the start: the next start, asked, compiles with DXC, and the pack gets them
+    /// if the GPU has them.
+    Compiler,
     /// The GPU or graphics API has no ray queries.
     Unsupported,
     /// `HORIZON_RAY_TRACING` is set to something other than `1`.
@@ -215,6 +222,7 @@ impl EffectiveOutput {
         gamut: None,
         compositor: false,
         pack_lights: false,
+        msaa: false,
         rays: None,
     };
     /// This output while a shader pack runs (`pack`), a `shaders/` one or one of Horizon's
@@ -353,6 +361,7 @@ pub(crate) fn resolve_output(
         ),
         compositor: reading.compositor,
         pack_lights: false,
+        msaa: false,
         rays: None,
     }
 }
