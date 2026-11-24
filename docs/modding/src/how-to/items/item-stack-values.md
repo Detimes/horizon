@@ -80,6 +80,13 @@ stack goes (0 for none, 1 for a box of plain items, 2 for a box with a bundle in
 built to be deep cannot make the walk long: a scan for hostile items asks it once per stack.
 A stack goes back to SNBT with `host.item_to_snbt(&stack)`, the inverse of `item_from_snbt`: `None` for air, an item the world lacks or a count outside 1 to 99, and any other text it writes reads back to the same stack.
 The list of every item id a server has is `host.item_ids()` (`Material.values()`): registry order, vanilla first, mod items after, each id once. It is for offering names, such as tab completion; it reads no stack.
+They read back with `stack.display_name(host)` (an `Option<Text>`, `None` for a stack with no name of its
+own) and `stack.lore(host)` (the lines, top first; a line that is not one text component is left out), through
+`host.text_from_nbt(&tag)`, which turns what `text_to_nbt` writes back into a `Text` with its colours and
+styles. A prototype's default name is not the stack's own: ask `host.item_default_component`. The model
+data of `minecraft:custom_model_data` reads with `stack.custom_model_data_floats()` (the first is Bukkit's
+`getCustomModelData`) and `stack.custom_model_data_strings()`; a stack with none gives empty lists, and
+`stack.components().is_none()` says a stack has no component overrides besides its damage (Bukkit's `hasItemMeta` false once `damage_component()` is none too).
 
 ## Game boundaries
 

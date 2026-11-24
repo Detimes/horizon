@@ -288,7 +288,13 @@ mod item_toss_return_tests {
                     game.throw_from_eyes(stone, [0.5, 65.0, 0.5], false, true)
                         .is_none()
                 );
-                assert_eq!(game.dropped.len(), before, "no item joins the world");
+                // `/give`'s pickup flash (a fake item, pickup delay 32767) is not a joined item.
+                let joined = game
+                    .dropped
+                    .iter()
+                    .filter(|d| d.pickup_delay != 32767)
+                    .count();
+                assert_eq!(joined, before, "no item joins the world");
             });
         });
     }

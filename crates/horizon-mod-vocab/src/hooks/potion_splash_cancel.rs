@@ -1,5 +1,5 @@
 //! The `potion_splash_cancel` hook: declarations the mod API generator reads (see `hooks/mod.rs`).
-// catalog-order: 0353
+// catalog-order: 0354
 
 pub trait Hooks {
     /// A thrown splash or lingering potion (`item`, its item id) is about to

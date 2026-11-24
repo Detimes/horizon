@@ -1,15 +1,18 @@
 //! `/give`'s handing over of one stack.
 use super::{Game, Target};
 use horizon_client::items::ItemStack;
-use horizon_core::random::RandomSource;
 
 impl Game<'_> {
     /// `GiveCommand.giveItem`'s handing over of one stack to the acting player:
     /// `Inventory.add`, then what did not fit thrown from the eyes with no pickup delay and
-    /// `owner` (the player's UUID) its only taker, or the pickup sound when it all went in.
+    /// `owner` (the player's UUID) its only taker, or the fake item `makeFakeItem` flashes
+    /// and the pickup sound when it all went in.
     pub(in crate::game) fn give_acting_stack(&mut self, stack: ItemStack, owner: Option<[i32; 4]>) {
         let uuid = self.native_acting_id();
         self.journal_player(uuid);
+        // `GiveCommand.giveItem` flashes `prototypeItemStack.copy()`: one item.
+        let mut flash = stack.clone();
+        flash.count = 1;
         let left = self.add_stack_to_inventory(stack);
         // At the player who gets them.
         if let Some(rest) = left {
@@ -19,7 +22,7 @@ impl Game<'_> {
             ));
         } else {
             let uuid = self.native_acting_id();
-            self.after_commit(crate::game::transactions::After::GivePickup(uuid));
+            self.after_commit(crate::game::transactions::After::GivePickup(uuid, flash));
         }
     }
     /// `give_acting_stack` for a refunded canceled toss: what does not fit is spawned at `at`
@@ -33,6 +36,9 @@ impl Game<'_> {
     ) {
         let uuid = self.native_acting_id();
         self.journal_player(uuid);
+        // As in `give_acting_stack`, the pickup flashes one item.
+        let mut flash = stack.clone();
+        flash.count = 1;
         match self.add_stack_to_inventory(stack) {
             Some(rest) => {
                 self.spawn_item(rest, at, v, 0);
@@ -41,18 +47,22 @@ impl Game<'_> {
                     item.target = owner;
                 }
             }
-            None => self.after_commit(crate::game::transactions::After::GivePickup(uuid)),
+            None => self.after_commit(crate::game::transactions::After::GivePickup(uuid, flash)),
         }
     }
-    pub(in crate::game) fn give_pickup(&mut self) {
+    pub(in crate::game) fn give_pickup(&mut self, stack: ItemStack) {
         let p = self
             .target_position(Target::Player)
             .unwrap_or(self.source_position());
-        // GiveCommand uses the receiving player's random, not the level's.
-        let mut r = horizon_client::random_source::entity();
-        let pitch = ((r.next_float() - r.next_float()) * 0.7 + 1.0) * 2.0;
-        self.audio
-            .play("minecraft:entity.item.pickup", Some(p), 0.2, pitch);
+        // ItemEntity.makeFakeItem: the item only flashes out of the player's
+        // head, and the pickup sound plays.
+        let ItemStack {
+            item,
+            damage,
+            extra,
+            ..
+        } = stack;
+        self.give_flash(&item, damage, extra, p);
     }
     pub(in crate::game) fn give_remainder(&mut self, rest: ItemStack, owner: Option<[i32; 4]>) {
         let p = self
