@@ -15,9 +15,15 @@ impl Game<'_> {
         if acting != Some(player) {
             return BlockBreakResult::NotThisPlayer;
         }
+        let before = self.world.block(pos[0], pos[1], pos[2]);
         match self.player_break_block(pos) {
             Ok(true) => BlockBreakResult::Broken,
-            Ok(false) | Err(_) => BlockBreakResult::Kept,
+            Ok(false) => BlockBreakResult::Kept,
+            // An error after the block was removed (level events, say) still broke it.
+            Err(_) if self.world.block(pos[0], pos[1], pos[2]) != before => {
+                BlockBreakResult::Broken
+            }
+            Err(_) => BlockBreakResult::Kept,
         }
     }
 }

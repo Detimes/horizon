@@ -196,6 +196,36 @@ fn buttons_stay_pressed_for_their_own_ticks_and_a_second_click_does_not_extend_i
     );
 }
 
+#[test]
+fn a_refused_plate_release_keeps_its_next_recheck() {
+    let mut w = world!();
+    w.floor(0, 5, "stone");
+    let pos = BlockPos::new(0, 1, 0);
+    let powered = w.id("stone_pressure_plate", &[("powered", "true")]);
+    w.put(pos, powered);
+    let block = w.b().block(powered);
+    // Nothing stands on the plate, so the recheck would release it; a listener refuses once.
+    w.level.refuse_plate = true;
+    let b = w.b();
+    b.schedule_tick(&mut w.level, &mut w.ticks, pos, 1);
+    w.tick();
+    assert_eq!(w.prop(pos, "powered"), "true", "the release was refused");
+    assert!(
+        w.ticks.has_block_tick(pos, block),
+        "the retained signal is rechecked again"
+    );
+    // The next recheck is allowed and releases the plate.
+    w.level.refuse_plate = false;
+    for _ in 0..20 {
+        w.tick();
+    }
+    assert_eq!(
+        w.prop(pos, "powered"),
+        "false",
+        "the later release went through"
+    );
+}
+
 /// A lever at `start` and a line of wires after it along `step`: the last wire
 /// carries `power`, since a wire gives up one level a block (a lever's own wire
 /// has 15). Returns the position of that last wire. Levers are switched on by the

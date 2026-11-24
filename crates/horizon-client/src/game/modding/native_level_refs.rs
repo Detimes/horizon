@@ -335,9 +335,10 @@ impl Game<'_> {
 
     /// `level_can_stand_at`: a standing spot for a player whose feet are at `pos`. The floor is
     /// read first, so a position with no floor level with its bottom refuses without a box walk.
-    /// Server only; the box is the player's (0.6 wide, 1.8 tall), its feet at `pos`.
+    /// Server only; the box is the player's (0.6 wide, 1.8 tall), its feet at `pos`. The box walk
+    /// reads the level in place only, so a parked level is refused (None) before the floor read.
     pub(super) fn level_can_stand_at(&self, level: LevelRef, pos: [i32; 3]) -> Option<bool> {
-        if !self.is_logical_server() {
+        if !self.level_in_place(level) {
             return None;
         }
         if self.level_block_floor_height(level, pos)? != 0.0 {
@@ -454,7 +455,7 @@ impl Game<'_> {
     ) -> Option<Vec<BlockStateId>> {
         self.native_section_ids(level, section)
     }
-    /// `level_section_has_only_air`: every block of the section is `minecraft:air`. The scan reads
+    /// `level_section_has_only_air`: every block of the section is air, cave air or void air. The scan reads
     /// the section's ids once; vanilla answers from a flag the section keeps.
     pub(super) fn level_section_has_only_air(
         &self,
@@ -462,8 +463,14 @@ impl Game<'_> {
         section: [i32; 3],
     ) -> Option<bool> {
         let ids = self.native_section_ids(level, section)?;
-        let air = self.pack.assets.registry.default_state("minecraft:air")?;
-        Some(ids.iter().all(|&id| id == air))
+        // `BlockState.isAir`: air, cave air and void air.
+        let registry = &self.pack.assets.registry;
+        let airs = [
+            registry.default_state("minecraft:air")?,
+            registry.default_state("minecraft:cave_air")?,
+            registry.default_state("minecraft:void_air")?,
+        ];
+        Some(ids.iter().all(|id| airs.contains(id)))
     }
     /// The status of a loaded chunk. Proto chunks are not exposed here.
     pub(super) fn chunk_status(&self, chunk: ChunkRef) -> Option<ChunkStatus> {
@@ -1209,7 +1216,12 @@ mod tests {
                 .chunks
                 .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
             let level = game.level(game.dim.id()).unwrap();
-            let stone = game.pack.assets.registry.default_state("minecraft:stone").unwrap();
+            let stone = game
+                .pack
+                .assets
+                .registry
+                .default_state("minecraft:stone")
+                .unwrap();
             game.world.set(1, 64, 1, stone).unwrap();
             let air: mod_api::BlockState = game
                 .pack
@@ -1228,8 +1240,16 @@ mod tests {
             assert_eq!(blocks[17], stone_api);
             assert_eq!(blocks.iter().filter(|&&b| b != air).count(), 1);
             assert_eq!(level.section_blocks(game, [0, 0, 0]).unwrap()[0], air);
-            assert_eq!(level.section_has_only_air(game, [5, 4, 5]), None, "chunk not loaded");
-            assert_eq!(level.section_blocks(game, [0, 5000, 0]), None, "past build height");
+            assert_eq!(
+                level.section_has_only_air(game, [5, 4, 5]),
+                None,
+                "chunk not loaded"
+            );
+            assert_eq!(
+                level.section_blocks(game, [0, 5000, 0]),
+                None,
+                "past build height"
+            );
         });
     }
 
@@ -1569,11 +1589,17 @@ mod tests {
 
             // The locked flag changes alone: the pixels stay; refusals change nothing.
             assert!(level.set_map_locked(game, id, true));
-            assert!(level.set_map_locked(game, id, true), "already locked is still true");
+            assert!(
+                level.set_map_locked(game, id, true),
+                "already locked is still true"
+            );
             let locked = level.map_data(game, id).unwrap();
             assert_eq!((locked.locked, locked.colors[5 + 2 * 128]), (true, 34));
             assert!(!stale.set_map_locked(game, id, false));
-            assert!(!level.set_map_locked(game, i32::MAX, false), "a map nothing made");
+            assert!(
+                !level.set_map_locked(game, i32::MAX, false),
+                "a map nothing made"
+            );
             assert!(level.map_data(game, id).unwrap().locked);
             // A new map keeps the centre, scale and colours it is given, in the level's dimension.
             let mut painted = vec![0u8; 128 * 128];
@@ -1582,9 +1608,16 @@ mod tests {
             assert_ne!(made, id);
             let new = level.map_data(game, made).unwrap();
             assert_eq!(new.center, [64, -64]);
-            assert_eq!((new.scale, new.dimension.as_str()), (2, "minecraft:overworld"));
+            assert_eq!(
+                (new.scale, new.dimension.as_str()),
+                (2, "minecraft:overworld")
+            );
             assert_eq!((new.colors[7 + 3 * 128], new.locked), (52, false));
-            assert_eq!(level.new_map(game, [0, 0], 5, &painted), None, "scale over 4");
+            assert_eq!(
+                level.new_map(game, [0, 0], 5, &painted),
+                None,
+                "scale over 4"
+            );
             assert_eq!(level.new_map(game, [0, 0], 0, &painted[..10]), None);
             assert_eq!(stale.new_map(game, [0, 0], 0, &painted), None);
 

@@ -104,6 +104,9 @@ pub(crate) struct TestLevel {
     pub note_players: std::cell::RefCell<Vec<bool>>,
     /// `allow_portal_spawn` refuses every portal.
     pub refuse_portals: bool,
+    /// Entities `count_entities` reports on a pressure plate, and whether `allow_plate_signal` refuses.
+    pub plate_entities: usize,
+    pub refuse_plate: bool,
     /// `ShulkerBoxBlockEntity.isClosed` at a position: `true` for a shut lid,
     /// `false` for an open box. Positions not listed have no block entity.
     pub shulker_closed: HashMap<BlockPos, bool>,
@@ -155,6 +158,8 @@ impl TestLevel {
             note_answer: None,
             note_players: std::cell::RefCell::new(Vec::new()),
             refuse_portals: false,
+            plate_entities: 0,
+            refuse_plate: false,
             shulker_closed: HashMap::new(),
             opened: HashSet::new(),
             border: horizon_core::geometry::border::BorderGeometry::new(
@@ -352,6 +357,12 @@ impl LevelAccess for TestLevel {
     }
     fn allow_block_burn(&self, pos: BlockPos) -> bool {
         !self.unburnable.contains(&pos)
+    }
+    fn count_entities(&self, _area: Aabb, _query: crate::level::EntityQuery) -> usize {
+        self.plate_entities
+    }
+    fn allow_plate_signal(&self, _: BlockPos, _: BlockStateId, _: i32, _: i32) -> bool {
+        !self.refuse_plate
     }
     fn on_caught_fire(
         &mut self,
