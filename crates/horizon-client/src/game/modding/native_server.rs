@@ -1871,10 +1871,7 @@ impl Game<'_> {
         };
         self.native_command_filter = filter;
         self.command_source = outer;
-        (
-            result.unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
-            lines,
-        )
+        (result.unwrap_or_else(|panic| std::panic::resume_unwind(panic)), lines)
     }
     /// The open world's folder (`world/`, beside its `level.dat`): a server
     /// mod keeps its data in a folder of its own there, so the world's
@@ -2308,8 +2305,7 @@ impl Game<'_> {
     /// `ServerHost::mod_command_raw`: the leaf text of the mod command whose
     /// `run_mod_command` listeners are running, None outside them.
     pub(super) fn mod_command_raw(&self) -> Option<String> {
-        mod_api::content::crash::current_native_call()
-            .filter(|call| call.hook == "run_mod_command")?;
+        mod_api::content::crash::current_native_call().filter(|call| call.hook == "run_mod_command")?;
         self.exec.native_command_raw.clone()
     }
 
@@ -4050,11 +4046,7 @@ mod tests {
 
         let opened = Arc::new(AtomicBool::new(false));
         mod_platform::testing::with_mods(
-            vec![mod_api::ModEntry::new(
-                "menus",
-                Box::new(Menus(opened.clone())),
-            )]
-            .into(),
+            vec![mod_api::ModEntry::new("menus", Box::new(Menus(opened.clone())))].into(),
             || {
                 super::super::native_guest_turn_tests::with_guests(|game| {
                     game.build_registries();
@@ -4083,9 +4075,7 @@ mod tests {
                 _: &mut dyn mod_api::ServerHost,
                 event: &mut mod_api::RegisterCommandsEvent<'_>,
             ) {
-                event
-                    .commands
-                    .push(mod_api::Command::new("scoped <message:text>"));
+                event.commands.push(mod_api::Command::new("scoped <message:text>"));
             }
 
             fn run_mod_command(
@@ -4121,11 +4111,7 @@ mod tests {
         }
 
         mod_platform::testing::with_mods(
-            vec![mod_api::ModEntry::new(
-                "scoped_commands",
-                Box::new(Commands),
-            )]
-            .into(),
+            vec![mod_api::ModEntry::new("scoped_commands", Box::new(Commands))].into(),
             || {
                 super::super::native_guest_turn_tests::with_guests(|game| {
                     game.build_registries();
@@ -4139,8 +4125,7 @@ mod tests {
                         parameters: Vec::new(),
                     };
                     assert_eq!(
-                        game.run_function(&function, None, game.server_source())
-                            .unwrap(),
+                        game.run_function(&function, None, game.server_source()).unwrap(),
                         Outcome::Value(1)
                     );
                     assert!(game.exec.functions.is_empty());
@@ -4774,10 +4759,7 @@ mod tests {
         let (t, levels, problems) = tree(&[mod_api::Command::new("cu callItemClear")]);
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(levels.keys().collect::<Vec<_>>(), ["cu"]);
-        assert_eq!(
-            t["children"]["cu"]["children"]["callItemClear"]["type"],
-            "literal"
-        );
+        assert_eq!(t["children"]["cu"]["children"]["callItemClear"]["type"], "literal");
         let arguments = command_arguments();
         let mut dispatcher = Dispatcher::new();
         register_dispatcher(&mut dispatcher, &t, "native_mod_command", &arguments);
