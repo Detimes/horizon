@@ -60,6 +60,12 @@ pub fn sound_source(event: &str) -> usize {
     if e == "block.potent_sulfur.noxious_gas" {
         // PotentSulfurBlock.animateTick, its only caller, plays it as AMBIENT.
         index("ambient")
+    } else if e == "item.bottle.fill_dragonbreath" {
+        // BottleItem.use: SoundSource.NEUTRAL, even though the id starts with `item.`.
+        index("neutral")
+    } else if e == "item.bottle.empty" {
+        // PotionItem / CauldronInteractions / DispenseItemBehavior: SoundSource.BLOCKS.
+        index("block")
     } else if e == "item.llama_carpet.unequip" {
         // Equippable.shearingSound, played by Mob.playSound on the llama's NEUTRAL.
         index("neutral")
@@ -68,6 +74,14 @@ pub fn sound_source(event: &str) -> usize {
     } else if e.starts_with("item.goat_horn.") {
         // InstrumentItem.play: SoundSource.RECORDS.
         index("record")
+    } else if matches!(
+        e,
+        "item.honeycomb.wax_on" | "item.bone_meal.use" | "item.book.put"
+    ) {
+        // Vanilla plays these on SoundSource.BLOCKS at every call site:
+        // HoneycombItem.java:83,88,104, CopperGolem.java:233,
+        // DispenseItemBehavior.java:357, LevelEventHandler.java:285 and LecternBlock.java:137.
+        index("block")
     } else if e.starts_with("music.") {
         index("music")
     } else if e.starts_with("weather.") || e.starts_with("entity.lightning_bolt") {
@@ -983,6 +997,24 @@ mod tests {
             horizon_narrator::Status::Off
         );
     }
+
+    /// `BottleItem.use` and `PotionItem` name their sounds `item.*` but play
+    /// them on NEUTRAL and BLOCKS. The name-family rule alone puts both on
+    /// PLAYER, so muting `soundCategory_player` would silence sounds vanilla
+    /// keeps audible.
+    #[test]
+    fn bottle_sounds_keep_their_vanilla_category() {
+        assert_eq!(
+            super::sound_source("minecraft:item.bottle.fill_dragonbreath"),
+            6
+        );
+        assert_eq!(super::sound_source("item.bottle.fill_dragonbreath"), 6);
+        assert_eq!(super::sound_source("minecraft:item.bottle.empty"), 4);
+        assert_eq!(super::sound_source("item.bottle.empty"), 4);
+        // Another `item.*` sound still follows the family rule.
+        assert_eq!(super::sound_source("minecraft:item.book.page_turn"), 7);
+    }
+
     /// `Equippable.shearingSound` for a llama carpet is played by `Mob.playSound`
     /// on the llama's NEUTRAL source, not on PLAYER like most `item.*` ids.
     #[test]
@@ -993,6 +1025,20 @@ mod tests {
         );
         assert_eq!(super::sound_source("item.llama_carpet.unequip"), 6);
         assert_eq!(super::sound_source("minecraft:item.book.page_turn"), 7);
+    }
+
+    /// These item id events play on SoundSource.BLOCKS in pinned vanilla 26.3.
+    #[test]
+    fn item_sounds_played_on_blocks_keep_their_category() {
+        for event in [
+            "item.honeycomb.wax_on",
+            "item.bone_meal.use",
+            "item.book.put",
+        ] {
+            assert_eq!(sound_source(event), 4, "{event}");
+        }
+        // An ordinary item event still follows the family rule.
+        assert_eq!(sound_source("item.flintandsteel.use"), 7);
     }
 
     /// `Monster.getSoundSource`: the verified families and inherited common sounds.
