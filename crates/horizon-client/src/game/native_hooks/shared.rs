@@ -39,9 +39,9 @@ fn observed_overlay_id(overlays: &[(bool, &'static str)]) -> Option<&'static str
 }
 
 impl Game<'_> {
-    pub(super) fn observed_screen_view(&self) -> Option<ScreenView<'_>> {
+    fn observed_prefix_screen_id(&self) -> Option<&'static str> {
         let book = self.book.as_ref().map(super::books::BookScreen::id);
-        let overlay = observed_overlay_id(&[
+        observed_overlay_id(&[
             (self.command_prompt.is_some(), "command_prompt"),
             (self.link_prompt.is_some(), "link_prompt"),
             (self.code_of_conduct.is_some(), "code_of_conduct"),
@@ -49,8 +49,26 @@ impl Game<'_> {
             (self.dialog_open(), "dialog"),
             (book.is_some(), book.unwrap_or("book_view")),
             (self.sign_edit.is_some(), "sign_editor"),
-        ]);
-        let Some(id) = overlay else {
+        ])
+    }
+
+    /// Classify the live screen without constructing a render/input view.
+    pub(super) fn current_screen_parts(&self) -> Option<(&'static str, Option<&str>)> {
+        if let Some(id) = self.observed_prefix_screen_id() {
+            return Some((id, None));
+        }
+        if self.remote_screen_up() {
+            return None;
+        }
+        let screen = self.screen;
+        if screen != Screen::Playing {
+            return Some((screen.id(), self.screen_menu(screen)));
+        }
+        self.title.as_ref().map(|title| (title.mode.id(), None))
+    }
+
+    pub(super) fn observed_screen_view(&self) -> Option<ScreenView<'_>> {
+        let Some(id) = self.observed_prefix_screen_id() else {
             return self.screen_view_now();
         };
         let renderer = self.renderer.as_ref()?;
@@ -195,7 +213,7 @@ impl Game<'_> {
         let none = screen == Screen::Playing;
         ScreenView::from(mod_api::__private::built::ScreenView {
             id: screen.id(),
-            menu: self.remote_menu_type().filter(|m| !none && !m.is_empty()),
+            menu: self.screen_menu(screen),
             title: self
                 .remote
                 .as_ref()
@@ -894,13 +912,23 @@ impl Game<'_> {
     pub(super) fn screen_view(&self, batch: &HudBatch, screen: Screen) -> ScreenView<'_> {
         self.screen_view_at(screen, self.screen_rect(batch, screen))
     }
+
+    /// Only the inventory screen renders a server-opened container.
+    fn screen_menu(&self, screen: Screen) -> Option<&str> {
+        if screen == Screen::Inventory {
+            self.remote_menu_type().filter(|menu| !menu.is_empty())
+        } else {
+            None
+        }
+    }
+
     /// `screen_view` with the panel `rect` the caller is laying out: the
     /// container build tells a mod the panel it is about to draw, not the one
     /// the previous frame drew.
     pub(super) fn screen_view_at(&self, screen: Screen, rect: [f32; 4]) -> ScreenView<'_> {
         ScreenView::from(mod_api::__private::built::ScreenView {
             id: screen.id(),
-            menu: self.remote_menu_type().filter(|m| !m.is_empty()),
+            menu: self.screen_menu(screen),
             title: self.remote.as_ref().and_then(|r| r.menu_title_snapshot()),
             rect,
             slots: self.slot_count(),
@@ -1873,13 +1901,16 @@ impl GameLevel<'_> {
     /// Creates a declared state-aware block entity from its actual state. No answer
     /// means no entity; the registered declaration owns its type identity.
     pub(super) fn new_block_entity_for_state(&self, state: BlockStateId) -> Option<BlockEntity> {
-        let name = &self.registry.state(state)?.name;
+        let state_info = self.registry.state(state)?;
+        let name = &state_info.name;
         if self.world.block_entities.stateful_entity(state.0) {
             let mut nbt = None;
             self.native_block_entity(name, state, &mut nbt);
             return block_entity_for_block(self.registry, self.facts, name, nbt?);
         }
-        self.new_block_entity(name)
+        let mut entity = self.new_block_entity(name)?;
+        entity.apply_state_mode(state_info.properties.get("mode").map(String::as_str));
+        Some(entity)
     }
     /// Replaces the block at `pos` with `state` through `Level.setBlock`, as
     /// `Game::native_set_block` does for the Host, from a hook that gets the
@@ -1991,6 +2022,14 @@ impl GameLevel<'_> {
     /// block to answer only for it. None for an unknown state.
     pub(super) fn native_state_block(&self, state: BlockStateId) -> Option<&str> {
         self.registry.state(state).map(|s| &*s.name)
+    }
+    /// Property `key` of block state `state` (a machine's `facing`), if it
+    /// has one, as `native_state_with_property`'s partner read. A registry
+    /// lookup, no access to the world: cheap even from a hook that only gets
+    /// a `LevelHost` (`block_signal`, `is_signal_source`). None for an
+    /// unknown state or a property it doesn't have.
+    pub(super) fn native_state_property(&self, state: BlockStateId, key: &str) -> Option<&str> {
+        state_property(self.registry, state, key)
     }
 }
 
@@ -3554,6 +3593,20 @@ pub(super) fn with_property(
     registry.resolve(&s).ok()
 }
 
+/// Property `key` of `state`; none for an unknown state or a property it
+/// doesn't have.
+pub(super) fn state_property<'r>(
+    registry: &'r BlockRegistry,
+    state: BlockStateId,
+    key: &str,
+) -> Option<&'r str> {
+    registry
+        .state(state)?
+        .properties
+        .get(key)
+        .map(String::as_str)
+}
+
 /// The state a mod's property write changes `state` to; none when the block
 /// has no such property or value, or already has it: `LevelChunk.setBlockState`
 /// returns null for the same state, so `Level.setBlock` returns false.
@@ -4765,6 +4818,24 @@ mod tests {
             super::with_property(&registry, east_gas, "facing", "up"),
             None
         );
+    }
+    /// `state_property` (what `LevelHost::state_property` on `GameLevel` and `HitLevel` reads):
+    /// a known state's property, `None` for a property it doesn't have and for an unknown state.
+    #[test]
+    fn state_property_reads_the_registry() {
+        let facts = br#"{"defaults":{"minecraft:air":0,"test:pipe":1},"states":[
+            ["air",true,false,"","minecraft:air"],
+            ["north_gas",false,false,"",{"id":"test:pipe","properties":{"carries":"gas","facing":"north"}}]
+        ]}"#;
+        let registry = horizon_world::registry::BlockRegistry::from_facts_json(&facts[..]).unwrap();
+        use horizon_world::registry::BlockStateId;
+        let (north_gas, unknown) = (BlockStateId(1), BlockStateId(99));
+        assert_eq!(
+            super::state_property(&registry, north_gas, "facing"),
+            Some("north")
+        );
+        assert_eq!(super::state_property(&registry, north_gas, "missing"), None);
+        assert_eq!(super::state_property(&registry, unknown, "facing"), None);
     }
     /// Both property setters return false for a write that changes nothing:
     /// each goes through `property_change`, none returns true on its own.
