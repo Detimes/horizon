@@ -620,9 +620,19 @@ fn absolute_paths(words: &mut [String]) {
         return;
     };
     match words.first().map(String::as_str) {
-        Some("screenshot" | "panorama") => {
+        Some("screenshot") => {
             if let Some(path) = words.get_mut(1) {
                 *path = cwd.join(&*path).display().to_string();
+            }
+        }
+        // The flags go first and the path last, so the game reads the rest of the line as the
+        // path even when the working directory holds ` --size`.
+        Some("panorama") => {
+            if let Some(path) = words.get_mut(1) {
+                *path = cwd.join(&*path).display().to_string();
+            }
+            if words.len() > 2 {
+                words[1..].rotate_left(1);
             }
         }
         Some("screenshot-sequence") => {
@@ -1251,5 +1261,9 @@ mod tests {
         absolute_paths(&mut words);
         assert!(Path::new(&words[3]).is_absolute());
         assert_eq!(words[1..3], ["64", "50"]);
+        let mut words = ["panorama", "a.png", "--size", "64"].map(str::to_owned);
+        absolute_paths(&mut words);
+        assert_eq!(words[1..3], ["--size", "64"]);
+        assert!(Path::new(&words[3]).is_absolute());
     }
 }

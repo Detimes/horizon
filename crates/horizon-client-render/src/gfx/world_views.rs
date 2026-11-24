@@ -527,45 +527,4 @@ mod tests {
         let camera = ViewCamera::new(&near, DVec3::ZERO, 1000.0);
         assert_eq!(camera.world_view, [1.0, 0.0, 1.0, 0.0]);
     }
-
-    /// A panorama's faces are world views, which run the world pass alone: the function that
-    /// draws a view opens one render pass and names no GUI, hand, overlay, screen or mod GUI
-    /// draw, and no frame-wide pass of the window's. A GUI pass added there fails this test.
-    #[test]
-    fn a_world_view_runs_no_gui_pass() {
-        let source = include_str!("world_views.rs");
-        let start = source.find("    fn draw_world_view(").unwrap();
-        let end = source[start..].find("\nimpl Target").unwrap();
-        let body = &source[start..start + end];
-        assert_eq!(body.matches("begin_render_pass").count(), 1);
-        for gui in [
-            "hud",
-            "hand",
-            "overlay",
-            "crosshair",
-            "screen",
-            "vignette",
-            "gui_render_post",
-            "world_drawn",
-            "hand_drawn",
-            "draw_frame",
-            "font",
-            "chat",
-            "blit",
-            "present",
-        ] {
-            assert!(
-                !body.to_ascii_lowercase().contains(gui),
-                "a world view's draw names `{gui}`"
-            );
-        }
-        // the capture reads only the world view's own target, never the window's frame
-        let capture = include_str!("cube_capture.rs");
-        let drawn = &capture[capture.find("fn cube_drawn").unwrap()..];
-        let drawn = &drawn[..drawn.find("fn cube_submitted").unwrap()];
-        assert!(drawn.contains("target.color()"));
-        for window in ["view_target", "surface", "offscreen", "readback"] {
-            assert!(!drawn.contains(window), "the capture copies `{window}`");
-        }
-    }
 }

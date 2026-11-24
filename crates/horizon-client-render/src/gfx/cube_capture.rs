@@ -344,6 +344,15 @@ impl Renderer {
         self.cube.result.take()
     }
 
+    /// The camera entity's eye this frame (`Frame::eye`: the camera's own except in a
+    /// third-person view), set before the views are asked for: the first one a capture sees is
+    /// where all six faces look from.
+    pub fn set_cube_capture_eye(&mut self, eye: DVec3) {
+        if let Some(active) = self.cube.active.as_mut() {
+            active.eye.get_or_insert(eye);
+        }
+    }
+
     /// The capture's face for this frame, asked with the mods' views (`view_sections::ask`).
     pub(super) fn cube_view(&mut self, camera: DVec3) -> Option<native_render::WorldView> {
         self.cube.view(camera)

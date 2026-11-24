@@ -8702,6 +8702,10 @@ impl Game<'_> {
             }
             _ => None,
         };
+        // A panorama looks from the camera entity's eye, also in a third-person view.
+        if let Some(renderer) = self.renderer.as_mut().filter(|_| !title) {
+            renderer.set_cube_capture_eye(eye.map_or(camera, |e| e.0));
+        }
         self.view_frustum =
             self.world_view_frustum(camera, [fov_degrees, yaw, pitch], bob * spin, depth_far);
         let billboard_frustum = if self.settings.horizon.taa {

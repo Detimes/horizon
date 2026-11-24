@@ -52,6 +52,10 @@ pub(super) struct Tickets {
 }
 
 impl Tickets {
+    /// The ticket `issue` hands out next.
+    fn next_ticket(&self) -> u64 {
+        self.next + 1
+    }
     fn issue(&mut self) -> u64 {
         self.next += 1;
         let ticket = self.next;
@@ -83,21 +87,12 @@ impl Tickets {
 }
 
 /// `PATH [--size N] [--format cube|equirect]`: the path is what comes before the first flag and
-/// may hold spaces.
+/// may hold spaces. The flags may also come first (`[--size N] [--format F] PATH`, as horizon-ctl
+/// sends them): then the rest of the line is the path, whatever it holds, ` --` included.
 pub(super) fn parse(args: &str) -> Result<(String, u32, Format)> {
     let usage = "panorama PATH [--size N] [--format cube|equirect]";
-    let (path, flags) = match args.find(" --") {
-        Some(at) => (&args[..at], &args[at..]),
-        None => (args, ""),
-    };
-    let path = path.trim();
-    if path.is_empty() {
-        return Err(usage.into());
-    }
     let (mut size, mut format) = (DEFAULT_SIZE, Format::Equirect);
-    let mut words = flags.split_whitespace();
-    while let Some(flag) = words.next() {
-        let value = words.next().ok_or(usage)?;
+    let mut flag = |flag: &str, value: &str| -> Result<()> {
         match flag {
             "--size" => size = value.parse().map_err(|_| format!("--size {value}: {usage}"))?,
             "--format" => {
@@ -109,6 +104,35 @@ pub(super) fn parse(args: &str) -> Result<(String, u32, Format)> {
             }
             _ => return Err(format!("{flag}: {usage}").into()),
         }
+        Ok(())
+    };
+    let mut rest = args.trim_start();
+    let path = if rest.starts_with("--") {
+        while rest.starts_with("--") {
+            let (name, after) = rest.split_once(char::is_whitespace).ok_or(usage)?;
+            let after = after.trim_start();
+            let (value, after) = after.split_once(char::is_whitespace).unwrap_or((after, ""));
+            if value.is_empty() {
+                return Err(usage.into());
+            }
+            flag(name, value)?;
+            rest = after.trim_start();
+        }
+        rest
+    } else {
+        let (path, flags) = match rest.find(" --") {
+            Some(at) => (&rest[..at], &rest[at..]),
+            None => (rest, ""),
+        };
+        let mut words = flags.split_whitespace();
+        while let Some(name) = words.next() {
+            flag(name, words.next().ok_or(usage)?)?;
+        }
+        path
+    };
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(usage.into());
     }
     Ok((path.to_owned(), size, format))
 }
@@ -171,15 +195,12 @@ impl Game<'_> {
             mod_api::PanoramaFormat::Cube => Format::Cube,
             _ => Format::Equirect,
         };
-        let ticket = self.panorama_tickets.issue();
-        match self.panorama_start(path, request.size, format, Origin::Mod(ticket)) {
-            Ok(()) => Ok(ticket),
-            Err(e) => {
-                self.panorama_tickets
-                    .set(ticket, mod_api::PanoramaStatus::Failed(e.to_string()));
-                Err(R::Size(e.to_string()))
-            }
-        }
+        // the ticket is issued only once the capture is admitted, so a refused request
+        // pushes no finished ticket out
+        let ticket = self.panorama_tickets.next_ticket();
+        self.panorama_start(path, request.size, format, Origin::Mod(ticket))
+            .map_err(|e| R::Size(e.to_string()))?;
+        Ok(self.panorama_tickets.issue())
     }
 
     /// `ClientHost::panorama_status`.
@@ -317,6 +338,10 @@ mod tests {
         assert!(parse("/s/a.png --size big").is_err());
         assert!(parse("/s/a.png --format sphere").is_err());
         assert!(parse("/s/a.png --wide 1").is_err());
+        // flags first, as horizon-ctl sends them: the rest is the path, ` --` and all
+        let (path, size, format) = parse("--size 64 --format cube /a --size 2/b.png").unwrap();
+        assert_eq!((path.as_str(), size, format), ("/a --size 2/b.png", 64, Format::Cube));
+        assert!(parse("--size 64").is_err());
     }
 
     #[test]
