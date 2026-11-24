@@ -1,16 +1,22 @@
 //! Scoreboard teams for server mods (`/team add|join|leave|remove|modify color`).
 use super::Game;
-use mod_api::__private::game::{Fields, team_ref};
 use horizon_client::{
     scoreboard::{CollisionRule, Visibility},
     text::Text,
 };
-use mod_api::{ScoreHolder, TeamColor, TeamCollisionRule, TeamError, TeamRef, TeamVisibility};
+use mod_api::__private::game::{Fields, team_ref};
+use mod_api::{ScoreHolder, TeamCollisionRule, TeamColor, TeamError, TeamRef, TeamVisibility};
 
 /// Whether the scoreboard's save keeps `text` as it is: the disk writer empties an NBT string whose modified
 /// UTF-8 form (U+0000 as two bytes, a character past the basic plane as a surrogate pair of three bytes each)
-/// exceeds 65535 bytes, so a team or a holder named by it could not be loaded under that name.
+/// exceeds 65535 bytes, so a team or a holder named by it could not be loaded under that name; and the
+/// team packet's own limit of 32767 UTF-16 units.
 fn saves_intact(text: &str) -> bool {
+    // The team packet writes a name and a holder as strings of at most 32767 UTF-16 units; a longer one is
+    // refused by the client, which then misses the team or the membership.
+    if text.encode_utf16().count() > 32_767 {
+        return false;
+    }
     let encoded: usize = text
         .chars()
         .map(|c| match c as u32 {
@@ -255,7 +261,10 @@ mod tests {
     #[test]
     #[ignore = "daily"]
     fn team_options_are_kept_in_the_worlds_scoreboard() {
-        use horizon_client::{scoreboard::{CollisionRule, Visibility}, text::Text};
+        use horizon_client::{
+            scoreboard::{CollisionRule, Visibility},
+            text::Text,
+        };
         use mod_api::{TeamCollisionRule, TeamVisibility};
         with_guests(|game| {
             game.load_scoreboard();
@@ -278,7 +287,10 @@ mod tests {
             assert!(!board.allow_friendly_fire);
             assert!(game.team_remove(team.clone()));
             assert!(!game.team_set_prefix(team.clone(), Text::literal("x")));
-            assert!(!game.team_set_friendly_fire(team, true), "a removed team is stale");
+            assert!(
+                !game.team_set_friendly_fire(team, true),
+                "a removed team is stale"
+            );
         });
     }
 
@@ -294,12 +306,16 @@ mod tests {
             assert_eq!(game.team("red"), Some(red.clone()));
             assert!(game.team("blue").is_none());
             assert_eq!(game.add_team("two words"), Err(TeamError::Unavailable));
-            // a name the saved scoreboard would empty is refused; one at the limit is kept
+            // a name the packet or the saved scoreboard could not carry is refused; one at the limit is kept
             assert_eq!(
-                game.add_team(&"a".repeat(65_536)),
+                game.add_team(&"a".repeat(32_768)),
                 Err(TeamError::Unavailable)
             );
-            assert!(game.add_team(&"b".repeat(65_535)).is_ok());
+            assert_eq!(
+                game.add_team(&"\u{1F600}".repeat(16_384)),
+                Err(TeamError::Unavailable)
+            );
+            assert!(game.add_team(&"b".repeat(32_767)).is_ok());
             // colours: a change is true, the same colour again is not
             assert!(game.team_set_color(red.clone(), Some(TeamColor::Red)));
             assert_eq!(
@@ -323,7 +339,7 @@ mod tests {
                 Ok(false),
                 "a player is keyed by name"
             );
-            for bad in ["", &"h".repeat(65_536)] {
+            for bad in ["", &"h".repeat(32_768)] {
                 assert_eq!(
                     game.team_join(red.clone(), ScoreHolder::Name(bad.to_owned())),
                     Err(TeamError::UnknownHolder)
