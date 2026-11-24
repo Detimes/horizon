@@ -10,12 +10,14 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +29,8 @@ FORK_GUARD = "github.event.pull_request.head.repo.full_name == github.repository
 VERIFY_PARTS = ("verify-scope", "verify-tree", "verify-lint", "verify-server", "verify-launcher", "verify-test",
                 "verify-mod-api")
 WINDOWS_WASM_JOB = "verify-windows-wasm-cache"
-VERIFY_NEEDS = (*VERIFY_PARTS, WINDOWS_WASM_JOB)
+# native-clippy runs on hosted Windows/macOS, so verify judges it alongside the pooled parts above.
+VERIFY_NEEDS = (*VERIFY_PARTS, WINDOWS_WASM_JOB, "native-clippy")
 # On Windows the bash on PATH is Git's; a bare "bash" there would be WSL's (tests/test_pr_ready.py).
 BASH = shutil.which("bash")
 # verify's parts: our checks runners only with SELF_HOSTED_CI=all, Blacksmith's otherwise.
@@ -771,6 +774,27 @@ class HostedParityTests(unittest.TestCase):
                 with self.subTest(markers=markers, ours=ours, **values):
                     self.assertEqual(due(markers, ours, **values)[:2], ("false", "false"))
 
+    def test_solo_harnesses_run_alone_on_the_cpu_drawn_hosted_runners(self):
+        # The runners have 16 CPUs, past tools/parity.py's own solo threshold, but draw game windows on the CPU.
+        self.assertEqual(self.workflow["jobs"]["run"]["env"]["PARITY_SOLO"], "1")
+        sys.path.insert(0, str(ROOT / "tools"))
+        import parity
+        with mock.patch.dict(os.environ, {"PARITY_SOLO": "1"}):
+            self.assertEqual(parity.solo_harnesses({"solo": {"remote_fireball": "two windows"}}), {"remote_fireball"})
+
+    def test_the_crates_are_fetched_before_any_harness_and_after_the_secret_steps(self):
+        # A fresh runner has no crates: a harness running cargo --offline failed in a second when it ran before any
+        # other had fetched them (mob_discard, 2026-11-23). Fetching runs no build script and holds no secret.
+        fetch = self.names.index("The crates, before the harnesses")
+        checkout = next(index for index, name in enumerate(self.names) if name.startswith("actions/checkout@"))
+        self.assertLess(checkout, fetch)
+        self.assertLess(fetch, self.names.index("The shard's harnesses"))
+        for name in self.SECRET_STEPS[:2]:
+            self.assertLess(self.names.index(name), fetch, name)
+        step = self.steps[fetch]
+        self.assertEqual(step["run"], "cargo fetch --locked")
+        self.assertNotIn("env", step)
+
     def test_no_required_check_waits_for_it(self):
         for path in sorted(WORKFLOWS.glob("*.yml")):
             if path.name != "parity-hosted.yml":
@@ -783,9 +807,9 @@ class VerifyGateTests(unittest.TestCase):
     """verify, the check main requires, when verify-scope leaves a part out (#18843): a part left out passes, and one
     that failed, was cancelled or was never decided for fails."""
 
-    PASSED = {"SCOPE": "success", "TREE": "success", "LINT": "success", "SERVER": "success", "LAUNCHER": "success",
-              "TEST": "success", "MODAPI": "success", "EVENT": "pull_request", "RUST_ANSWER": "true",
-              "LAUNCHER_ANSWER": "true", "MODAPI_ANSWER": "true",
+    PASSED = {"SCOPE": "success", "TREE": "success", "LINT": "success", "NATIVE": "success", "SERVER": "success",
+              "LAUNCHER": "success", "TEST": "success", "MODAPI": "success", "EVENT": "pull_request",
+              "RUST_ANSWER": "true", "LAUNCHER_ANSWER": "true", "MODAPI_ANSWER": "true",
               "WINDOWS_WASM_CACHE": "success", "WINDOWS_WASM_CACHE_ANSWER": "true"}
     # Each part verify-scope can leave out: its result's variable, its job, the answer that decides it, that answer's
     # output, and whether the merge queue leaves the part out too.
@@ -818,7 +842,8 @@ class VerifyGateTests(unittest.TestCase):
         # Without always() a failed or skipped part would skip verify, which GitHub counts as passed.
         self.assertEqual(self.jobs["verify"]["if"], "always()")
         for name, part in [("SCOPE", "verify-scope"), ("TREE", "verify-tree"), ("LINT", "verify-lint"),
-                           ("SERVER", "verify-server"), ("LAUNCHER", "verify-launcher"), ("TEST", "verify-test"),
+                           ("NATIVE", "native-clippy"), ("SERVER", "verify-server"),
+                           ("LAUNCHER", "verify-launcher"), ("TEST", "verify-test"),
                            ("MODAPI", "verify-mod-api"), ("WINDOWS_WASM_CACHE", WINDOWS_WASM_JOB)]:
             self.assertEqual(self.gate["env"][name], "${{ needs.%s.result }}" % part)
         self.assertEqual(self.gate["env"]["EVENT"], "${{ github.event_name }}")
@@ -915,8 +940,8 @@ class VerifyGateTests(unittest.TestCase):
             with self.subTest(part=name):
                 self.assertTrue(self.passes(**{name: "skipped", answer: "false"}))
         # All of them at once: a pull request that changes only documentation.
-        self.assertTrue(self.passes(LINT="skipped", SERVER="skipped", LAUNCHER="skipped", TEST="skipped",
-                                    MODAPI="skipped", RUST_ANSWER="false", LAUNCHER_ANSWER="false",
+        self.assertTrue(self.passes(LINT="skipped", NATIVE="skipped", SERVER="skipped", LAUNCHER="skipped",
+                                    TEST="skipped", MODAPI="skipped", RUST_ANSWER="false", LAUNCHER_ANSWER="false",
                                     MODAPI_ANSWER="false", WINDOWS_WASM_CACHE="skipped",
                                     WINDOWS_WASM_CACHE_ANSWER="false"))
 
@@ -959,7 +984,8 @@ class VerifyGateTests(unittest.TestCase):
                                                  MODAPI_ANSWER=""))
 
     def test_the_merge_queue_shape_passes(self):
-        self.assertTrue(self.passes(EVENT="merge_group", LINT="skipped", SERVER="skipped", LAUNCHER="skipped"))
+        self.assertTrue(self.passes(EVENT="merge_group", LINT="skipped", NATIVE="skipped", SERVER="skipped",
+                                    LAUNCHER="skipped"))
 
     def test_the_merge_queue_still_runs_the_rust_tests_and_mod_api(self):
         # Their `if`s don't leave the merge queue out and verify-scope answers true there, so a skip is no decision.
@@ -1106,6 +1132,71 @@ class TryRunTests(unittest.TestCase):
         self.assertIn("retention-days: 3", block)
         # Not the workflow's actions: read.
         self.assertIn("    permissions:\n      contents: read\n", block)
+
+
+class NativeClippyTests(unittest.TestCase):
+    """native-clippy lints the platform-specific crates on hosted Windows and macOS. It follows verify-lint's Rust
+    answer, and the required verify aggregate judges it like the other parts that may be left out."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(ROOT / "tools/ci/vendor/pyyaml-6.0.3.zip"))
+        import yaml
+        cls.jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+
+    def test_native_lint_coverage_and_host_isolation(self):
+        # The workflow is a machine-consumed contract: both platforms must check every requested crate.
+        workflow = dict(jobs((WORKFLOWS / "ci.yml").read_text()))
+        native = workflow["native-clippy"]
+        parsed = self.jobs["native-clippy"]
+        # verify-scope decides once; verify-lint passes its answer on to the dependent native job.
+        self.assertEqual(self.jobs["verify-lint"]["outputs"], {"rust": "${{ needs.verify-scope.outputs.rust }}"})
+        self.assertNotIn("outputs:", workflow["verify"])
+        self.assertIn("needs: verify-lint", native)
+        self.assertIn("if: needs.verify-lint.outputs.rust != 'false'", native)
+        self.assertEqual(parsed["runs-on"], "${{ matrix.os }}")
+        self.assertEqual(set(parsed["strategy"]["matrix"]["os"]), {"windows-latest", "macos-latest"})
+        self.assertIn("contents: read", native)
+        self.assertIn("persist-credentials: false", native)
+        self.assertNotRegex(native, r":\s*write|secrets\.|self-hosted")
+        lint = next(step["run"] for step in parsed["steps"] if step.get("name") == "Lint the server build and "
+                    "platform-specific crates")
+        command = shlex.split(lint)
+        packages = {command[i + 1] for i, arg in enumerate(command) if arg == "-p"}
+        self.assertEqual(packages, {"horizon-client", "horizon-threads", "horizon-perf-format",
+                                    "horizon-perf-share", "horizon-server"})
+        for flag in ("--all-targets", "--locked", "--no-default-features"):
+            self.assertIn(flag, command)
+        self.assertEqual(command[-3:], ["--", "-D", "warnings"])
+
+    def test_verify_judges_native_lint(self):
+        # The required aggregate fails on a failed or cancelled native job, and passes a skipped one only where its
+        # own gate could have left it out: a documentation-only pull request or the merge queue.
+        verify = self.jobs["verify"]
+        self.assertIn("native-clippy", verify["needs"])
+        gate = verify["steps"][0]
+        self.assertEqual(gate["env"]["NATIVE"], "${{ needs.native-clippy.result }}")
+        base = {"SCOPE": "success", "TREE": "success", "LINT": "success", "NATIVE": "success",
+                "SERVER": "success", "LAUNCHER": "success", "TEST": "success", "MODAPI": "success",
+                "EVENT": "pull_request", "RUST_ANSWER": "true", "LAUNCHER_ANSWER": "true",
+                "MODAPI_ANSWER": "true", "WINDOWS_WASM_CACHE": "success", "WINDOWS_WASM_CACHE_ANSWER": "true"}
+        if not BASH:
+            self.skipTest("no bash")
+
+        def passes(**changes):
+            return subprocess.run([BASH, "--noprofile", "--norc", "-eo", "pipefail", "-c", gate["run"]],
+                                  env={**os.environ, **base, **changes}, capture_output=True, text=True).returncode == 0
+
+        self.assertTrue(passes())
+        for result in ("failure", "cancelled"):
+            with self.subTest(result=result):
+                self.assertFalse(passes(NATIVE=result))
+                self.assertFalse(passes(NATIVE=result, EVENT="merge_group"))
+        self.assertTrue(passes(NATIVE="skipped", RUST_ANSWER="false"))
+        self.assertTrue(passes(NATIVE="skipped", EVENT="merge_group", LINT="skipped", SERVER="skipped",
+                               LAUNCHER="skipped"))
+        self.assertFalse(passes(NATIVE="skipped"))
+        self.assertFalse(passes(NATIVE="skipped", RUST_ANSWER="FALSE"))
 
 
 if __name__ == "__main__":
