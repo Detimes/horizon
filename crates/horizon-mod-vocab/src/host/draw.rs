@@ -156,6 +156,26 @@ pub trait DrawContext {
     ) -> Result<(), SceneWithQuadsError> {
         Err(SceneWithQuadsError::Scene(SceneError::Unavailable))
     }
+    /// Draw one scene, with rigid poses on selected ranges of its blocks.
+    /// Pass sections in increasing block-index order, with nonempty,
+    /// nonoverlapping ranges. Blocks outside the ranges stay still. Model and
+    /// block-entity geometry move together. Culling against a solid neighbor
+    /// only applies within the same section (or among the still blocks), so
+    /// pulling a section away exposes both sides. All geometry shares one
+    /// depth pass, including untouched entities and particles.
+    ///
+    /// The poses change drawing only: the clock, block simulation, and
+    /// particles' collision grid still use the original cells. Use an empty
+    /// section slice for the same draw as [`draw_scene`](Self::draw_scene).
+    fn draw_scene_with_sections(
+        &mut self,
+        rect: [f32; 4],
+        scene: &Scene,
+        view: SceneView,
+        sections: &[SceneSection],
+    ) -> Result<(), SceneSectionError> {
+        Err(SceneError::Unavailable.into())
+    }
     /// `GuiGraphics.enableScissor`: what this hook call draws from now on, until the matching
     /// [`pop_clip`](Self::pop_clip), is cut to `rect` (`[x, y, w, h]` in GUI pixels, as
     /// [`fill`](Self::fill) takes it), the visible part of a sprite, glyph or item kept.
@@ -297,6 +317,15 @@ pub trait BlockEntityDrawContext {
     /// Lights what is drawn next with `light` (as `native_draw_light` reads it).
     fn set_light(&mut self, light: u32) {
         unimplemented!("BlockEntityDrawContext::draw_set_light")
+    }
+    /// What is drawn next shows the enchanted armour glint, as an enchanted piece of armour
+    /// does (`RenderTypes.armorCutoutNoCullGlint`: `enchanted_glint_armor` scrolling over the
+    /// quads' own texture coordinates on their atlas), until `set_glint(false)`: what a mod's
+    /// worn armour drawn in an entity layer shows when its stack `has_foil`. It covers quads,
+    /// boxes, blocks, models and model parts; items keep their own foil, and text, terrain
+    /// models and fluids show none.
+    fn set_glint(&mut self, glint: bool) {
+        unimplemented!("BlockEntityDrawContext::draw_set_glint")
     }
     /// Draws a quad with `corners` in blocks under `draw`'s pose, in a model
     /// face's order (top left, bottom left, bottom right, top right as seen

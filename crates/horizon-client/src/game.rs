@@ -1343,6 +1343,9 @@ struct Game<'a> {
     /// The save a native mod asked the title to open (`request_world`), taken by the title's next frame, which
     /// asks the player first.
     native_world_request: Option<native_world_request::Request>,
+    /// What a native mod's own title page asked for (`request_title`), run by the title's next frame as the main
+    /// page's button would run it.
+    native_title_request: Option<mod_api::TitleRequest>,
     /// Armor slots: head, chest, legs, feet.
     armor: [Option<ItemStack>; 4],
     /// The off hand (Inventory slot 40, saved as slot 150; menu slot 504 here).
@@ -1707,7 +1710,7 @@ struct Game<'a> {
     /// The mod whose own screen is open (`Screen::Mod`).
     native_mod_screen: Option<String>,
     /// Meshed sections waiting for an upload budget (Horizon settings).
-    pending_uploads: Vec<((i32, i32, i32), horizon_client::mesher::SectionMesh)>,
+    pending_uploads: horizon_client::streaming::PendingUploads,
     upload_pace: upload_pace::UploadPace,
     /// This frame's view frustum, for culling entities and block entities.
     view_frustum: Option<horizon_client::gfx::JoinedFrusta>,
@@ -3153,7 +3156,12 @@ impl Game<'_> {
                 .iter()
                 .filter(|g| h.hub.here(g))
                 .filter(|g| !g.is_fake()) // fake players hold small forced tickets below
-                .map(|g| (g.ticket_chunk(), g.spectator()))
+                // A mod's view centre loads around it as around the player, who keeps their own
+                // chunks loaded where they stand (`Hub::set_view_center`).
+                .flat_map(|g| {
+                    std::iter::once((g.ticket_chunk(), g.spectator()))
+                        .chain(g.view_center.map(|c| (c, g.spectator())))
+                })
                 .collect()
         });
         if let Some(p) = &self.player {
@@ -11010,6 +11018,7 @@ impl<'a> Game<'a> {
             frame_ticks: 0.0,
             title: None,
             native_world_request: None,
+            native_title_request: None,
             armor: [None, None, None, None],
             offhand: None,
             equipment: Default::default(),
@@ -11210,7 +11219,7 @@ impl<'a> Game<'a> {
             view_frustum: None,
             occlusion: Default::default(),
             async_particle_culler: RefCell::new(Default::default()),
-            pending_uploads: Vec::new(),
+            pending_uploads: horizon_client::streaming::PendingUploads::new(),
             upload_pace: Default::default(),
             frame_graph: Default::default(),
             extras: Default::default(),
