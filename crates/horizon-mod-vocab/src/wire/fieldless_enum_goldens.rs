@@ -125,7 +125,7 @@ fn existing_fieldless_enum_layouts_match_baseline() {
     );
     assert_eq!(
         <crate::command::command_argument::CommandArgumentKind as Wire>::layout(&mut vec![]),
-        0xcafc63a0de258205,
+        0xa5907557541253ff,
         "CommandArgumentKind"
     );
     assert_eq!(

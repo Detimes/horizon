@@ -23,8 +23,8 @@ use super::{Dim, Game, commands::execute, respawn_anchor::RespawnConfig};
 use crate::game::level_control_hooks::LevelControl;
 pub(super) use argument_kinds::{CommandArguments, command_arguments};
 use argument_kinds::{
-    TOKEN, UNCENTERED, argument_type, custom_value, dimension_value, nbt_value, parsed_type, parser,
-    positional_value, resource_parser,
+    TOKEN, UNCENTERED, argument_type, custom_value, dimension_value, nbt_value, parsed_type,
+    parser, positional_value, resource_parser,
 };
 use mod_api::__private::game::*;
 pub(super) use registered_commands::NativeCommandState;
@@ -119,18 +119,17 @@ fn usage_nodes(
                     return Err(format!("`{usage}`: unknown kind `{kind}`"));
                 };
                 let (properties, greedy) = match std::panic::catch_unwind(
-                    std::panic::AssertUnwindSafe(|| argument.kind()),
+                    std::panic::AssertUnwindSafe(|| (argument.kind(), argument.token())),
                 )
                 .map_err(|_| format!("`{usage}`: argument type `{kind}` panicked"))?
                 {
-                    mod_api::CommandArgumentKind::Word => (json!({"type": "word"}), false),
-                    mod_api::CommandArgumentKind::Greedy => (json!({"type": "greedy"}), true),
                     // The wire says `word`: a client that does not know the type parses one
                     // word, and the node's `token` marker (below) makes the server read a token.
-                    mod_api::CommandArgumentKind::Token => {
-                        token = true;
+                    (mod_api::CommandArgumentKind::Word, is_token) => {
+                        token = is_token;
                         (json!({"type": "word"}), false)
                     }
+                    (mod_api::CommandArgumentKind::Greedy, _) => (json!({"type": "greedy"}), true),
                     _ => {
                         return Err(format!(
                             "`{usage}`: argument type `{kind}` uses a kind this build cannot read"
@@ -1870,7 +1869,10 @@ impl Game<'_> {
         };
         self.native_command_filter = filter;
         self.command_source = outer;
-        (result.unwrap_or_else(|panic| std::panic::resume_unwind(panic)), lines)
+        (
+            result.unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+            lines,
+        )
     }
     /// The open world's folder (`world/`, beside its `level.dat`): a server
     /// mod keeps its data in a folder of its own there, so the world's
@@ -2304,7 +2306,8 @@ impl Game<'_> {
     /// `ServerHost::mod_command_raw`: the leaf text of the mod command whose
     /// `run_mod_command` listeners are running, None outside them.
     pub(super) fn mod_command_raw(&self) -> Option<String> {
-        mod_api::content::crash::current_native_call().filter(|call| call.hook == "run_mod_command")?;
+        mod_api::content::crash::current_native_call()
+            .filter(|call| call.hook == "run_mod_command")?;
         self.exec.native_command_raw.clone()
     }
 
@@ -3497,7 +3500,11 @@ mod tests {
 
     impl mod_api::CommandArgumentType for TokenArgument {
         fn kind(&self) -> mod_api::CommandArgumentKind {
-            mod_api::CommandArgumentKind::Token
+            mod_api::CommandArgumentKind::Word
+        }
+
+        fn token(&self) -> bool {
+            true
         }
 
         fn parse(&self, input: &str) -> Result<String, mod_api::CommandArgumentError> {
@@ -3520,7 +3527,9 @@ mod tests {
             Arc::new(TokenArgument) as Arc<dyn mod_api::CommandArgumentType>,
         )]);
         let (tree, _, problems) = super::command_tree(
-            &[mod_api::Command::new("eco give <who:test:account> <amount:integer>")],
+            &[mod_api::Command::new(
+                "eco give <who:test:account> <amount:integer>",
+            )],
             |_| false,
             &arguments,
         );
@@ -4039,7 +4048,11 @@ mod tests {
 
         let opened = Arc::new(AtomicBool::new(false));
         mod_platform::testing::with_mods(
-            vec![mod_api::ModEntry::new("menus", Box::new(Menus(opened.clone())))].into(),
+            vec![mod_api::ModEntry::new(
+                "menus",
+                Box::new(Menus(opened.clone())),
+            )]
+            .into(),
             || {
                 super::super::native_guest_turn_tests::with_guests(|game| {
                     game.build_registries();
@@ -4068,7 +4081,9 @@ mod tests {
                 _: &mut dyn mod_api::ServerHost,
                 event: &mut mod_api::RegisterCommandsEvent<'_>,
             ) {
-                event.commands.push(mod_api::Command::new("scoped <message:text>"));
+                event
+                    .commands
+                    .push(mod_api::Command::new("scoped <message:text>"));
             }
 
             fn run_mod_command(
@@ -4104,7 +4119,11 @@ mod tests {
         }
 
         mod_platform::testing::with_mods(
-            vec![mod_api::ModEntry::new("scoped_commands", Box::new(Commands))].into(),
+            vec![mod_api::ModEntry::new(
+                "scoped_commands",
+                Box::new(Commands),
+            )]
+            .into(),
             || {
                 super::super::native_guest_turn_tests::with_guests(|game| {
                     game.build_registries();
@@ -4118,7 +4137,8 @@ mod tests {
                         parameters: Vec::new(),
                     };
                     assert_eq!(
-                        game.run_function(&function, None, game.server_source()).unwrap(),
+                        game.run_function(&function, None, game.server_source())
+                            .unwrap(),
                         Outcome::Value(1)
                     );
                     assert!(game.exec.functions.is_empty());
@@ -4752,7 +4772,10 @@ mod tests {
         let (t, levels, problems) = tree(&[mod_api::Command::new("cu callItemClear")]);
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(levels.keys().collect::<Vec<_>>(), ["cu"]);
-        assert_eq!(t["children"]["cu"]["children"]["callItemClear"]["type"], "literal");
+        assert_eq!(
+            t["children"]["cu"]["children"]["callItemClear"]["type"],
+            "literal"
+        );
         let arguments = command_arguments();
         let mut dispatcher = Dispatcher::new();
         register_dispatcher(&mut dispatcher, &t, "native_mod_command", &arguments);
