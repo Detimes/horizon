@@ -165,23 +165,10 @@ pub trait CommandArgumentType: Send + Sync + 'static {
     /// The part of the line the argument takes. The same on every client.
     fn kind(&self) -> CommandArgumentKind;
 
-    /// Whether a [`Word`](CommandArgumentKind::Word) argument takes one token instead: every
-    /// character up to the next space or the end of the line, so `*` and `**` (a wildcard for
-    /// every player, every account) and punctuation such as `:` or `/` are taken, where a word
-    /// stops at them. A token is never empty, takes no quotes and no escapes, and more arguments
-    /// may follow it. Ignored for [`Greedy`](CommandArgumentKind::Greedy), which already takes
-    /// the rest of the line. A vanilla client that does not know the type parses it as a
-    /// Brigadier word, so it may show a token with such characters in red; the server still takes
-    /// it as written. A mod that does not implement it keeps its argument a plain word.
-    fn token(&self) -> bool {
-        false
-    }
-
     /// Validate the text a client wrote and return the value `run_mod_command` receives.
     ///
-    /// `input` is one word (see [`CommandArgumentKind::Word`] for its characters), one space-free
-    /// token when [`token`](Self::token) is true, or the rest of the line for
-    /// [`CommandArgumentKind::Greedy`]. Return the canonical text to deliver (an
+    /// `input` is one word (see [`CommandArgumentKind::Word`] for its characters), or the rest
+    /// of the line for [`CommandArgumentKind::Greedy`]. Return the canonical text to deliver (an
     /// id, a lower-cased name, `"3"` for `"03"`), or the message shown to the player when the
     /// input is not valid.
     fn parse(&self, input: &str) -> Result<String, CommandArgumentError>;

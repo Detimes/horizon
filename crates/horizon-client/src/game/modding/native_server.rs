@@ -115,21 +115,32 @@ fn usage_nodes(
         let (parser, properties, greedy, custom) = match builtin {
             Some((parser, properties)) => (parser, properties, kind == "text", None),
             None => {
+                // `token:<id>` reads the registered type `<id>` as one space-free token.
+                // A type registered under the full `token:...` id keeps it.
+                let (kind, as_token) = match kind.strip_prefix("token:") {
+                    Some(id) if !custom.contains_key(kind) => (id, true),
+                    _ => (kind, false),
+                };
                 let Some(argument) = custom.get(kind) else {
                     return Err(format!("`{usage}`: unknown kind `{kind}`"));
                 };
                 let (properties, greedy) = match std::panic::catch_unwind(
-                    std::panic::AssertUnwindSafe(|| (argument.kind(), argument.token())),
+                    std::panic::AssertUnwindSafe(|| argument.kind()),
                 )
                 .map_err(|_| format!("`{usage}`: argument type `{kind}` panicked"))?
                 {
                     // The wire says `word`: a client that does not know the type parses one
                     // word, and the node's `token` marker (below) makes the server read a token.
-                    (mod_api::CommandArgumentKind::Word, is_token) => {
-                        token = is_token;
+                    mod_api::CommandArgumentKind::Word => {
+                        token = as_token;
                         (json!({"type": "word"}), false)
                     }
-                    (mod_api::CommandArgumentKind::Greedy, _) => (json!({"type": "greedy"}), true),
+                    mod_api::CommandArgumentKind::Greedy if as_token => {
+                        return Err(format!(
+                            "`{usage}`: `token:{kind}` needs a Word type, `{kind}` takes the rest of the line"
+                        ));
+                    }
+                    mod_api::CommandArgumentKind::Greedy => (json!({"type": "greedy"}), true),
                     _ => {
                         return Err(format!(
                             "`{usage}`: argument type `{kind}` uses a kind this build cannot read"
@@ -3501,10 +3512,6 @@ mod tests {
             mod_api::CommandArgumentKind::Word
         }
 
-        fn token(&self) -> bool {
-            true
-        }
-
         fn parse(&self, input: &str) -> Result<String, mod_api::CommandArgumentError> {
             Ok(input.to_owned())
         }
@@ -3526,7 +3533,7 @@ mod tests {
         )]);
         let (tree, _, problems) = super::command_tree(
             &[mod_api::Command::new(
-                "eco give <who:test:account> <amount:integer>",
+                "eco give <who:token:test:account> <amount:integer>",
             )],
             |_| false,
             &arguments,
@@ -3536,6 +3543,14 @@ mod tests {
         assert_eq!(who["parser"], "brigadier:string");
         assert_eq!(who["properties"]["type"], "word");
         assert_eq!(who["token"], true);
+        // The same type without the prefix stays a word.
+        let (plain, _, problems) = super::command_tree(
+            &[mod_api::Command::new("eco give <who:test:account>")],
+            |_| false,
+            &arguments,
+        );
+        assert!(problems.is_empty(), "{problems:?}");
+        assert!(plain["children"]["eco"]["children"]["give"]["children"]["who"]["token"].is_null());
         let mut dispatcher = Dispatcher::new();
         register_dispatcher(&mut dispatcher, &tree, "native_mod_command", &arguments);
         let registries = horizon_client::command::Registries::default();
