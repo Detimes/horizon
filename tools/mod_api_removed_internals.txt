@@ -67,3 +67,14 @@ horizon_client::game::creatures::mob_group::Group<M>::deferred  kind=field  #184
 horizon_client::game::creatures::mob_islands::Foreign<'_>::defers  kind=field  #18420
 horizon_client::game::creatures::mob_islands::defers  kind=fn  #18420
 horizon_client::game::spear::Game<'_>::remote_sync_look  #16850
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::discard  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::id_assigned  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::install  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::parts_table  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::register  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::registered  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::replace  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::retire_extracted  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::slot  #16831
+horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::table  #16831
