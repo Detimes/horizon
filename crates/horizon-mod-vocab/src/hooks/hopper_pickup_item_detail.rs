@@ -1,5 +1,5 @@
 //! The `hopper_pickup_item_detail` hook: declarations the mod API generator reads (see `hooks/mod.rs`).
-// catalog-order: 0353
+// catalog-order: 0361
 
 pub trait Hooks {
     /// A hopper at `pos` is about to pick up `count` of `item`, the dropped item entity `entity`,

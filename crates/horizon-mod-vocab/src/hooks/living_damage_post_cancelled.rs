@@ -1,5 +1,5 @@
 //! The `living_damage_post_cancelled` hook: declarations the mod API generator reads (see `hooks/mod.rs`).
-// catalog-order: 0355
+// catalog-order: 0362
 
 pub trait Hooks {
     /// NeoForge's `LivingDamageEvent.Post` for a hit a `living_incoming_damage` listener canceled:
