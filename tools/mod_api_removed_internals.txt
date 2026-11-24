@@ -78,3 +78,4 @@ horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::replac
 horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::retire_extracted  #16831
 horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::slot  #16831
 horizon_client::game::native_entity_refs::dragon_parts_table::DragonSlot::table  #16831
+horizon_client::entry::horizon_look  #15407
