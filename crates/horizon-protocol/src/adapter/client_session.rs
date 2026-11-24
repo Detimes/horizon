@@ -13,7 +13,7 @@
 //! `finish_configuration` to play, and `configuration_acknowledged` / `start_configuration` back.
 use std::{
     cell::Cell,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU8, Ordering},
@@ -95,6 +95,8 @@ pub struct ClientSession {
     accepted: Mutex<Option<Place>>,
     /// A packet to pass on after the one just translated ([`Self::next_serverbound`]).
     pending: Mutex<Option<(i32, Vec<u8>)>>,
+    /// The item tags that hold no item the client has, as of the last `update_tags`.
+    empty_item_tags: Mutex<HashSet<String>>,
 }
 
 /// A position, yaw and pitch.
@@ -190,7 +192,80 @@ impl ClientSession {
             synced: Mutex::new(Arc::default()),
             accepted: Mutex::new(None),
             pending: Mutex::new(None),
+            empty_item_tags: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Notes the item tags the client's release leaves empty (`update_tags`, pinned ids).
+    fn note_item_tags(&self, state: State, id: i32, payload: &[u8]) -> Result<()> {
+        use packet_ids::{configuration::clientbound as cfg, play::clientbound as cb};
+        let Some(ids) = self.version.ids() else {
+            return Ok(());
+        };
+        let registries = match (state, id) {
+            (State::Configuration, cfg::UPDATE_TAGS) => {
+                match configuration::Clientbound::decode(id, payload)? {
+                    configuration::Clientbound::UpdateTags(t) => t.registries,
+                    _ => return Ok(()),
+                }
+            }
+            (State::Play, cb::UPDATE_TAGS) => match play::Clientbound::decode(id, payload)? {
+                play::Clientbound::UpdateTags(t) => t.registries,
+                _ => return Ok(()),
+            },
+            _ => return Ok(()),
+        };
+        let remap = ids.by_registry("minecraft:item");
+        *self
+            .empty_item_tags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = registries
+            .iter()
+            .filter(|r| r.registry == "minecraft:item")
+            .flat_map(|r| &r.tags)
+            .filter(|t| !t.ids.iter().any(|&i| remap.down(i).is_some()))
+            .map(|t| t.name.clone())
+            .collect();
+        Ok(())
+    }
+
+    /// A recipe book packet without the entries whose craftable-filter ingredient is a tag the client has
+    /// nothing in (1.21.2 and 1.21.3 crash on an empty ingredient): `Some(None)` when nothing is left to send,
+    /// `None` when the packet goes as it is.
+    fn book_without_empty_tags(
+        &self,
+        state: State,
+        id: i32,
+        payload: &[u8],
+    ) -> Result<Option<Option<Vec<u8>>>> {
+        use crate::packets::recipes::HolderSet;
+        if state != State::Play || id != packet_ids::play::clientbound::RECIPE_BOOK_ADD {
+            return Ok(None);
+        }
+        let empty = self
+            .empty_item_tags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if empty.is_empty() {
+            return Ok(None);
+        }
+        let mut p = play::Clientbound::decode(id, payload)?;
+        let play::Clientbound::RecipeBookAdd(a) = &mut p else {
+            return Ok(None);
+        };
+        let before = a.entries.len();
+        a.entries.retain(|e| {
+            !e.requirements
+                .iter()
+                .flatten()
+                .any(|s| matches!(s, HolderSet::Tag(name) if empty.contains(name)))
+        });
+        if a.entries.len() == before {
+            return Ok(None);
+        }
+        Ok(Some(
+            (a.replace || !a.entries.is_empty()).then(|| strip_id(p.encode())),
+        ))
     }
 
     /// A client before 1.21.2 has no `client_tick_end`; it sends at most one movement per tick, so the end of
@@ -457,6 +532,17 @@ impl ClientSession {
                 tracked = p;
                 &tracked[..]
             }
+            None => payload,
+        };
+        // Only a note for the recipe book below: a packet it can't read is no reason to drop the connection.
+        let _ = self.note_item_tags(state, id, payload);
+        let booked;
+        let payload = match self.book_without_empty_tags(state, id, payload)? {
+            Some(Some(p)) => {
+                booked = p;
+                &booked[..]
+            }
+            Some(None) => return Ok(None),
             None => payload,
         };
         let Some(mapped) = self.version.clientbound_id_down(state, id) else {
@@ -1203,7 +1289,18 @@ fn renumber(ids: &Ids, p: &mut play::Clientbound) -> Option<()> {
         // be an empty stack or an id -1, which the client refuses.
         play::Clientbound::RecipeBookAdd(a) => {
             let has = |id| down_or_substitute(ids.item, ids.substitutes.item, id).is_some();
-            a.entries.retain(|e| !e.display.lacks_item(&has));
+            // The "craftable" filter's ingredients are written without the items the client lacks: one left with
+            // no item is an empty ingredient, which 1.21.2 and 1.21.3 refuse (they crash drawing the book).
+            use crate::packets::recipes::HolderSet;
+            let empty = |set: &HolderSet| match set {
+                HolderSet::Items(items) => {
+                    !items.is_empty() && !items.iter().any(|&id| ids.item.down(id).is_some())
+                }
+                HolderSet::Tag(_) => false,
+            };
+            a.entries.retain(|e| {
+                !e.display.lacks_item(&has) && !e.requirements.iter().flatten().any(empty)
+            });
             (a.replace || !a.entries.is_empty()).then_some(())
         }
         play::Clientbound::PlaceGhostRecipe(g) => {
@@ -1400,6 +1497,38 @@ mod tests {
         w.data
     }
 
+    /// `book_add`'s one stonecutter entry (id 1, planks to planks) with the requirements `requirements` writes
+    /// (the list's length first).
+    fn book_add_with(requirements: impl FnOnce(&mut Writer)) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.varint(1);
+        w.varint(1);
+        w.varint(3);
+        w.varint(4);
+        w.varint(63);
+        w.varint(4);
+        w.varint(63);
+        w.varint(0);
+        w.varint(0);
+        w.varint(0);
+        w.bool(true);
+        requirements(&mut w);
+        w.i8(0);
+        w.bool(false);
+        w.data
+    }
+
+    /// The same entry with requirements that are lists of items.
+    fn book_add_requirements(requirements: &[&[i32]]) -> Vec<u8> {
+        book_add_with(|w| {
+            w.varint(requirements.len() as i32);
+            for items in requirements {
+                w.varint(items.len() as i32 + 1);
+                items.iter().for_each(|&i| w.varint(i));
+            }
+        })
+    }
+
     fn book_down(version: ServerVersion, payload: &[u8]) -> Option<Vec<u8>> {
         match down(
             version.ids().unwrap(),
@@ -1427,6 +1556,63 @@ mod tests {
             book_down(ServerVersion::V1_21_8, &book_add(&[(1, 40, 1)])),
             None
         );
+    }
+
+    /// An ingredient of the "craftable" filter whose items the client all lacks (pinned 40, cinnabar) would be
+    /// written as an empty list, and 1.21.2 / 1.21.3 crash on it (tested on 1.21.8's ids): the entry is left out. One with an item left
+    /// keeps only that item.
+    #[test]
+    fn an_entry_with_an_ingredient_no_item_of_which_the_client_has_is_left_out() {
+        let version = ServerVersion::V1_21_8;
+        assert_eq!(
+            book_down(version, &book_add_requirements(&[&[63], &[40]])),
+            None
+        );
+        let sent = book_down(version, &book_add_requirements(&[&[40, 63]])).unwrap();
+        // ... has requirements (1), one ingredient (1) of one item (2), its id, flags 0, no replace (0)
+        let tail = &sent[sent.len() - 6..];
+        assert_eq!(tail, [1, 1, 2, 36, 0, 0], "{sent:?}");
+    }
+
+    /// A tag ingredient of the "craftable" filter that holds no item the client has (the session saw the item tags
+    /// of `update_tags`) is the same empty ingredient: the entry is left out; a tag with an item stays.
+    #[test]
+    fn an_entry_with_a_tag_ingredient_the_client_has_nothing_in_is_left_out() {
+        let s = ClientSession::new(ServerVersion::V1_21_8);
+        s.writing
+            .store(to_u8(State::Configuration), Ordering::Release);
+        let tags = configuration::Clientbound::UpdateTags(configuration::UpdateTags {
+            registries: vec![configuration::RegistryTags {
+                registry: "minecraft:item".into(),
+                tags: vec![
+                    configuration::TagEntry {
+                        name: "minecraft:poplar_logs".into(),
+                        ids: vec![40],
+                    },
+                    configuration::TagEntry {
+                        name: "minecraft:planks".into(),
+                        ids: vec![63],
+                    },
+                ],
+            }],
+        })
+        .encode();
+        s.clientbound(&tags).unwrap().unwrap();
+        s.writing.store(to_u8(State::Play), Ordering::Release);
+        let book = |name: &str| {
+            let payload = book_add_with(|w| {
+                w.varint(1);
+                w.varint(0);
+                w.string(name);
+            });
+            s.clientbound(&body(
+                packet_ids::play::clientbound::RECIPE_BOOK_ADD,
+                &payload,
+            ))
+            .unwrap()
+        };
+        assert_eq!(book("minecraft:poplar_logs"), None);
+        assert!(book("minecraft:planks").is_some());
     }
 
     /// A tag-less list of items in a display reaches 1.21.2 to 26.1 as a composite of item displays; the
