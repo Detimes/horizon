@@ -6,8 +6,9 @@ use horizon_protocol::packets::{configuration::ResourcePackPush, play::Clientbou
 use mod_api::PlayerRef;
 use std::path::PathBuf;
 
-/// The longest url `StringUtil` of the protocol sends (`Utf8String` of 32767).
-const MAX_URL_CHARS: usize = 32767;
+/// The longest url the protocol sends (`Utf8String` of 32767, counted in UTF-16 units as Java's
+/// `String.length`).
+const MAX_URL_UNITS: usize = 32767;
 
 impl Game<'_> {
     /// `Player.setResourcePack(url, hash, required, prompt)`: a `ClientboundResourcePackPushPacket`
@@ -22,7 +23,7 @@ impl Game<'_> {
     ) -> bool {
         let hash_fits =
             sha1.is_empty() || (sha1.len() == 40 && sha1.bytes().all(|b| b.is_ascii_hexdigit()));
-        if url.is_empty() || url.chars().count() > MAX_URL_CHARS || !hash_fits {
+        if url.is_empty() || url.encode_utf16().count() > MAX_URL_UNITS || !hash_fits {
             return false;
         }
         let Ok(conn) = self.player_connection(player) else {
@@ -127,7 +128,19 @@ impl Game<'_> {
     /// The handle of one selected target: a player by their uuid, anything else by its entity id.
     fn selected_entity(&self, target: Target) -> Option<mod_api::EntityRef> {
         match target {
-            Target::Player => self.player(self.lan_acting_uuid?).map(|p| p.entity()),
+            // The acting guest, else the world's own player (an integrated server's owner has no
+            // acting uuid), as `target_by_uuid` reads it.
+            Target::Player => {
+                let uuid = self.lan_acting_uuid.or_else(|| {
+                    self.level.player_uuid.map(|[a, b, c, d]| {
+                        (u128::from(a as u32) << 96)
+                            | (u128::from(b as u32) << 64)
+                            | (u128::from(c as u32) << 32)
+                            | u128::from(d as u32)
+                    })
+                })?;
+                self.player(uuid).map(|p| p.entity())
+            }
             Target::Guest(conn) => {
                 let uuid = self.lan.as_ref()?.hub.guest(conn)?.uuid;
                 self.player(uuid).map(|p| p.entity())

@@ -2059,7 +2059,6 @@ impl Game<'_> {
     /// `ServerCommandEvent` / `RemoteServerCommandEvent`: the mods hear a console or RCON line
     /// (the slash dropped) before it is read; false when one canceled it.
     fn console_line_allowed(&mut self, line: &str) -> bool {
-        let line = line.strip_prefix('/').unwrap_or(line);
         let mut canceled = false;
         self.native_console_command(mod_api::__private::ConsoleCommandCall {
             line,
@@ -3702,7 +3701,7 @@ mod console_command_hook_tests {
             vec![ModEntry::new("console-probe", Box::new(Probe(Arc::clone(&heard))))].into();
         mod_platform::testing::with_mods(mods, || {
             with_game(|game| {
-                assert!(game.console_line_allowed("/list"));
+                assert!(game.console_line_allowed("list"));
                 game.rcon_source = true;
                 assert!(!game.console_line_allowed("secret setkey 1"));
                 game.rcon_source = false;

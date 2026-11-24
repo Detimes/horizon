@@ -206,6 +206,9 @@ impl Game<'_> {
             if !cancel && let Some(host) = self.lan.as_mut() {
                 host.hub
                     .set_game_mode(conn, to.id(), &self.world, Some(self.collision));
+            }
+            // A spectator respawning stays one: no change, so no cause.
+            if !cancel && from != to {
                 self.native_player_game_mode_cause(mod_api::__private::PlayerGameModeCauseCall {
                     player: uuid,
                     name: &name,
