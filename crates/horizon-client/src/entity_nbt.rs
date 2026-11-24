@@ -71,11 +71,21 @@ fn hidden_effect_nbt(effect: &crate::effects::EffectInstance) -> Tag {
     Tag::compound(fields)
 }
 
+/// A saved effect's `amplifier` (`MobEffectInstance.Details`): Codec.BYTE uses boxed
+/// Number.byteValue, then UNSIGNED_BYTE interprets the resulting byte as 0..255. A
+/// `hidden_effect` is another `Details`, so its amplifier reads the same way.
+fn saved_amplifier(details: &Tag) -> i32 {
+    details
+        .get("amplifier")
+        .and_then(horizon_world::datafix::dynamic::as_number)
+        .map_or(0, |n| i32::from(n.byte_value() as u8))
+}
+
 fn hidden_effect_from_nbt(effect: &'static str, tag: &Tag) -> crate::effects::EffectInstance {
     let mut instance = crate::effects::EffectInstance::new(
         effect,
         number(tag.get("duration")).unwrap_or(0) as i32,
-        number(tag.get("amplifier")).unwrap_or(0) as i32,
+        saved_amplifier(tag),
     );
     instance.ambient = number(tag.get("ambient")).is_some_and(|v| v != 0);
     instance.visible = number(tag.get("show_particles")) != Some(0);
@@ -2080,12 +2090,7 @@ fn mob_from_nbt_at(
             };
             let effect = crate::brewing::namespaced(def.id);
             let duration = number(e.get("duration")).unwrap_or(0) as i32;
-            // `MobEffectInstance.Details`: Codec.BYTE uses boxed Number.byteValue,
-            // then UNSIGNED_BYTE interprets the resulting byte as 0..255.
-            let amplifier = e
-                .get("amplifier")
-                .and_then(horizon_world::datafix::dynamic::as_number)
-                .map_or(0, |n| i32::from(n.byte_value() as u8));
+            let amplifier = saved_amplifier(e);
             // Details.CODEC: `show_particles` defaults to true, `show_icon` to `show_particles`.
             let particles = number(e.get("show_particles")) != Some(0);
             let mut stored = crate::mobs::StoredEffect::new(effect, duration, amplifier);
@@ -4590,10 +4595,33 @@ pub fn apply_item_components(m: &mut Mob, stack: &crate::items::ItemStack) {
         crate::mobs::Species::Llama | crate::mobs::Species::TraderLlama => {
             (Some("minecraft:llama/variant"), None)
         }
+        // Cat, Wolf, Rabbit and Parrot.applyImplicitComponents: the variant
+        // (and, for cats and wolves, the sound set) on their spawn eggs.
+        crate::mobs::Species::Cat => (
+            Some("minecraft:cat/variant"),
+            Some("minecraft:cat/sound_variant"),
+        ),
+        crate::mobs::Species::Wolf => (
+            Some("minecraft:wolf/variant"),
+            Some("minecraft:wolf/sound_variant"),
+        ),
+        crate::mobs::Species::Rabbit => (Some("minecraft:rabbit/variant"), None),
+        crate::mobs::Species::Parrot => (Some("minecraft:parrot/variant"), None),
         _ => (None, None),
     };
     if let Some(name) = variant.and_then(|id| text(components.other(id))) {
         m.extra.variant = crate::mobs::finalize::variant_index(species, &name);
+    }
+    // Cat and Wolf.applyImplicitComponent also read the collar colour.
+    if matches!(
+        species,
+        crate::mobs::Species::Cat | crate::mobs::Species::Wolf
+    ) && let Some(name) = text(components.other("minecraft:collar_color"))
+        && let Some(id) = crate::mobs::render::DYE_NAMES
+            .iter()
+            .position(|&v| v == name.trim_start_matches("minecraft:"))
+    {
+        m.extra.color = id as u8;
     }
     if let Some(name) = sound.and_then(|id| text(components.other(id)))
         && let Some(i) = crate::mobs::finalize::sound_variants(species)

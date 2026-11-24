@@ -1203,9 +1203,9 @@ impl Game<'_> {
             .filter(|k| self.world.chunks.get(k).is_some_and(|c| c.fresh && c.lit))
             .collect();
         for key in fresh {
-            if let Some(c) = self.world.chunks.get_mut(&key) {
+            self.world.chunks.mutate_chunk(key, |c| {
                 Arc::make_mut(c).fresh = false;
-            }
+            });
             self.world.chunks.remove_fresh(&key);
             self.spawn_generation_creatures(key.0, key.1);
         }
@@ -5612,16 +5612,25 @@ impl Game<'_> {
                                 };
                                 self.player_hit(&victim, "minecraft:arrow", Some(direct), amount);
                             }
-                            // AbstractArrow.onHitEntity: KILLED_BY_ARROW for a kill
-                            // (piercing arrows are not modelled).
-                            if hurt
-                                && let Some(m) = self.mobs.iter().find(|m| m.id == id)
-                                && !m.alive()
-                            {
+                            // AbstractArrow.onHitEntity: a piercing arrow adds what it
+                            // killed to its list and passes the whole list on every
+                            // hurt; any other arrow passes its victim on a kill.
+                            if hurt && let Some(m) = self.mobs.iter().find(|m| m.id == id) {
+                                let killed = !m.alive();
                                 let victim = self.mob_entity(m);
                                 let weapon =
                                     p.arrow.as_ref().and_then(|a| a.fired_from_weapon.as_ref());
-                                self.trigger_killed_by_arrow(&[victim], weapon);
+                                match arrow.arrow.as_mut().and_then(|a| a.pierced_and_killed.as_mut()) {
+                                    Some(list) => {
+                                        if killed {
+                                            list.push(victim);
+                                        }
+                                        let victims = list.clone();
+                                        self.trigger_killed_by_arrow(&victims, weapon);
+                                    }
+                                    None if killed => self.trigger_killed_by_arrow(&[victim], weapon),
+                                    None => {}
+                                }
                             }
                         }
                         hurt
